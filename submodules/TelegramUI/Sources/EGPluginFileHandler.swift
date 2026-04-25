@@ -10,6 +10,7 @@ import AccountContext
 import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import StickerResources
+import EGSettingsUI
 
 // MARK: - Metadata Model
 
@@ -260,29 +261,22 @@ private struct EGPluginInstallSheet: View {
                             .padding(.bottom, 20)
                     }
 
-                    // Install button
-                    Button(action: {
-                        isInstalling = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                            isInstalling = false
-                            presentationMode.wrappedValue.dismiss()
-                        }
-                    }) {
-                        Group {
+                    // Install button — .borderedProminent picks up Liquid Glass on iOS 26+
+                    Button(action: performInstall) {
+                        ZStack {
                             if isInstalling {
                                 ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .tint(.white)
                             } else {
                                 Text("Install Plugin")
                                     .font(.system(size: 17, weight: .semibold))
-                                    .foregroundColor(.white)
                             }
                         }
                         .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(Color.accentColor)
-                        .cornerRadius(12)
+                        .padding(.vertical, 14)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.accentColor)
                     .disabled(isInstalling)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
@@ -349,6 +343,52 @@ private struct EGPluginInstallSheet: View {
                 Image(systemName: "puzzlepiece.extension.fill")
                     .font(.system(size: 34))
                     .foregroundColor(.white)
+            }
+        }
+    }
+
+    // MARK: Install — copies file to persistent storage and registers with PluginsController
+
+    private func performInstall() {
+        isInstalling = true
+        let capturedMetadata = metadata
+        let capturedFilePath = filePath
+        let capturedEnable = enableAfterInstall
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let fileManager = FileManager.default
+            let pluginId = capturedMetadata.id ?? UUID().uuidString
+
+            // Copy plugin file to persistent location
+            if let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                let pluginsDir = supportDir.appendingPathComponent("EGPlugins", isDirectory: true)
+                try? fileManager.createDirectory(at: pluginsDir, withIntermediateDirectories: true)
+                let destURL = pluginsDir.appendingPathComponent("\(pluginId).plugin")
+                try? fileManager.removeItem(at: destURL)
+                try? fileManager.copyItem(atPath: capturedFilePath, toPath: destURL.path)
+            }
+
+            let plugin = EGPlugin(
+                id: pluginId,
+                name: capturedMetadata.name ?? "Unknown Plugin",
+                subtitle: capturedMetadata.author ?? "",
+                pluginDescription: capturedMetadata.description ?? "",
+                version: capturedMetadata.version ?? "1.0",
+                iconUrl: capturedMetadata.icon,
+                isEnabled: capturedEnable,
+                requiresPermissions: capturedMetadata.requirements
+            )
+
+            DispatchQueue.main.async {
+                var plugins = PluginsController.shared.plugins
+                if let idx = plugins.firstIndex(where: { $0.id == pluginId }) {
+                    plugins[idx] = plugin
+                } else {
+                    plugins.append(plugin)
+                }
+                PluginsController.shared.plugins = plugins
+                isInstalling = false
+                presentationMode.wrappedValue.dismiss()
             }
         }
     }
