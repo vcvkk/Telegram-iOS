@@ -229,7 +229,7 @@ private final class PeerInfoScreenMemberItemNode: PeerInfoScreenItemNode {
                 return
             }
             item.openStories?(sourceView)
-        })
+        }, hideEGBadge: item.isAccount)
         
         let params = ListViewItemLayoutParams(width: width, leftInset: safeInsets.left, rightInset: safeInsets.right, availableHeight: 1000.0)
         

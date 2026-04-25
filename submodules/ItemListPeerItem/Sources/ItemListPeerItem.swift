@@ -482,7 +482,8 @@ public final class ItemListPeerItem: ListViewItem, ItemListItem {
     let disableInteractiveTransitionIfNecessary: Bool
     let storyStats: PeerStoryStats?
     let openStories: ((UIView) -> Void)?
-    
+    let hideEGBadge: Bool
+
     public init(
         presentationData: ItemListPresentationData,
         systemStyle: ItemListSystemStyle = .legacy,
@@ -525,7 +526,8 @@ public final class ItemListPeerItem: ListViewItem, ItemListItem {
         displayBackground: Bool = true,
         disableInteractiveTransitionIfNecessary: Bool = false,
         storyStats: PeerStoryStats? = nil,
-        openStories: ((UIView) -> Void)? = nil
+        openStories: ((UIView) -> Void)? = nil,
+        hideEGBadge: Bool = false
     ) {
         self.presentationData = presentationData
         self.systemStyle = systemStyle
@@ -569,8 +571,9 @@ public final class ItemListPeerItem: ListViewItem, ItemListItem {
         self.disableInteractiveTransitionIfNecessary = disableInteractiveTransitionIfNecessary
         self.storyStats = storyStats
         self.openStories = openStories
+        self.hideEGBadge = hideEGBadge
     }
-        
+
     public init(
         presentationData: ItemListPresentationData,
         systemStyle: ItemListSystemStyle = .legacy,
@@ -613,7 +616,8 @@ public final class ItemListPeerItem: ListViewItem, ItemListItem {
         displayBackground: Bool = true,
         disableInteractiveTransitionIfNecessary: Bool = false,
         storyStats: PeerStoryStats? = nil,
-        openStories: ((UIView) -> Void)? = nil
+        openStories: ((UIView) -> Void)? = nil,
+        hideEGBadge: Bool = false
     ) {
         self.presentationData = presentationData
         self.systemStyle = systemStyle
@@ -657,8 +661,9 @@ public final class ItemListPeerItem: ListViewItem, ItemListItem {
         self.disableInteractiveTransitionIfNecessary = disableInteractiveTransitionIfNecessary
         self.storyStats = storyStats
         self.openStories = openStories
+        self.hideEGBadge = hideEGBadge
     }
-    
+
     public func nodeConfiguredForParams(async: @escaping (@escaping () -> Void) -> Void, params: ListViewItemLayoutParams, synchronousLoads: Bool, previousItem: ListViewItem?, nextItem: ListViewItem?, completion: @escaping (ListViewItemNode, @escaping () -> (Signal<Void, NoError>?, (ListViewItemApply) -> Void)) -> Void) {
         async {
             let node = ItemListPeerItemNode()
@@ -968,7 +973,7 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
                 if let verificationIconFileId = item.peer.verificationIconFileId {
                     verifiedIcon = .animation(content: .customEmoji(fileId: verificationIconFileId), size: CGSize(width: 32.0, height: 32.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(0))
                 }
-                if !item.peer.isScam && !item.peer.isFake,
+                if !item.peer.isScam && !item.peer.isFake && !item.hideEGBadge,
                    let badge = BadgesController.shared.getBadge(peerIdValue: item.peer.id.id._internalGetInt64Value()) {
                     egBadgeIcon = .animation(content: .customEmoji(fileId: badge.documentId), size: CGSize(width: 20.0, height: 20.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
                 }
