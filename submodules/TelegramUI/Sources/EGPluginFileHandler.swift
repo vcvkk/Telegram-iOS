@@ -7,6 +7,9 @@ import SwiftSignalKit
 import Postbox
 import TelegramCore
 import AccountContext
+import AnimatedStickerNode
+import TelegramAnimatedStickerNode
+import StickerResources
 
 // MARK: - Metadata Model
 
@@ -106,16 +109,73 @@ private struct RequirementChipsView: View {
     }
 }
 
+// MARK: - Animated Sticker Icon (matches Android BackupImageView with setPlaceholderImageByIndex)
+
+@available(iOS 14.0, *)
+private struct EGStickerIconView: UIViewRepresentable {
+    let file: TelegramMediaFile
+    let context: AccountContext
+
+    func makeUIView(context uiContext: Context) -> UIView {
+        let containerView = UIView()
+        containerView.backgroundColor = .clear
+
+        let node = DefaultAnimatedStickerNodeImpl()
+        node.setup(
+            source: AnimatedStickerResourceSource(
+                account: self.context.account,
+                resource: file.resource,
+                fitzModifier: nil
+            ),
+            width: Int(78 * UIScreen.main.scale),
+            height: Int(78 * UIScreen.main.scale),
+            playbackMode: .loop,
+            mode: .direct(cachePathPrefix: nil)
+        )
+        node.updateLayout(size: CGSize(width: 78, height: 78))
+        node.visibility = true
+        node.view.frame = CGRect(x: 0, y: 0, width: 78, height: 78)
+        containerView.addSubview(node.view)
+
+        // Retain the ASDisplayNode — UIView does not hold a strong reference to its node
+        objc_setAssociatedObject(containerView, &EGStickerIconView.nodeKey, node, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+        // Trigger download if not cached yet
+        let _ = freeMediaFileInteractiveFetched(
+            account: self.context.account,
+            userLocation: .other,
+            fileReference: .standalone(media: file)
+        ).startStandalone()
+
+        return containerView
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    private static var nodeKey: UInt8 = 0
+}
+
+// MARK: - Disposable lifetime wrapper for use with @State
+
+private final class DisposableWrapper {
+    private let inner: Disposable
+    init(_ d: Disposable) { inner = d }
+    deinit { inner.dispose() }
+}
+
 // MARK: - SwiftUI Bottom Sheet
 
 @available(iOS 14.0, *)
 private struct EGPluginInstallSheet: View {
     let metadata: EGPluginFileMetadata
     let filePath: String
+    let context: AccountContext
     @Environment(\.presentationMode) private var presentationMode
     @State private var isInstalling = false
     @State private var enableAfterInstall = true
     @State private var showShareSheet = false
+    @State private var iconFile: TelegramMediaFile? = nil
+    @State private var iconLoader: DisposableWrapper? = nil
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -128,16 +188,10 @@ private struct EGPluginInstallSheet: View {
                         .padding(.top, 8)
                         .padding(.bottom, 20)
 
-                    // Plugin icon — 78pt circle with puzzle piece
-                    ZStack {
-                        Circle()
-                            .fill(Color.accentColor)
-                            .frame(width: 78, height: 78)
-                        Image(systemName: "puzzlepiece.extension.fill")
-                            .font(.system(size: 34))
-                            .foregroundColor(.white)
-                    }
-                    .padding(.bottom, 16)
+                    // Plugin icon — sticker from pack if available, puzzle piece placeholder otherwise
+                    iconView
+                        .padding(.bottom, 16)
+                        .onAppear(perform: loadIcon)
 
                     // Plugin name
                     Text(metadata.name ?? "Plugin")
@@ -260,6 +314,64 @@ private struct EGPluginInstallSheet: View {
             }
         }
     }
+
+    // MARK: Icon view — sticker with badge overlay, or puzzle piece placeholder
+
+    @ViewBuilder
+    private var iconView: some View {
+        if let file = iconFile {
+            // Sticker icon (matches Android BackupImageView with rounded rect + badge)
+            EGStickerIconView(file: file, context: context)
+                .frame(width: 78, height: 78)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    // Puzzle piece badge at bottom-right (matches Android canvas overlay)
+                    ZStack {
+                        Circle()
+                            .fill(Color(UIColor.systemBackground))
+                            .frame(width: 26, height: 26)
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 22, height: 22)
+                        Image(systemName: "puzzlepiece.extension.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .offset(x: 3, y: 3),
+                    alignment: .bottomTrailing
+                )
+        } else {
+            // Placeholder — plain circle with puzzle piece
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 78, height: 78)
+                Image(systemName: "puzzlepiece.extension.fill")
+                    .font(.system(size: 34))
+                    .foregroundColor(.white)
+            }
+        }
+    }
+
+    // MARK: Load sticker icon by "packName/index" from metadata
+
+    private func loadIcon() {
+        guard let iconStr = metadata.icon else { return }
+        let parts = iconStr.components(separatedBy: "/")
+        guard parts.count == 2, let index = Int(parts[1]) else { return }
+        let packName = parts[0]
+
+        let d = (context.engine.stickers.loadedStickerPack(reference: .name(packName), forceActualized: false)
+            |> filter { if case .result = $0 { return true }; return false }
+            |> take(1)
+            |> deliverOnMainQueue
+        ).startStandalone(next: { pack in
+            if case .result(_, let items, _) = pack, index < items.count {
+                iconFile = items[index].file
+            }
+        })
+        iconLoader = DisposableWrapper(d)
+    }
 }
 
 // MARK: - Presentation Helper
@@ -282,7 +394,7 @@ func presentEGPluginMetadataIfAvailable(
         guard let rootController = navigationController?.view.window?.rootViewController else { return }
 
         if #available(iOS 14.0, *) {
-            let sheet = UIHostingController(rootView: EGPluginInstallSheet(metadata: metadata, filePath: data.path))
+            let sheet = UIHostingController(rootView: EGPluginInstallSheet(metadata: metadata, filePath: data.path, context: context))
             sheet.modalPresentationStyle = .overFullScreen
             sheet.view.backgroundColor = .clear
 
