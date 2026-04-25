@@ -149,19 +149,49 @@ private struct ActivityView: UIViewControllerRepresentable {
 private struct PluginsEmptyView: View {
     let isSearching: Bool
     let lang: String
+    @State private var folderBounce: Bool = false
 
     var body: some View {
         VStack(spacing: 16) {
-            Text(isSearching ? "🔎" : "📂")
-                .font(.system(size: 52))
-            Text(i18n(isSearching ? "Plugins.NoResults" : "Plugins.Empty", lang))
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            Spacer()
+
+            if isSearching {
+                Text("🔎")
+                    .font(.system(size: 52))
+                Text(i18n("Plugins.NoResults", lang))
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            } else {
+                // Animated folder emoji — gentle float up/down
+                Text("📂")
+                    .font(.system(size: 64))
+                    .offset(y: folderBounce ? -6 : 0)
+                    .animation(
+                        .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                        value: folderBounce
+                    )
+                    .onAppear { folderBounce = true }
+
+                // "Вы можете найти плагины в @vcvk1"
+                HStack(spacing: 0) {
+                    Text("Вы можете найти плагины в ")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Button("@vcvk1") {
+                        UIApplication.shared.open(URL(string: "https://t.me/vcvk1")!)
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.accentColor)
+                }
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
+            }
+
+            Spacer()
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 48)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -403,18 +433,6 @@ private struct EGPluginsView: View {
                 }
             }
 
-            // Empty state — own section
-            if isEngineEnabled && showEmptyState {
-                Section {
-                    PluginsEmptyView(
-                        isSearching: !navState.searchText.isEmpty,
-                        lang: lang
-                    )
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
-                }
-            }
-
             // Each plugin = its own Section = its own rounded card (matches screenshot)
             if isEngineEnabled && !showEmptyState {
                 ForEach(displayPlugins) { plugin in
@@ -440,6 +458,17 @@ private struct EGPluginsView: View {
             }
         }
         .listStyle(InsetGroupedListStyle())
+        // Empty state floats over the list so Spacers can center it on the full screen
+        .overlay(
+            Group {
+                if isEngineEnabled && showEmptyState {
+                    PluginsEmptyView(
+                        isSearching: !navState.searchText.isEmpty,
+                        lang: lang
+                    )
+                }
+            }
+        )
         .sheet(item: $pluginToShare) { plugin in
             ActivityView(items: [plugin.name])
         }
