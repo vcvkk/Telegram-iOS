@@ -117,19 +117,10 @@ let colorGray = UIColor(rgb: 0x8E8E93)
 let colorViolet = UIColor(rgb: 0x5E5CE6)
 
 public struct PresentationResourcesSettings {
-    public static let exteragram: UIImage? = {
-        // Always return a non-nil image so the settings row indent is preserved.
-        // UIGraphicsImageRenderer handles PDF-backed images where cgImage is nil.
-        // Try both capitalizations — asset catalog lookup is case-insensitive on device
-        // but case-sensitive in some build environments.
-        let image = UIImage(bundleImageName: "ExteraGramSettings")
-            ?? UIImage(bundleImageName: "exteraGramSettings")
-        let size = CGSize(width: 30.0, height: 30.0)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { _ in
-            image?.draw(in: CGRect(origin: .zero, size: size))
-        }
-    }()
+    // Gradient bottom-right→top-left: bright iOS red → deep crimson (redder than notifications 0xFF453A)
+    public static let exteragram: UIImage? =
+        renderSettingsIcon(name: "ExteraGramSettings", backgroundColors: [UIColor(rgb: 0xFF3B30), UIColor(rgb: 0xBF1000)])
+        ?? renderSettingsIcon(name: "exteraGramSettings", backgroundColors: [UIColor(rgb: 0xFF3B30), UIColor(rgb: 0xBF1000)])
     public static let proxy = renderSettingsIcon(name: "Item List/Icons/Proxy", backgroundColors: [colorGreen])
     public static let savedMessages = renderSettingsIcon(name: "Item List/Icons/SavedMessages", backgroundColors: [colorBlue])
     public static let recentCalls = renderSettingsIcon(name: "Item List/Icons/Phone", backgroundColors: [colorGreen])
