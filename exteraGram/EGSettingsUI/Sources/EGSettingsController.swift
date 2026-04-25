@@ -127,7 +127,6 @@ private enum EGSliderSetting: String {
 private enum EGDisclosureLink: String {
     case contentSettings
     case languageSettings
-    case bestBrowser
 }
 
 private struct PeerNameColorScreenState: Equatable {
@@ -329,7 +328,6 @@ private func EGControllerEntries(presentationData: PresentationData, callListSet
     entries.append(.notice(id: id.count, section: .other, text: i18n("Settings.DefaultEmojisFirst.Notice", lang)))
     entries.append(.toggle(id: id.count, section: .other, settingName: .hidePhoneInSettings, value: EGSimpleSettings.shared.hidePhoneInSettings, text: i18n("Settings.HidePhoneInSettingsUI", lang), enabled: true))
     entries.append(.notice(id: id.count, section: .other, text: i18n("Settings.HidePhoneInSettingsUI.Notice", lang)))
-    entries.append(.disclosure(id: id.count, section: .other, link: .bestBrowser, text: "лучший браузер скачат"))
     
     return filterSGItemListUIEntrires(entries: entries, by: state.searchQuery)
 }
@@ -693,8 +691,6 @@ public func egSettingsController(context: AccountContext/*, focusOnItemTag: Int?
                     }
                     strongContext.sharedContext.applicationBindings.openUrl(url)
                 })
-            case .bestBrowser:
-                context.sharedContext.applicationBindings.openUrl("https://t.me/eblanbrowser")
         }
     }, searchInput: { searchQuery in
         updateState { state in
