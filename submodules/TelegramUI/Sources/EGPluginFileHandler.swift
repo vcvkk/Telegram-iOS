@@ -259,7 +259,6 @@ private struct EGPluginInstallSheet: View {
                 ActivitySheet(items: [URL(fileURLWithPath: filePath)])
             }
         }
-        .background(Color(UIColor.systemBackground))
     }
 }
 

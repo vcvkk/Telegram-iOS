@@ -105,12 +105,28 @@ private final class PluginsNavState: ObservableObject {
     @Published var isSearchActive: Bool = false
     @Published var searchText: String = ""
     var onSearchDeactivated: (() -> Void)?
+    // Retains the bar button handler so UIBarButtonItem (weak target) doesn't dangle.
+    var barHandler: AnyObject?
 
     func deactivate() {
-        isSearchActive = false
-        searchText = ""
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            isSearchActive = false
+            searchText = ""
+        }
         onSearchDeactivated?()
     }
+}
+
+// MARK: - Nav Button Trampoline
+// UIBarButtonItem requires @objc target; using a trampoline avoids primaryAction: quirks.
+
+private final class PluginsBarHandler: NSObject {
+    var searchTapped: (() -> Void)?
+    var infoTapped: (() -> Void)?
+    var cancelTapped: (() -> Void)?
+    @objc func searchTappedObjc()  { searchTapped?()  }
+    @objc func infoTappedObjc()   { infoTapped?()   }
+    @objc func cancelTappedObjc() { cancelTapped?() }
 }
 
 // MARK: - Share Sheet
@@ -470,42 +486,58 @@ public func egPluginsController(context: AccountContext) -> ViewController {
     legacyController.statusBar.statusBarStyle = theme.rootController.statusBarStyle.style
 
     let navState = PluginsNavState()
-    let buttonColor = theme.rootController.navigationBar.accentTextColor
+    let iconColor = theme.rootController.navigationBar.primaryTextColor
 
-    // Mirrors Android: searchItem + infoItem both in the action bar.
-    // When search expands → infoItem hidden (visibility GONE). When collapsed → restored.
+    let handler = PluginsBarHandler()
+    navState.barHandler = handler   // navState outlives the buttons; keeps handler alive
+
     var infoButton: UIBarButtonItem? = nil
     var searchButton: UIBarButtonItem? = nil
     var cancelButton: UIBarButtonItem? = nil
 
     cancelButton = UIBarButtonItem(
         title: i18n("Plugins.Cancel", strings.baseLanguageCode),
-        primaryAction: UIAction { [weak legacyController] _ in
-            navState.deactivate()
-            legacyController?.navigationItem.rightBarButtonItems =
-                [infoButton, searchButton].compactMap { $0 }
-        }
+        style: .plain,
+        target: handler,
+        action: #selector(PluginsBarHandler.cancelTappedObjc)
     )
-    cancelButton?.tintColor = buttonColor
+    cancelButton?.tintColor = iconColor
 
     searchButton = UIBarButtonItem(
-        image: PresentationResourcesRootController.navigationSearchIcon(theme),
-        primaryAction: UIAction { [weak legacyController] _ in
-            navState.isSearchActive = true
-            legacyController?.navigationItem.rightBarButtonItems =
-                [cancelButton].compactMap { $0 }
-        }
+        image: PresentationResourcesRootController.navigationSearchIcon(theme)?
+            .withTintColor(iconColor, renderingMode: .alwaysOriginal),
+        style: .plain,
+        target: handler,
+        action: #selector(PluginsBarHandler.searchTappedObjc)
     )
 
     infoButton = UIBarButtonItem(
-        image: PresentationResourcesRootController.navigationInfoIcon(theme),
-        primaryAction: UIAction { [weak legacyController] _ in
-            guard let nav = legacyController?.navigationController as? NavigationController else { return }
-            nav.pushViewController(egPluginsInfoController(context: context))
-        }
+        image: PresentationResourcesRootController.navigationInfoIcon(theme)?
+            .withTintColor(iconColor, renderingMode: .alwaysOriginal),
+        style: .plain,
+        target: handler,
+        action: #selector(PluginsBarHandler.infoTappedObjc)
     )
 
-    // Restore both buttons when search collapses from the SwiftUI side.
+    handler.searchTapped = { [weak legacyController] in
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            navState.isSearchActive = true
+        }
+        legacyController?.navigationItem.rightBarButtonItems =
+            [cancelButton].compactMap { $0 }
+    }
+
+    handler.infoTapped = { [weak legacyController] in
+        legacyController?.navigationController?.pushViewController(
+            egPluginsInfoController(context: context), animated: true)
+    }
+
+    handler.cancelTapped = { [weak legacyController] in
+        navState.deactivate()
+        legacyController?.navigationItem.rightBarButtonItems =
+            [infoButton, searchButton].compactMap { $0 }
+    }
+
     navState.onSearchDeactivated = { [weak legacyController] in
         legacyController?.navigationItem.rightBarButtonItems =
             [infoButton, searchButton].compactMap { $0 }
