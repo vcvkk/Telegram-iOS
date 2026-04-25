@@ -262,24 +262,7 @@ private struct EGPluginInstallSheet: View {
                     }
 
                     // Install button — .borderedProminent picks up Liquid Glass on iOS 26+
-                    Button(action: performInstall) {
-                        ZStack {
-                            if isInstalling {
-                                ProgressView()
-                                    .tint(.white)
-                            } else {
-                                Text("Install Plugin")
-                                    .font(.system(size: 17, weight: .semibold))
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.accentColor)
-                    .disabled(isInstalling)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
+                    installButton
 
                     // Enable after installation toggle
                     Toggle("Enable after installation", isOn: $enableAfterInstall)
@@ -347,6 +330,50 @@ private struct EGPluginInstallSheet: View {
         }
     }
 
+    // MARK: Install button — Liquid Glass on iOS 15+, manual style below
+
+    @ViewBuilder
+    private var installButton: some View {
+        if #available(iOS 15.0, *) {
+            Button(action: performInstall) {
+                ZStack {
+                    if isInstalling {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Text("Install Plugin")
+                            .font(.system(size: 17, weight: .semibold))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isInstalling)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        } else {
+            Button(action: performInstall) {
+                ZStack {
+                    if isInstalling {
+                        ProgressView()
+                    } else {
+                        Text("Install Plugin")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.accentColor)
+                .cornerRadius(12)
+            }
+            .disabled(isInstalling)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+    }
+
     // MARK: Install — copies file to persistent storage and registers with PluginsController
 
     private func performInstall() {
@@ -407,7 +434,7 @@ private struct EGPluginInstallSheet: View {
             |> deliverOnMainQueue
         ).startStandalone(next: { pack in
             if case .result(_, let items, _) = pack, index < items.count {
-                iconFile = items[index].file
+                iconFile = items[index].file._parse()
             }
         })
         iconLoader = DisposableWrapper(d)
