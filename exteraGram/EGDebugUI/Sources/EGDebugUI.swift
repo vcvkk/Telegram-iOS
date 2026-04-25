@@ -24,6 +24,144 @@ import FLEX
 #endif
 
 
+// MARK: - e621 Screensaver
+
+private final class E621ViewController: UIViewController {
+    private let logoLabel = UILabel()
+    private var position = CGPoint(x: 120, y: 160)
+    private var velocity = CGPoint(x: 250, y: 195)
+    private var lastTimestamp: CFTimeInterval = 0
+    private var displayLink: CADisplayLink?
+    private var hue: CGFloat = 0.55
+    private var frameCount = 0
+
+    override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .all }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = UIColor(white: 0.03, alpha: 1)
+
+        logoLabel.text = "e621"
+        logoLabel.font = .systemFont(ofSize: 80, weight: .black)
+        logoLabel.textColor = UIColor(hue: hue, saturation: 1, brightness: 1, alpha: 1)
+        logoLabel.sizeToFit()
+        logoLabel.layer.shadowColor = logoLabel.textColor.cgColor
+        logoLabel.layer.shadowRadius = 18
+        logoLabel.layer.shadowOpacity = 0.9
+        logoLabel.layer.shadowOffset = .zero
+        view.addSubview(logoLabel)
+
+        let hint = UILabel()
+        hint.text = "tap to open"
+        hint.font = .systemFont(ofSize: 13, weight: .medium)
+        hint.textColor = UIColor.white.withAlphaComponent(0.25)
+        hint.sizeToFit()
+        hint.autoresizingMask = [.flexibleTopMargin, .flexibleLeftMargin, .flexibleRightMargin]
+        view.addSubview(hint)
+        DispatchQueue.main.async {
+            hint.center = CGPoint(x: self.view.bounds.midX, y: self.view.bounds.height - 52)
+        }
+
+        view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap)))
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        logoLabel.frame.origin = position
+        // Spring entrance
+        logoLabel.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
+        UIView.animate(withDuration: 0.5, delay: 0,
+                       usingSpringWithDamping: 0.55, initialSpringVelocity: 0.3,
+                       options: [], animations: { self.logoLabel.transform = .identity })
+        displayLink = CADisplayLink(target: self, selector: #selector(tick))
+        displayLink?.add(to: .main, forMode: .common)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        guard lastTimestamp != 0 else { lastTimestamp = link.timestamp; return }
+        let dt = min(CGFloat(link.timestamp - lastTimestamp), 1.0 / 30.0)
+        lastTimestamp = link.timestamp
+        frameCount += 1
+
+        position.x += velocity.x * dt
+        position.y += velocity.y * dt
+
+        let bounds = view.bounds
+        let lw = logoLabel.bounds.width
+        let lh = logoLabel.bounds.height
+        var hitWall = false
+        var corner = false
+
+        if position.x < 0 {
+            position.x = 0; velocity.x = abs(velocity.x); hitWall = true
+            corner = position.y < lh || position.y > bounds.height - lh * 2
+        } else if position.x + lw > bounds.width {
+            position.x = bounds.width - lw; velocity.x = -abs(velocity.x); hitWall = true
+            corner = position.y < lh || position.y > bounds.height - lh * 2
+        }
+        if position.y < 0 {
+            position.y = 0; velocity.y = abs(velocity.y); hitWall = true
+        } else if position.y + lh > bounds.height {
+            position.y = bounds.height - lh; velocity.y = -abs(velocity.y); hitWall = true
+        }
+
+        if hitWall { cycleColor(); spawnTrail(); flashScreen(corner: corner) }
+        if frameCount % 4 == 0 { spawnTrail() }
+
+        logoLabel.frame.origin = position
+    }
+
+    private func cycleColor() {
+        hue = (hue + 0.14).truncatingRemainder(dividingBy: 1)
+        let color = UIColor(hue: hue, saturation: 1, brightness: 1, alpha: 1)
+        logoLabel.textColor = color
+        logoLabel.layer.shadowColor = color.cgColor
+    }
+
+    private func spawnTrail() {
+        guard let snap = logoLabel.snapshotView(afterScreenUpdates: false) else { return }
+        snap.frame = logoLabel.frame
+        snap.alpha = 0.4
+        view.insertSubview(snap, belowSubview: logoLabel)
+        UIView.animate(withDuration: 0.55, delay: 0, options: .curveEaseOut, animations: {
+            snap.alpha = 0
+            snap.transform = CGAffineTransform(scaleX: 1.4, y: 1.4)
+        }, completion: { _ in snap.removeFromSuperview() })
+    }
+
+    private func flashScreen(corner: Bool) {
+        let flash = UIView(frame: view.bounds)
+        flash.backgroundColor = logoLabel.textColor.withAlphaComponent(corner ? 0.45 : 0.15)
+        flash.isUserInteractionEnabled = false
+        view.insertSubview(flash, belowSubview: logoLabel)
+        UIView.animate(withDuration: corner ? 0.55 : 0.28, options: .curveEaseOut, animations: {
+            flash.alpha = 0
+        }, completion: { _ in flash.removeFromSuperview() })
+    }
+
+    @objc private func handleTap() {
+        displayLink?.invalidate()
+        displayLink = nil
+        UIView.animate(withDuration: 0.22, animations: {
+            self.logoLabel.transform = CGAffineTransform(scaleX: 25, y: 25)
+            self.logoLabel.alpha = 0
+            self.view.alpha = 0
+        }, completion: { _ in
+            UIApplication.shared.open(URL(string: "https://e621.net")!)
+            self.dismiss(animated: false)
+        })
+    }
+}
+
+// MARK: -
+
 private enum EGDebugControllerSection: Int32, EGItemListSection {
     case base
     case notifications
@@ -160,7 +298,12 @@ public func egDebugController(context: AccountContext) -> ViewController {
             FLEXManager.shared.toggleExplorer()
             #endif
         case .e621:
-            UIApplication.shared.open(URL(string: "https://e621.net")!)
+            let vc = E621ViewController()
+            vc.modalPresentationStyle = .overFullScreen
+            vc.modalTransitionStyle = .crossDissolve
+            if let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+                window.rootViewController?.present(vc, animated: true)
+            }
         case .fileManager:
             #if DEBUG
             let baseAppBundleId = Bundle.main.bundleIdentifier!
