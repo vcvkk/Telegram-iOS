@@ -11,6 +11,7 @@ import ContextUI
 import AvatarNode
 import EmojiStatusComponent
 import AccountContext
+import EGBadges
 
 public final class AccountPeerContextItem: ContextMenuCustomItem {
     let context: AccountContext
@@ -40,6 +41,8 @@ private final class AccountPeerContextItemNode: ASDisplayNode, ContextMenuCustom
     private let textNode: ImmediateTextNode
     private let avatarNode: AvatarNode
     private let emojiStatusView: ComponentView<Empty>
+    // Slot 2: exteraGram badge (shown alongside emoji/premium, matching Android DrawerAccountPickerView)
+    private let egBadgeView: ComponentView<Empty>
     
     init(presentationData: PresentationData, item: AccountPeerContextItem, getController: @escaping () -> ContextControllerProtocol?, actionSelected: @escaping (ContextMenuActionResult) -> Void) {
         self.item = item
@@ -58,8 +61,9 @@ private final class AccountPeerContextItemNode: ASDisplayNode, ContextMenuCustom
         self.textNode.maximumNumberOfLines = 1
         
         self.avatarNode = AvatarNode(font: avatarPlaceholderFont(size: 14.0))
-        
+
         self.emojiStatusView = ComponentView<Empty>()
+        self.egBadgeView = ComponentView<Empty>()
         
         self.buttonNode = HighlightTrackingButtonNode()
         self.buttonNode.isAccessibilityElement = true
@@ -88,54 +92,89 @@ private final class AccountPeerContextItemNode: ASDisplayNode, ContextMenuCustom
         }
         
         self.avatarNode.setPeer(context: self.item.context, account: self.item.account, theme: self.presentationData.theme, peer: self.item.peer)
-        
-        if self.item.peer.emojiStatus != nil {
-            rightTextInset += 32.0
+
+        // Resolve slot 1 (emoji/premium) and slot 2 (badge) — mirrors Android DrawerAccountPickerView
+        var slot1Content: EmojiStatusComponent.Content?
+        if case let .user(user) = self.item.peer {
+            if let emojiStatus = user.emojiStatus {
+                slot1Content = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 28.0, height: 28.0), placeholderColor: self.presentationData.theme.list.mediaPlaceholderColor, themeColor: self.presentationData.theme.list.itemAccentColor, loopMode: .forever)
+            } else if user.isPremium {
+                slot1Content = .premium(color: self.presentationData.theme.list.itemAccentColor)
+            }
+        } else if case let .channel(channel) = self.item.peer {
+            if let emojiStatus = channel.emojiStatus {
+                slot1Content = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 28.0, height: 28.0), placeholderColor: self.presentationData.theme.list.mediaPlaceholderColor, themeColor: self.presentationData.theme.list.itemAccentColor, loopMode: .forever)
+            }
         }
-    
+
+        let peerIdValue = self.item.peer.id.id._internalGetInt64Value()
+        let egBadge = BadgesController.shared.getBadge(peerIdValue: peerIdValue)
+        var slot2Content: EmojiStatusComponent.Content? = nil
+        if let badge = egBadge {
+            let badgeContent = EmojiStatusComponent.Content.animation(content: .customEmoji(fileId: badge.documentId), size: CGSize(width: 28.0, height: 28.0), placeholderColor: self.presentationData.theme.list.mediaPlaceholderColor, themeColor: self.presentationData.theme.list.itemAccentColor, loopMode: .forever)
+            if slot1Content != nil {
+                slot2Content = badgeContent   // emoji/premium in slot 1, badge in slot 2
+            } else {
+                slot1Content = badgeContent   // badge promoted to slot 1
+            }
+        }
+
+        // Reserve text inset for occupied slots
+        if slot1Content != nil { rightTextInset += 32.0 }
+        if slot2Content != nil { rightTextInset += 32.0 }
+
         let textSize = self.textNode.updateLayout(CGSize(width: constrainedWidth - sideInset - rightTextInset, height: .greatestFiniteMagnitude))
-        
+
         return (CGSize(width: textSize.width + sideInset + rightTextInset, height: verticalInset * 2.0 + textSize.height), { size, transition in
             let verticalOrigin = floor((size.height - textSize.height) / 2.0)
             let textFrame = CGRect(origin: CGPoint(x: iconSideInset + 40.0, y: verticalOrigin), size: textSize)
             transition.updateFrameAdditive(node: self.textNode, frame: textFrame)
-            
-            var iconContent: EmojiStatusComponent.Content?
-            if case let .user(user) = self.item.peer {
-                if let emojiStatus = user.emojiStatus {
-                    iconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 28.0, height: 28.0), placeholderColor: self.presentationData.theme.list.mediaPlaceholderColor, themeColor: self.presentationData.theme.list.itemAccentColor, loopMode: .forever)
-                } else if user.isPremium {
-                    iconContent = .premium(color: self.presentationData.theme.list.itemAccentColor)
-                }
-            } else if case let .channel(channel) = self.item.peer {
-                if let emojiStatus = channel.emojiStatus {
-                    iconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 28.0, height: 28.0), placeholderColor: self.presentationData.theme.list.mediaPlaceholderColor, themeColor: self.presentationData.theme.list.itemAccentColor, loopMode: .forever)
-                }
-            }
-            if let iconContent {
-                let emojiStatusSize = self.emojiStatusView.update(
+
+            var nextIconX = textFrame.maxX + 2.0
+            let iconH: CGFloat = 24.0
+
+            if let content = slot1Content {
+                let sz = self.emojiStatusView.update(
                     transition: .immediate,
                     component: AnyComponent(EmojiStatusComponent(
                         context: self.item.context,
                         animationCache: self.item.context.animationCache,
                         animationRenderer: self.item.context.animationRenderer,
-                        content: iconContent,
+                        content: content,
                         isVisibleForAnimations: true,
                         action: nil
                     )),
                     environment: {},
-                    containerSize: CGSize(width: 24.0, height: 24.0)
+                    containerSize: CGSize(width: iconH, height: iconH)
                 )
                 if let view = self.emojiStatusView.view {
-                    if view.superview == nil {
-                        self.view.addSubview(view)
-                    }
-                    transition.updateFrame(view: view, frame: CGRect(origin: CGPoint(x: textFrame.maxX + 2.0, y: textFrame.minY + floor((textFrame.height - emojiStatusSize.height) / 2.0)), size: emojiStatusSize))
+                    if view.superview == nil { self.view.addSubview(view) }
+                    transition.updateFrame(view: view, frame: CGRect(origin: CGPoint(x: nextIconX, y: textFrame.minY + floor((textFrame.height - sz.height) / 2.0)), size: sz))
+                    nextIconX += sz.width + 2.0
                 }
             }
-            
+
+            if let content = slot2Content {
+                let sz = self.egBadgeView.update(
+                    transition: .immediate,
+                    component: AnyComponent(EmojiStatusComponent(
+                        context: self.item.context,
+                        animationCache: self.item.context.animationCache,
+                        animationRenderer: self.item.context.animationRenderer,
+                        content: content,
+                        isVisibleForAnimations: true,
+                        action: nil
+                    )),
+                    environment: {},
+                    containerSize: CGSize(width: iconH, height: iconH)
+                )
+                if let view = self.egBadgeView.view {
+                    if view.superview == nil { self.view.addSubview(view) }
+                    transition.updateFrame(view: view, frame: CGRect(origin: CGPoint(x: nextIconX, y: textFrame.minY + floor((textFrame.height - sz.height) / 2.0)), size: sz))
+                }
+            }
+
             transition.updateFrame(node: self.avatarNode, frame: CGRect(origin: CGPoint(x: iconSideInset + floor((standardIconWidth - iconSize.width) / 2.0), y: floor((size.height - iconSize.height) / 2.0)), size: iconSize))
-            
             transition.updateFrame(node: self.buttonNode, frame: CGRect(origin: CGPoint(x: 0.0, y: 0.0), size: CGSize(width: size.width, height: size.height)))
         })
     }

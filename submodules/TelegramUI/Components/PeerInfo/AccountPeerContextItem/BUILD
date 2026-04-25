@@ -22,6 +22,7 @@ swift_library(
         "//submodules/AvatarNode",
         "//submodules/ContextUI",
         "//submodules/AccountContext",
+        "//exteraGram/EGBadges:EGBadges",
     ],
     visibility = [
         "//visibility:public",
