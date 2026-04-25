@@ -1152,9 +1152,10 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         }
 
         // exteraGram badge — animated emoji from the "exteraBadges" sticker pack.
+        // Hidden when isSettings/isMyProfile (= Android AccountCell, which never calls getBadge).
         do {
             let egBadgeDocumentId: Int64?
-            if let peer = peer {
+            if let peer = peer, !self.isSettings, !self.isMyProfile {
                 egBadgeDocumentId = BadgesController.shared.getBadge(peerIdValue: peer.id.id._internalGetInt64Value())?.documentId
             } else {
                 egBadgeDocumentId = nil
