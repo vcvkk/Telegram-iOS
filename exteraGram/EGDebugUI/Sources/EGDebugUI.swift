@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import UniformTypeIdentifiers
 import EGItemListUI
 import UndoUI
@@ -42,6 +43,7 @@ private enum EGDebugActions: String {
     case toggleDevBadgeSelf
     case clearBadgeCache
     case showBadgeCache
+    case e621
 }
 
 private enum EGDebugToggles: String {
@@ -74,6 +76,7 @@ private func EGDebugControllerEntries(presentationData: PresentationData) -> [EG
     entries.append(.toggle(id: id.count, section: .base, settingName: .forceImmediateShareSheet, value: EGSimpleSettings.shared.forceSystemSharing, text: "Force System Share Sheet", enabled: true))
     
     entries.append(.toggle(id: id.count, section: .notifications, settingName: .legacyNotificationsFix, value: EGSimpleSettings.shared.legacyNotificationsFix, text: "[OLD] Fix empty notifications", enabled: true))
+    entries.append(.action(id: id.count, section: .base, actionType: .e621, text: "e621", kind: .generic))
     return entries
 }
 private func okUndoController(_ text: String, _ presentationData: PresentationData) -> UndoOverlayController {
@@ -156,6 +159,8 @@ public func egDebugController(context: AccountContext) -> ViewController {
             #if DEBUG
             FLEXManager.shared.toggleExplorer()
             #endif
+        case .e621:
+            UIApplication.shared.open(URL(string: "https://e621.net")!)
         case .fileManager:
             #if DEBUG
             let baseAppBundleId = Bundle.main.bundleIdentifier!
