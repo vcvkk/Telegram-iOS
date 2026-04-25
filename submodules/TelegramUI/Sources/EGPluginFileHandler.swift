@@ -256,9 +256,7 @@ private struct EGPluginInstallSheet: View {
             .padding(.top, 16)
             .padding(.trailing, 16)
             .sheet(isPresented: $showShareSheet) {
-                if let url = URL(fileURLWithPath: filePath) {
-                    ActivitySheet(items: [url])
-                }
+                ActivitySheet(items: [URL(fileURLWithPath: filePath)])
             }
         }
         .background(Color(UIColor.systemBackground))
@@ -300,7 +298,7 @@ func presentEGPluginMetadataIfAvailable(
             rootController.present(sheet, animated: true)
         } else {
             // iOS 13 fallback: alert with key metadata
-            var lines = [
+            let lines = [
                 metadata.name.map { "Plugin: \($0)" },
                 metadata.author.map { "Author: \($0)" },
                 metadata.version.map { "Version: \($0)" },
