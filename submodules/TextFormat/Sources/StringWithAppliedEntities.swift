@@ -178,6 +178,16 @@ public func stringWithAppliedEntities(_ text: String, entities: [MessageTextEnti
                 }
                 string.addAttribute(NSAttributedString.Key(rawValue: TelegramTextAttributes.URL), value: "tel:\(nsString!.substring(with: range))", range: range)
             case let .TextUrl(url):
+                // exteraGram: render Android fake premium emoji (tg://emoji?id=<fileId>) as animated custom emoji
+                if url.hasPrefix("tg://emoji?id=") {
+                    let idPart = String(url.dropFirst("tg://emoji?id=".count)).components(separatedBy: "&").first ?? ""
+                    if let fileId = Int64(idPart) {
+                        let mediaId = MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)
+                        let emojiFile = (message?.associatedMedia[mediaId] as? TelegramMediaFile) ?? entityFiles[mediaId]
+                        string.addAttribute(ChatTextInputAttributes.customEmoji, value: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: fileId, file: emojiFile), range: range)
+                        break
+                    }
+                }
                 string.addAttribute(NSAttributedString.Key.foregroundColor, value: linkColor, range: range)
                 if nsString == nil {
                     nsString = string.string as NSString
