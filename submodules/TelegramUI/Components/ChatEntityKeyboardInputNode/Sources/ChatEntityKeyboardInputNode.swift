@@ -150,20 +150,7 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
     }
     
     public static func hasPremium(context: AccountContext, chatPeerId: EnginePeer.Id?, premiumIfSavedMessages: Bool) -> Signal<Bool, NoError> {
-        let hasPremium: Signal<Bool, NoError>
-        if premiumIfSavedMessages, let chatPeerId = chatPeerId, chatPeerId == context.account.peerId {
-            hasPremium = .single(true)
-        } else {
-            hasPremium = context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
-            |> map { peer -> Bool in
-                guard case let .user(user) = peer else {
-                    return false
-                }
-                return user.isPremium
-            }
-            |> distinctUntilChanged
-        }
-        return hasPremium
+        return .single(true)
     }
     
     public static func inputData(
