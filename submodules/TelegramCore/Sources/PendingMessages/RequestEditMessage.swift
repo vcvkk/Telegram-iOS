@@ -76,8 +76,14 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
             if todo.flags.contains(.othersCanComplete) {
                 flags |= 1 << 1
             }
-            let inputTodo = Api.InputMedia.inputMediaTodo(.init(todo: .todoList(.init(flags: flags, title: .textWithEntities(.init(text: todo.text, entities: apiEntitiesFromMessageTextEntities(todo.textEntities, associatedPeers: SimpleDictionary()))), list: todo.items.map { $0.apiItem }))))
-            uploadedMedia = .single(.content(PendingMessageUploadedContentAndReuploadInfo(content: .media(inputTodo, text), reuploadInfo: nil, cacheReferenceKey: nil)))
+            // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+            uploadedMedia = postbox.transaction { transaction -> Bool in
+                return transaction.getPeer(accountPeerId)?.isPremium ?? false
+            }
+            |> map { isPremium -> PendingMessageUploadedContentResult? in
+                let inputTodo = Api.InputMedia.inputMediaTodo(.init(todo: .todoList(.init(flags: flags, title: .textWithEntities(.init(text: todo.text, entities: apiEntitiesFromMessageTextEntities(todo.textEntities, associatedPeers: SimpleDictionary(), isPremium: isPremium))), list: todo.items.map { $0.apiItem(isPremium: isPremium) }))))
+                return .content(PendingMessageUploadedContentAndReuploadInfo(content: .media(inputTodo, text), reuploadInfo: nil, cacheReferenceKey: nil))
+            }
         }
         else if let uploadSignal = generateUploadSignal(forceReupload) {
             uploadedMedia = .single(.progress(PendingMessageUploadedContentProgress(progress: 0.027)))

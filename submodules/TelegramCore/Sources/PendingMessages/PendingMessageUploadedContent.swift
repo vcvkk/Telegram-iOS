@@ -305,6 +305,12 @@ func mediaContentToUpload(accountPeerId: PeerId, network: Network, postbox: Post
         if peerId.namespace == Namespaces.Peer.SecretChat {
             return .fail(.generic)
         }
+        // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+        return postbox.transaction { transaction -> Bool in
+            return transaction.getPeer(accountPeerId)?.isPremium ?? false
+        }
+        |> castError(PendingMessageUploadError.self)
+        |> mapToSignal { isPremium -> Signal<PendingMessageUploadedContentResult, PendingMessageUploadError> in
         var pollFlags: Int32 = 0
         switch poll.kind {
         case let .poll(multipleAnswers):
@@ -354,20 +360,20 @@ func mediaContentToUpload(accountPeerId: PeerId, network: Network, postbox: Post
         var mappedSolutionEntities: [Api.MessageEntity]?
         if let solution = poll.results.solution {
             mappedSolution = solution.text
-            mappedSolutionEntities = apiTextAttributeEntities(TextEntitiesMessageAttribute(entities: solution.entities), associatedPeers: SimpleDictionary())
+            mappedSolutionEntities = apiTextAttributeEntities(TextEntitiesMessageAttribute(entities: solution.entities), associatedPeers: SimpleDictionary(), isPremium: isPremium)
             pollMediaFlags |= 1 << 1
         }
 
         var apiAnswers: [Api.PollAnswer] = []
         for (_, option) in poll.options.enumerated() {
-            let textWithEntities = Api.TextWithEntities.textWithEntities(.init(text: option.text, entities: apiEntitiesFromMessageTextEntities(option.entities, associatedPeers: SimpleDictionary())))
+            let textWithEntities = Api.TextWithEntities.textWithEntities(.init(text: option.text, entities: apiEntitiesFromMessageTextEntities(option.entities, associatedPeers: SimpleDictionary(), isPremium: isPremium)))
             if let media = option.media, let inputMedia = pollCloudMediaToInputMedia(media) {
                 apiAnswers.append(.inputPollAnswer(.init(flags: 1 << 0, text: textWithEntities, media: inputMedia)))
             } else {
                 apiAnswers.append(.pollAnswer(.init(flags: 0, text: textWithEntities, option: Buffer(data: option.opaqueIdentifier), media: nil, addedBy: nil, date: nil)))
             }
         }
-        
+
         let attachedInputMedia = poll.attachedMedia.flatMap(pollCloudMediaToInputMedia)
         if attachedInputMedia != nil {
             pollMediaFlags |= 1 << 3
@@ -376,8 +382,9 @@ func mediaContentToUpload(accountPeerId: PeerId, network: Network, postbox: Post
         if solutionInputMedia != nil {
             pollMediaFlags |= 1 << 2
         }
-        let inputPoll = Api.InputMedia.inputMediaPoll(.init(flags: pollMediaFlags, poll: .poll(.init(id: 0, flags: pollFlags, question: .textWithEntities(.init( text: poll.text, entities: apiEntitiesFromMessageTextEntities(poll.textEntities, associatedPeers: SimpleDictionary()) )), answers: apiAnswers, closePeriod: poll.deadlineTimeout, closeDate: poll.deadlineDate, hash: 0)), correctAnswers: correctAnswers, attachedMedia: attachedInputMedia, solution: mappedSolution, solutionEntities: mappedSolutionEntities, solutionMedia: solutionInputMedia))
+        let inputPoll = Api.InputMedia.inputMediaPoll(.init(flags: pollMediaFlags, poll: .poll(.init(id: 0, flags: pollFlags, question: .textWithEntities(.init( text: poll.text, entities: apiEntitiesFromMessageTextEntities(poll.textEntities, associatedPeers: SimpleDictionary(), isPremium: isPremium) )), answers: apiAnswers, closePeriod: poll.deadlineTimeout, closeDate: poll.deadlineDate, hash: 0)), correctAnswers: correctAnswers, attachedMedia: attachedInputMedia, solution: mappedSolution, solutionEntities: mappedSolutionEntities, solutionMedia: solutionInputMedia))
         return .single(.content(PendingMessageUploadedContentAndReuploadInfo(content: .media(inputPoll, text), reuploadInfo: nil, cacheReferenceKey: nil)))
+        }
     } else if let todo = media as? TelegramMediaTodo {
         var flags: Int32 = 0
         if todo.flags.contains(.othersCanAppend) {
@@ -386,8 +393,15 @@ func mediaContentToUpload(accountPeerId: PeerId, network: Network, postbox: Post
         if todo.flags.contains(.othersCanComplete) {
             flags |= 1 << 1
         }
-        let inputTodo = Api.InputMedia.inputMediaTodo(.init(todo: .todoList(.init(flags: flags, title: .textWithEntities(.init(text: todo.text, entities: apiEntitiesFromMessageTextEntities(todo.textEntities, associatedPeers: SimpleDictionary()))), list: todo.items.map { $0.apiItem }))))
-        return .single(.content(PendingMessageUploadedContentAndReuploadInfo(content: .media(inputTodo, text), reuploadInfo: nil, cacheReferenceKey: nil)))
+        // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+        return postbox.transaction { transaction -> Bool in
+            return transaction.getPeer(accountPeerId)?.isPremium ?? false
+        }
+        |> castError(PendingMessageUploadError.self)
+        |> mapToSignal { isPremium -> Signal<PendingMessageUploadedContentResult, PendingMessageUploadError> in
+            let inputTodo = Api.InputMedia.inputMediaTodo(.init(todo: .todoList(.init(flags: flags, title: .textWithEntities(.init(text: todo.text, entities: apiEntitiesFromMessageTextEntities(todo.textEntities, associatedPeers: SimpleDictionary(), isPremium: isPremium))), list: todo.items.map { $0.apiItem(isPremium: isPremium) }))))
+            return .single(.content(PendingMessageUploadedContentAndReuploadInfo(content: .media(inputTodo, text), reuploadInfo: nil, cacheReferenceKey: nil)))
+        }
     } else if let dice = media as? TelegramMediaDice {
         if let tonAmount = dice.tonAmount {
             let seedBytes = malloc(32)!

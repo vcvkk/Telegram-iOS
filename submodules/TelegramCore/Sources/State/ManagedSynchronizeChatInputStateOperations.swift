@@ -73,7 +73,7 @@ private func withTakenOperation(postbox: Postbox, peerId: PeerId, tag: PeerOpera
     } |> switchToLatest
 }
 
-func managedSynchronizeChatInputStateOperations(postbox: Postbox, network: Network) -> Signal<Bool, NoError> {
+func managedSynchronizeChatInputStateOperations(accountPeerId: PeerId, postbox: Postbox, network: Network) -> Signal<Bool, NoError> {
     return Signal { subscriber in
         let hasRunningOperations = ValuePromise<Bool>(false, ignoreRepeated: true)
         let tag: PeerOperationLogTag = OperationLogTags.SynchronizeChatInputStates
@@ -93,7 +93,7 @@ func managedSynchronizeChatInputStateOperations(postbox: Postbox, network: Netwo
                 let signal = withTakenOperation(postbox: postbox, peerId: entry.peerId, tag: tag, tagLocalIndex: entry.tagLocalIndex, { transaction, entry -> Signal<Void, NoError> in
                     if let entry = entry {
                         if let operation = entry.contents as? SynchronizeChatInputStateOperation {
-                            return synchronizeChatInputState(transaction: transaction, postbox: postbox, network: network, peerId: entry.peerId, threadId: operation.threadId, operation: operation)
+                            return synchronizeChatInputState(transaction: transaction, postbox: postbox, network: network, accountPeerId: accountPeerId, peerId: entry.peerId, threadId: operation.threadId, operation: operation)
                         } else {
                             assertionFailure()
                         }
@@ -125,7 +125,9 @@ func managedSynchronizeChatInputStateOperations(postbox: Postbox, network: Netwo
     }
 }
 
-private func synchronizeChatInputState(transaction: Transaction, postbox: Postbox, network: Network, peerId: PeerId, threadId: Int64?, operation: SynchronizeChatInputStateOperation) -> Signal<Void, NoError> {
+private func synchronizeChatInputState(transaction: Transaction, postbox: Postbox, network: Network, accountPeerId: PeerId, peerId: PeerId, threadId: Int64?, operation: SynchronizeChatInputStateOperation) -> Signal<Void, NoError> {
+    // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+    let isPremium = transaction.getPeer(accountPeerId)?.isPremium ?? false
     var inputState: SynchronizeableChatInputState?
     let peerChatInterfaceState: StoredPeerChatInterfaceState?
     if let threadId {
@@ -193,7 +195,7 @@ private func synchronizeChatInputState(transaction: Transaction, postbox: Postbo
                             }
                         }
                     }
-                    quoteEntities = apiEntitiesFromMessageTextEntities(replyQuote.entities, associatedPeers: associatedPeers)
+                    quoteEntities = apiEntitiesFromMessageTextEntities(replyQuote.entities, associatedPeers: associatedPeers, isPremium: isPremium)
                 }
             }
             
@@ -251,7 +253,7 @@ private func synchronizeChatInputState(transaction: Transaction, postbox: Postbo
             flags |= 1 << 8
         }
         
-        return network.request(Api.functions.messages.saveDraft(flags: flags, replyTo: replyTo, peer: inputPeer, message: inputState?.text ?? "", entities: apiEntitiesFromMessageTextEntities(inputState?.entities ?? [], associatedPeers: SimpleDictionary()), media: nil, effect: nil, suggestedPost: suggestedPost))
+        return network.request(Api.functions.messages.saveDraft(flags: flags, replyTo: replyTo, peer: inputPeer, message: inputState?.text ?? "", entities: apiEntitiesFromMessageTextEntities(inputState?.entities ?? [], associatedPeers: SimpleDictionary(), isPremium: isPremium), media: nil, effect: nil, suggestedPost: suggestedPost))
         |> delay(2.0, queue: Queue.concurrentDefaultQueue())
         |> `catch` { _ -> Signal<Api.Bool, NoError> in
             return .single(.boolFalse)

@@ -55,6 +55,8 @@ func _internal_appendTodoMessageItems(account: Account, messageId: MessageId, it
         guard let peer = transaction.getPeer(messageId.peerId), let inputPeer = apiInputPeer(peer) else {
             return .complete()
         }
+        // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+        let isPremium = transaction.getPeer(account.peerId)?.isPremium ?? false
         transaction.updateMessage(messageId, update: { currentMessage in
             let storeForwardInfo = currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init)
             var media: [Media] = []
@@ -65,7 +67,7 @@ func _internal_appendTodoMessageItems(account: Account, messageId: MessageId, it
             }
             return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: currentMessage.attributes, media: media))
         })
-        return account.network.request(Api.functions.messages.appendTodoList(peer: inputPeer, msgId: messageId.id, list: items.map { $0.apiItem }))
+        return account.network.request(Api.functions.messages.appendTodoList(peer: inputPeer, msgId: messageId.id, list: items.map { $0.apiItem(isPremium: isPremium) }))
         |> mapError { _ -> AppendTodoMessageError in
             return .generic
         }

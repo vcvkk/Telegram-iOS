@@ -20,8 +20,8 @@ extension TelegramMediaTodo.Item {
         }
     }
     
-    var apiItem: Api.TodoItem {
-        return .todoItem(.init(id: self.id, title: .textWithEntities(.init(text: self.text, entities: apiEntitiesFromMessageTextEntities(self.entities, associatedPeers: SimpleDictionary())))))
+    func apiItem(isPremium: Bool = true) -> Api.TodoItem {
+        return .todoItem(.init(id: self.id, title: .textWithEntities(.init(text: self.text, entities: apiEntitiesFromMessageTextEntities(self.entities, associatedPeers: SimpleDictionary(), isPremium: isPremium)))))
     }
 }
 
