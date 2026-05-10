@@ -13,30 +13,34 @@ private func crashFilePath() -> String {
 private var crashSignals: [Int32] = [SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGFPE, SIGTRAP]
 private var previousHandlerPtrs: [Int32: UInt] = [:]
 
-// Pre-computed at install() time so it is available inside the signal handler
-// without calling malloc-backed APIs on a potentially corrupted heap.
+// Pre-computed at install() — available in signal handler without malloc-backed calls.
 private var precomputedHeader = ""
 
 private func signalName(_ signal: Int32) -> String {
     switch signal {
-    case SIGSEGV:  return "SIGSEGV (Segmentation fault)"
-    case SIGABRT:  return "SIGABRT (Abort)"
-    case SIGBUS:   return "SIGBUS (Bus error)"
-    case SIGILL:   return "SIGILL (Illegal instruction)"
-    case SIGFPE:   return "SIGFPE (Floating point exception)"
-    case SIGTRAP:  return "SIGTRAP (Trap)"
-    default:       return "Signal \(signal)"
+    case SIGSEGV:  return "SIGSEGV"
+    case SIGABRT:  return "SIGABRT"
+    case SIGBUS:   return "SIGBUS"
+    case SIGILL:   return "SIGILL"
+    case SIGFPE:   return "SIGFPE"
+    case SIGTRAP:  return "SIGTRAP"
+    default:       return "SIG\(signal)"
     }
 }
 
-private func currentThreadDescription() -> String {
-    if Thread.isMainThread { return "main" }
-    let name = Thread.current.name ?? ""
-    return name.isEmpty ? "background" : name
+private func signalDescription(_ signal: Int32) -> String {
+    switch signal {
+    case SIGSEGV:  return "Segmentation fault"
+    case SIGABRT:  return "Abort"
+    case SIGBUS:   return "Bus error"
+    case SIGILL:   return "Illegal instruction"
+    case SIGFPE:   return "Floating point exception"
+    case SIGTRAP:  return "Trap"
+    default:       return "Unknown"
+    }
 }
 
-// Resident memory footprint via Mach task_info — works in signal handler context.
-private func currentMemoryUsageMB() -> UInt64 {
+private func currentMemoryUsage() -> (used: UInt64, total: UInt64) {
     var info = task_vm_info_data_t()
     var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
     let kr = withUnsafeMutablePointer(to: &info) {
@@ -44,7 +48,33 @@ private func currentMemoryUsageMB() -> UInt64 {
             task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
         }
     }
-    return kr == KERN_SUCCESS ? info.phys_footprint / 1024 / 1024 : 0
+    let used  = kr == KERN_SUCCESS ? info.phys_footprint / 1024 / 1024 : 0
+    let total = ProcessInfo.processInfo.physicalMemory / 1024 / 1024
+    return (used, total)
+}
+
+// dladdr-based frame formatter — matches Android NDK tombstone style:
+//   #00  0x000000010521f000  TelegramCoreFramework (SomeSymbol + 44)
+private func formatFrame(_ index: Int, _ address: UnsafeMutableRawPointer?) -> String {
+    guard let addr = address else {
+        return String(format: "  #%02d  (null)", index)
+    }
+    let addrInt = UInt(bitPattern: addr)
+    var info = Dl_info()
+    if dladdr(addr, &info) != 0 {
+        let module = info.dli_fname.map {
+            String(cString: $0).components(separatedBy: "/").last ?? "?"
+        } ?? "?"
+        if let symPtr = info.dli_sname, let symBase = info.dli_saddr {
+            let sym    = String(cString: symPtr)
+            let offset = addrInt - UInt(bitPattern: symBase)
+            return String(format: "  #%02d  0x%016lx  %@ (%@ + %lu)", index, addrInt, module, sym, offset)
+        } else if let imgBase = info.dli_fbase {
+            let offset = addrInt - UInt(bitPattern: imgBase)
+            return String(format: "  #%02d  0x%016lx  %@ + %lu", index, addrInt, module, offset)
+        }
+    }
+    return String(format: "  #%02d  0x%016lx", index, addrInt)
 }
 
 private func buildPrecomputedHeader() -> String {
@@ -52,9 +82,10 @@ private func buildPrecomputedHeader() -> String {
     formatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
     let date = formatter.string(from: Date())
 
-    let bundle = Bundle.main
-    let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-    let build   = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+    let bundle    = Bundle.main
+    let version   = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+    let build     = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+    let bundleId  = bundle.bundleIdentifier ?? "com.exteragram.messenger"
 
     var sysInfo = utsname()
     uname(&sysInfo)
@@ -62,48 +93,42 @@ private func buildPrecomputedHeader() -> String {
         $0.withMemoryRebound(to: CChar.self, capacity: 1) { String(cString: $0) }
     }
 
-    let totalRAM = ProcessInfo.processInfo.physicalMemory / 1024 / 1024
-
     #if arch(arm64)
     let arch = "arm64"
     #else
     let arch = "x86_64"
     #endif
 
-    return [
-        "Date:         \(date)",
-        "App Version:  \(version) (\(build))",
-        "iOS:          \(UIDevice.current.systemVersion)",
-        "Device:       \(machine)",
-        "Architecture: \(arch)",
-        "Total RAM:    \(totalRAM) MB",
-        ""
-    ].joined(separator: "\n")
+    return """
+    *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+    App:     exteraGram \(version) (\(build))
+    Package: \(bundleId)
+    iOS:     \(UIDevice.current.systemVersion)
+    Device:  \(machine) (\(arch))
+    Date:    \(date)
+
+    """
 }
 
 private func signalHandler(_ sig: Int32) {
     var frames = [UnsafeMutableRawPointer?](repeating: nil, count: 128)
-    let count = backtrace(&frames, 128)
+    let count  = backtrace(&frames, 128)
 
-    let memMB  = currentMemoryUsageMB()
-    let thread = currentThreadDescription()
+    let (memUsed, memTotal) = currentMemoryUsage()
+    let pid    = getpid()
+    let tid    = pthread_mach_thread_np(pthread_self())
+    let thread = Thread.isMainThread ? "main" : (Thread.current.name.flatMap { $0.isEmpty ? nil : $0 } ?? "background")
 
-    var report = "=== exteraGram Crash Report ===\n"
-    report += precomputedHeader
-    report += "Memory Used:  \(memMB) MB\n"
-    report += "Thread:       \(thread)\n"
+    var report  = precomputedHeader
+    report += "pid: \(pid), tid: \(tid), name: \(thread)\n"
+    report += "RAM: \(memUsed) MB used / \(memTotal) MB total\n"
     report += "\n"
-    report += "Signal: \(signalName(sig))\n"
+    report += "signal \(sig) (\(signalName(sig))) — \(signalDescription(sig))\n"
     report += "\n"
-    report += "Backtrace:\n"
+    report += "backtrace:\n"
 
-    if let symbols = backtrace_symbols(&frames, count) {
-        for i in 0..<Int(count) {
-            if let sym = symbols[i] {
-                report += String(cString: sym) + "\n"
-            }
-        }
-        free(symbols)
+    for i in 0..<Int(count) {
+        report += formatFrame(i, frames[i]) + "\n"
     }
 
     let path = crashFilePath()
@@ -115,7 +140,6 @@ private func signalHandler(_ sig: Int32) {
         }
     }
 
-    // Re-raise with the previous handler
     let sdfPtr    = unsafeBitCast(SIG_DFL, to: UInt.self)
     let sigIgnPtr = unsafeBitCast(SIG_IGN, to: UInt.self)
     let prevPtr   = previousHandlerPtrs[sig] ?? sdfPtr
@@ -134,22 +158,26 @@ private func signalHandler(_ sig: Int32) {
 // MARK: - ObjC exception handler
 
 private func uncaughtExceptionHandler(_ exception: NSException) {
-    let memMB  = currentMemoryUsageMB()
-    let thread = currentThreadDescription()
+    let (memUsed, memTotal) = currentMemoryUsage()
+    let pid    = getpid()
+    let tid    = pthread_mach_thread_np(pthread_self())
+    let thread = Thread.isMainThread ? "main" : (Thread.current.name.flatMap { $0.isEmpty ? nil : $0 } ?? "background")
 
-    var report = "=== exteraGram Crash Report ===\n"
-    report += precomputedHeader
-    report += "Memory Used:  \(memMB) MB\n"
-    report += "Thread:       \(thread)\n"
+    var report  = precomputedHeader
+    report += "pid: \(pid), tid: \(tid), name: \(thread)\n"
+    report += "RAM: \(memUsed) MB used / \(memTotal) MB total\n"
     report += "\n"
-    report += "Exception: \(exception.name.rawValue)\n"
-    report += "Reason:    \(exception.reason ?? "(none)")\n"
+    report += "FATAL EXCEPTION: \(thread)\n"
+    report += "\(exception.name.rawValue): \(exception.reason ?? "(none)")\n"
     if let userInfo = exception.userInfo, !userInfo.isEmpty {
-        report += "User Info: \(userInfo)\n"
+        report += "userInfo: \(userInfo)\n"
     }
     report += "\n"
-    report += "Call Stack:\n"
-    report += exception.callStackSymbols.joined(separator: "\n")
+    report += "backtrace:\n"
+    report += exception.callStackSymbols
+        .enumerated()
+        .map { i, sym in String(format: "  #%02d  %@", i, sym) }
+        .joined(separator: "\n")
 
     try? report.write(toFile: crashFilePath(), atomically: true, encoding: .utf8)
 }
@@ -159,7 +187,6 @@ private func uncaughtExceptionHandler(_ exception: NSException) {
 public class EGCrashCatcher {
 
     public static func install() {
-        // Pre-compute on the main thread before any crash can happen
         precomputedHeader = buildPrecomputedHeader()
 
         NSSetUncaughtExceptionHandler(uncaughtExceptionHandler)
