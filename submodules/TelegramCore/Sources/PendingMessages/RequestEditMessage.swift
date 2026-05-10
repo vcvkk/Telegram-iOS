@@ -109,9 +109,9 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                 pendingMediaContent = content.content
             }
         }
-        return postbox.transaction { transaction -> (Peer?, Message?, SimpleDictionary<PeerId, Peer>) in
+        return postbox.transaction { transaction -> (Peer?, Message?, SimpleDictionary<PeerId, Peer>, Bool) in
             guard let message = transaction.getMessage(messageId) else {
-                return (nil, nil, SimpleDictionary())
+                return (nil, nil, SimpleDictionary(), false)
             }
             
             for (_, file) in inlineStickers {
@@ -142,16 +142,18 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                     }
                 }
             }
-            return (transaction.getPeer(messageId.peerId), message, peers)
+            // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+            let isPremium = transaction.getPeer(accountPeerId)?.isPremium ?? false
+            return (transaction.getPeer(messageId.peerId), message, peers, isPremium)
         }
         |> mapError { _ -> RequestEditMessageInternalError in }
-        |> mapToSignal { peer, message, associatedPeers -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> in
+        |> mapToSignal { peer, message, associatedPeers, isPremium -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> in
             if let peer = peer, let message = message, let inputPeer = apiInputPeer(peer) {
                 var flags: Int32 = 1 << 11
-                
+
                 var apiEntities: [Api.MessageEntity]?
                 if let entities = entities {
-                    apiEntities = apiTextAttributeEntities(entities, associatedPeers: associatedPeers)
+                    apiEntities = apiTextAttributeEntities(entities, associatedPeers: associatedPeers, isPremium: isPremium)
                     flags |= Int32(1 << 3)
                 }
                 

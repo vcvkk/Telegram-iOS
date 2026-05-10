@@ -1018,6 +1018,8 @@ public final class PendingMessageManager {
                 
                 return .complete()
             } else if let peer = transaction.getPeer(peerId), let inputPeer = apiInputPeer(peer) {
+                // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+                let isPremium = transaction.getPeer(accountPeerId)?.isPremium ?? false
                 var isForward = false
                 var hideSendersNames = false
                 var hideCaptions = false
@@ -1212,7 +1214,7 @@ public final class PendingMessageManager {
                                     var messageEntities: [Api.MessageEntity]?
                                     for attribute in message.attributes {
                                         if let attribute = attribute as? TextEntitiesMessageAttribute {
-                                            messageEntities = apiTextAttributeEntities(attribute, associatedPeers: message.peers)
+                                            messageEntities = apiTextAttributeEntities(attribute, associatedPeers: message.peers, isPremium: isPremium)
                                         }
                                     }
                                     
@@ -1286,7 +1288,7 @@ public final class PendingMessageManager {
                                         }
                                     }
                                 }
-                                quoteEntities = apiEntitiesFromMessageTextEntities(replyQuote.entities, associatedPeers: associatedPeers)
+                                quoteEntities = apiEntitiesFromMessageTextEntities(replyQuote.entities, associatedPeers: associatedPeers, isPremium: isPremium)
                             }
                             
                             if quoteOffset != nil {
@@ -1535,6 +1537,8 @@ public final class PendingMessageManager {
                 PendingMessageManager.sendSecretMessageContent(transaction: transaction, message: message, content: content)
                 return .complete()
             } else if let peer = transaction.getPeer(messageId.peerId), let inputPeer = apiInputPeer(peer) {
+                // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+                let isPremium = transaction.getPeer(accountPeerId)?.isPremium ?? false
                 var uniqueId: Int64 = 0
                 var forwardSourceInfoAttribute: ForwardSourceInfoAttribute?
                 var messageEntities: [Api.MessageEntity]?
@@ -1593,7 +1597,7 @@ public final class PendingMessageManager {
                     } else if let attribute = attribute as? ForwardSourceInfoAttribute {
                         forwardSourceInfoAttribute = attribute
                     } else if let attribute = attribute as? TextEntitiesMessageAttribute {
-                        messageEntities = apiTextAttributeEntities(attribute, associatedPeers: message.peers)
+                        messageEntities = apiTextAttributeEntities(attribute, associatedPeers: message.peers, isPremium: isPremium)
                     } else if let attribute = attribute as? OutgoingContentInfoMessageAttribute {
                         if attribute.flags.contains(.disableLinkPreviews) {
                             flags |= Int32(1 << 1)
@@ -1690,7 +1694,7 @@ public final class PendingMessageManager {
                                             }
                                         }
                                     }
-                                    quoteEntities = apiEntitiesFromMessageTextEntities(replyQuote.entities, associatedPeers: associatedPeers)
+                                    quoteEntities = apiEntitiesFromMessageTextEntities(replyQuote.entities, associatedPeers: associatedPeers, isPremium: isPremium)
                                 }
                                 
                                 if quoteOffset != nil {
@@ -1795,7 +1799,7 @@ public final class PendingMessageManager {
                                             }
                                         }
                                     }
-                                    quoteEntities = apiEntitiesFromMessageTextEntities(replyQuote.entities, associatedPeers: associatedPeers)
+                                    quoteEntities = apiEntitiesFromMessageTextEntities(replyQuote.entities, associatedPeers: associatedPeers, isPremium: isPremium)
                                 }
                             }
 
@@ -1946,7 +1950,7 @@ public final class PendingMessageManager {
                                             }
                                         }
                                     }
-                                    quoteEntities = apiEntitiesFromMessageTextEntities(replyQuote.entities, associatedPeers: associatedPeers)
+                                    quoteEntities = apiEntitiesFromMessageTextEntities(replyQuote.entities, associatedPeers: associatedPeers, isPremium: isPremium)
                                 }
                             }
 

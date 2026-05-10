@@ -270,6 +270,8 @@ private func sendUploadedMessageContent(
     threadId: Int64?
 ) -> Signal<Never, StandaloneSendMessagesError> {
     return postbox.transaction { transaction -> Signal<Never, StandaloneSendMessagesError> in
+        // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+        let isPremium = transaction.getPeer(accountPeerId)?.isPremium ?? false
         if peerId.namespace == Namespaces.Peer.SecretChat {
             var secretFile: SecretChatOutgoingFile?
             switch content.content {
@@ -375,7 +377,7 @@ private func sendUploadedMessageContent(
                             associatedPeers[peer.id] = peer
                         }
                     }
-                    messageEntities = apiTextAttributeEntities(attribute, associatedPeers: associatedPeers)
+                    messageEntities = apiTextAttributeEntities(attribute, associatedPeers: associatedPeers, isPremium: isPremium)
                 } else if let attribute = attribute as? OutgoingContentInfoMessageAttribute {
                     if attribute.flags.contains(.disableLinkPreviews) {
                         flags |= Int32(1 << 1)
@@ -644,6 +646,8 @@ public func standaloneSendMessage(account: Account, peerId: PeerId, text: String
 
 private func sendMessageContent(account: Account, peerId: PeerId, attributes: [MessageAttribute], content: StandaloneMessageContent, threadId: Int32?) -> Signal<Void, NoError> {
     return account.postbox.transaction { transaction -> Signal<Void, NoError> in
+        // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+        let isPremium = transaction.getPeer(account.peerId)?.isPremium ?? false
         if peerId.namespace == Namespaces.Peer.SecretChat {
             return .complete()
         } else if let peer = transaction.getPeer(peerId), let inputPeer = apiInputPeer(peer) {
@@ -671,7 +675,7 @@ private func sendMessageContent(account: Account, peerId: PeerId, attributes: [M
                 } else if let _ = attribute as? ForwardSourceInfoAttribute {
                     //forwardSourceInfoAttribute = attribute
                 } else if let attribute = attribute as? TextEntitiesMessageAttribute {
-                    messageEntities = apiTextAttributeEntities(attribute, associatedPeers: SimpleDictionary())
+                    messageEntities = apiTextAttributeEntities(attribute, associatedPeers: SimpleDictionary(), isPremium: isPremium)
                 } else if let attribute = attribute as? OutgoingContentInfoMessageAttribute {
                     if attribute.flags.contains(.disableLinkPreviews) {
                         flags |= Int32(1 << 1)

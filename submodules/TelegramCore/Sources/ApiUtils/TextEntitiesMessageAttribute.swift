@@ -3,9 +3,9 @@ import Postbox
 import TelegramApi
 
 
-func apiEntitiesFromMessageTextEntities(_ entities: [MessageTextEntity], associatedPeers: SimpleDictionary<PeerId, Peer>) -> [Api.MessageEntity] {
+func apiEntitiesFromMessageTextEntities(_ entities: [MessageTextEntity], associatedPeers: SimpleDictionary<PeerId, Peer>, isPremium: Bool = true) -> [Api.MessageEntity] {
     var apiEntities: [Api.MessageEntity] = []
-    
+
     for entity in entities {
         let offset: Int32 = Int32(entity.range.lowerBound)
         let length: Int32 = Int32(entity.range.upperBound - entity.range.lowerBound)
@@ -53,7 +53,13 @@ func apiEntitiesFromMessageTextEntities(_ entities: [MessageTextEntity], associa
         case .Spoiler:
             apiEntities.append(.messageEntitySpoiler(.init(offset: offset, length: length)))
         case let .CustomEmoji(_, fileId):
-            apiEntities.append(.messageEntityCustomEmoji(.init(offset: offset, length: length, documentId: fileId)))
+            if isPremium {
+                apiEntities.append(.messageEntityCustomEmoji(.init(offset: offset, length: length, documentId: fileId)))
+            } else {
+                // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+                // so the server accepts the message; other exteraGram clients render them animated.
+                apiEntities.append(.messageEntityTextUrl(.init(offset: offset, length: length, url: "tg://emoji?id=\(fileId)")))
+            }
         case let .FormattedDate(format, date):
             var flags: Int32 = 0
             switch format {
@@ -91,6 +97,6 @@ func apiEntitiesFromMessageTextEntities(_ entities: [MessageTextEntity], associa
     return apiEntities
 }
 
-func apiTextAttributeEntities(_ attribute: TextEntitiesMessageAttribute, associatedPeers: SimpleDictionary<PeerId, Peer>) -> [Api.MessageEntity] {
-    return apiEntitiesFromMessageTextEntities(attribute.entities, associatedPeers: associatedPeers)
+func apiTextAttributeEntities(_ attribute: TextEntitiesMessageAttribute, associatedPeers: SimpleDictionary<PeerId, Peer>, isPremium: Bool = true) -> [Api.MessageEntity] {
+    return apiEntitiesFromMessageTextEntities(attribute.entities, associatedPeers: associatedPeers, isPremium: isPremium)
 }
