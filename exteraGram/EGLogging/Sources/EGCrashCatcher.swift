@@ -13,7 +13,7 @@ private func crashFilePath() -> String {
 private var crashSignals: [Int32] = [SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGFPE, SIGTRAP]
 private var previousHandlerPtrs: [Int32: UInt] = [:]
 
-// Pre-computed at install() for use inside the signal handler.
+// Pre-computed at install() — safe to read from signal handler.
 private var precomputedDeviceLine = ""
 
 private func signalName(_ signal: Int32) -> String {
@@ -40,21 +40,7 @@ private func signalDescription(_ signal: Int32) -> String {
     }
 }
 
-// time()/localtime_r are async-signal-safe — safe to call from signal handlers.
-private func timestampString() -> String {
-    var t  = time(nil)
-    var tm = tm()
-    localtime_r(&t, &tm)
-    return String(format: "%02d_%02d_%04d_%02d_%02d_%02d.000",
-                  tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900,
-                  tm.tm_hour, tm.tm_min, tm.tm_sec)
-}
-
-private func logLine(_ level: String, _ message: String) -> String {
-    return "\(timestampString()) \(level)/tmessages: \(message)\n"
-}
-
-private func currentMemoryUsage() -> (used: UInt64, total: UInt64) {
+private func currentMemoryUsageMB() -> UInt64 {
     var info  = task_vm_info_data_t()
     var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
     let kr = withUnsafeMutablePointer(to: &info) {
@@ -62,12 +48,10 @@ private func currentMemoryUsage() -> (used: UInt64, total: UInt64) {
             task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
         }
     }
-    let used  = kr == KERN_SUCCESS ? info.phys_footprint / 1024 / 1024 : 0
-    let total = ProcessInfo.processInfo.physicalMemory / 1024 / 1024
-    return (used, total)
+    return kr == KERN_SUCCESS ? info.phys_footprint / 1024 / 1024 : 0
 }
 
-// dladdr-based frame: "\tat Module (Symbol + offset)" — mirrors Android "\tat Class.method(File.java:line)"
+// dladdr-based frame — mirrors Android "\tat ClassName.method(File.java:line)"
 private func frameString(_ address: UnsafeMutableRawPointer?) -> String {
     guard let addr = address else { return "\tat (null)" }
     let addrInt = UInt(bitPattern: addr)
@@ -89,11 +73,11 @@ private func frameString(_ address: UnsafeMutableRawPointer?) -> String {
 }
 
 private func buildPrecomputedDeviceLine() -> String {
-    let bundle   = Bundle.main
-    let version  = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-    let build    = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-    let iosVer   = UIDevice.current.systemVersion
-    let totalRAM = ProcessInfo.processInfo.physicalMemory / 1024 / 1024
+    let bundle  = Bundle.main
+    let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+    let build   = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+    let iosVer  = UIDevice.current.systemVersion
+    let memMB   = ProcessInfo.processInfo.physicalMemory / 1024 / 1024
 
     var sysInfo = utsname()
     uname(&sysInfo)
@@ -107,25 +91,25 @@ private func buildPrecomputedDeviceLine() -> String {
     let arch = "x86_64"
     #endif
 
-    return "exteraGram \(version) (\(build)) | \(machine) | iOS \(iosVer) | \(arch) | total RAM \(totalRAM) MB"
+    return "exteraGram \(version) (\(build)) | \(machine) | iOS \(iosVer) | \(arch) | \(memMB) MB RAM"
 }
 
 private func signalHandler(_ sig: Int32) {
     var frames = [UnsafeMutableRawPointer?](repeating: nil, count: 128)
     let count  = backtrace(&frames, 128)
 
-    let (memUsed, memTotal) = currentMemoryUsage()
-    let pid    = getpid()
-    let tid    = pthread_mach_thread_np(pthread_self())
-    let thread = Thread.isMainThread ? "main" : (Thread.current.name.flatMap { $0.isEmpty ? nil : $0 } ?? "background")
+    let memUsed = currentMemoryUsageMB()
+    let pid     = getpid()
+    let tid     = pthread_mach_thread_np(pthread_self())
+    let thread  = Thread.isMainThread ? "main" : (Thread.current.name.flatMap { $0.isEmpty ? nil : $0 } ?? "background")
 
-    var report  = logLine("I", precomputedDeviceLine)
+    // Header line with device context (iOS has no Crashlytics to capture this separately)
+    var report  = "\(precomputedDeviceLine) | used \(memUsed) MB | pid=\(pid) tid=\(tid) thread=\(thread)\n"
     report     += "\n"
-    report     += logLine("FATAL", "signal \(sig) (\(signalName(sig))) — \(signalDescription(sig))")
-    report     += logLine("FATAL", "pid=\(pid), tid=\(tid), thread=\(thread), RAM=\(memUsed)/\(memTotal) MB")
-
+    // Exception line — mirrors "ExceptionType: message" from Android Log.getStackTraceString()
+    report     += "\(signalName(sig)): \(signalDescription(sig))\n"
     for i in 0..<Int(count) {
-        report += logLine("FATAL", frameString(frames[i]))
+        report += frameString(frames[i]) + "\n"
     }
 
     let path = crashFilePath()
@@ -155,20 +139,20 @@ private func signalHandler(_ sig: Int32) {
 // MARK: - ObjC exception handler
 
 private func uncaughtExceptionHandler(_ exception: NSException) {
-    let (memUsed, memTotal) = currentMemoryUsage()
-    let pid    = getpid()
-    let tid    = pthread_mach_thread_np(pthread_self())
-    let thread = Thread.isMainThread ? "main" : (Thread.current.name.flatMap { $0.isEmpty ? nil : $0 } ?? "background")
+    let memUsed = currentMemoryUsageMB()
+    let pid     = getpid()
+    let tid     = pthread_mach_thread_np(pthread_self())
+    let thread  = Thread.isMainThread ? "main" : (Thread.current.name.flatMap { $0.isEmpty ? nil : $0 } ?? "background")
 
-    var report  = logLine("I", precomputedDeviceLine)
+    var report  = "\(precomputedDeviceLine) | used \(memUsed) MB | pid=\(pid) tid=\(tid) thread=\(thread)\n"
     report     += "\n"
-    report     += logLine("FATAL", "\(exception.name.rawValue): \(exception.reason ?? "(none)")")
-    report     += logLine("FATAL", "pid=\(pid), tid=\(tid), thread=\(thread), RAM=\(memUsed)/\(memTotal) MB")
+    // Exception line — same structure as Android: "ExceptionType: message"
+    report     += "\(exception.name.rawValue): \(exception.reason ?? "(none)")\n"
     if let userInfo = exception.userInfo, !userInfo.isEmpty {
-        report += logLine("FATAL", "userInfo: \(userInfo)")
+        report += "\tuserInfo: \(userInfo)\n"
     }
     for sym in exception.callStackSymbols {
-        report += logLine("FATAL", "\tat \(sym)")
+        report += "\tat \(sym)\n"
     }
 
     try? report.write(toFile: crashFilePath(), atomically: true, encoding: .utf8)
