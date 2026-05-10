@@ -45,8 +45,8 @@ private func timestampString() -> String {
     var t  = time(nil)
     var tm = tm()
     localtime_r(&t, &tm)
-    return String(format: "%04d-%02d-%02d %02d:%02d:%02d.000",
-                  tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+    return String(format: "%02d_%02d_%04d_%02d_%02d_%02d.000",
+                  tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900,
                   tm.tm_hour, tm.tm_min, tm.tm_sec)
 }
 
@@ -122,11 +122,10 @@ private func signalHandler(_ sig: Int32) {
     var report  = logLine("I", precomputedDeviceLine)
     report     += "\n"
     report     += logLine("FATAL", "signal \(sig) (\(signalName(sig))) — \(signalDescription(sig))")
-    report     += logLine("E",     "pid=\(pid), tid=\(tid), thread=\(thread), RAM=\(memUsed)/\(memTotal) MB")
-    report     += "\n"
+    report     += logLine("FATAL", "pid=\(pid), tid=\(tid), thread=\(thread), RAM=\(memUsed)/\(memTotal) MB")
 
     for i in 0..<Int(count) {
-        report += logLine("E", frameString(frames[i]))
+        report += logLine("FATAL", frameString(frames[i]))
     }
 
     let path = crashFilePath()
@@ -164,13 +163,12 @@ private func uncaughtExceptionHandler(_ exception: NSException) {
     var report  = logLine("I", precomputedDeviceLine)
     report     += "\n"
     report     += logLine("FATAL", "\(exception.name.rawValue): \(exception.reason ?? "(none)")")
-    report     += logLine("E",     "pid=\(pid), tid=\(tid), thread=\(thread), RAM=\(memUsed)/\(memTotal) MB")
+    report     += logLine("FATAL", "pid=\(pid), tid=\(tid), thread=\(thread), RAM=\(memUsed)/\(memTotal) MB")
     if let userInfo = exception.userInfo, !userInfo.isEmpty {
-        report += logLine("E", "userInfo: \(userInfo)")
+        report += logLine("FATAL", "userInfo: \(userInfo)")
     }
-    report += "\n"
     for sym in exception.callStackSymbols {
-        report += logLine("E", "\tat \(sym)")
+        report += logLine("FATAL", "\tat \(sym)")
     }
 
     try? report.write(toFile: crashFilePath(), atomically: true, encoding: .utf8)
