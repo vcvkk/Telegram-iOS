@@ -242,7 +242,11 @@ public extension ChatReplyThreadMessage {
 
 public func messageIsEligibleForLargeEmoji(_ message: Message) -> Bool {
     if !message.text.isEmpty && message.text.containsOnlyEmoji {
-        if !(message.textEntitiesAttribute?.entities.isEmpty ?? true) {
+        let nonFakeEmojiEntities = message.textEntitiesAttribute?.entities.filter { entity in
+            if case let .TextUrl(url) = entity.type, url.hasPrefix("tg://emoji?id=") { return false }
+            return true
+        }
+        if !(nonFakeEmojiEntities?.isEmpty ?? true) {
             return false
         }
         return true
@@ -263,10 +267,11 @@ public func messageIsEligibleForLargeCustomEmoji(_ message: Message) -> Bool {
     for entity in entities {
         if case let .CustomEmoji(_, fileId) = entity.type {
             if let _ = message.associatedMedia[MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)] as? TelegramMediaFile {
-                
             } else {
                 return false
             }
+        } else if case let .TextUrl(url) = entity.type, url.hasPrefix("tg://emoji?id=") {
+            // exteraGram: fake premium emoji qualify as large custom emoji
         } else {
             return false
         }

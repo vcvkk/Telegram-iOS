@@ -1268,8 +1268,12 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                         return ChatMessageBubbleContentTapAction(content: .none)
                     }
                 }
-            } else if let emoji = attributes[NSAttributedString.Key(rawValue: ChatTextInputAttributes.customEmoji.rawValue)] as? ChatTextInputTextCustomEmojiAttribute, let file = emoji.file {
-                return ChatMessageBubbleContentTapAction(content: .customEmoji(file))
+            } else if let emoji = attributes[NSAttributedString.Key(rawValue: ChatTextInputAttributes.customEmoji.rawValue)] as? ChatTextInputTextCustomEmojiAttribute {
+                let file = emoji.file ?? (self.item?.message.associatedMedia[MediaId(namespace: Namespaces.Media.CloudFile, id: emoji.fileId)] as? TelegramMediaFile)
+                if let file = file {
+                    return ChatMessageBubbleContentTapAction(content: .customEmoji(file))
+                }
+                return ChatMessageBubbleContentTapAction(content: .none)
             } else {
                 if let item = self.item, item.message.text.count == 1, !item.presentationData.largeEmoji {
                     let (emoji, fitz) = item.message.text.basicEmoji
