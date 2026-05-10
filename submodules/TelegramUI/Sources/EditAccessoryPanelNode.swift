@@ -300,6 +300,8 @@ final class EditAccessoryPanelNode: AccessoryPanelNode {
                 switch entity.type {
                 case .Spoiler, .CustomEmoji:
                     return true
+                case let .TextUrl(url):
+                    return url.hasPrefix("tg://emoji?id=")
                 default:
                     return false
                 }

@@ -492,6 +492,8 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                         return true
                     } else if case .CustomEmoji = entity.type {
                         return true
+                    } else if case let .TextUrl(url) = entity.type, url.hasPrefix("tg://emoji?id=") {
+                        return true
                     } else {
                         return false
                     }
@@ -508,6 +510,8 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                     } else if case .Spoiler = entity.type {
                         return true
                     } else if case .CustomEmoji = entity.type {
+                        return true
+                    } else if case let .TextUrl(url) = entity.type, url.hasPrefix("tg://emoji?id=") {
                         return true
                     } else {
                         return false

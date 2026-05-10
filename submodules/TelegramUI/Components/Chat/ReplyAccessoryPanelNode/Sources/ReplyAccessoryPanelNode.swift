@@ -162,6 +162,8 @@ public final class ReplyAccessoryPanelNode: AccessoryPanelNode {
                             return true
                         case .Strikethrough:
                             return true
+                        case let .TextUrl(url):
+                            return url.hasPrefix("tg://emoji?id=")
                         default:
                             return false
                         }

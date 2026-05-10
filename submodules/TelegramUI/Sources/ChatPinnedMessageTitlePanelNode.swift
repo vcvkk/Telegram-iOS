@@ -784,6 +784,8 @@ final class ChatPinnedMessageTitlePanelNode: ChatTitleAccessoryPanelNode {
                 switch entity.type {
                 case .Spoiler, .CustomEmoji:
                     return true
+                case let .TextUrl(url):
+                    return url.hasPrefix("tg://emoji?id=")
                 default:
                     return false
                 }
