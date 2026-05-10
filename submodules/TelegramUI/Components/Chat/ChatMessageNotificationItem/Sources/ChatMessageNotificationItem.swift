@@ -223,6 +223,8 @@ final class ChatMessageNotificationItemNode: NotificationItemNode {
                         return true
                     } else if case .CustomEmoji = entity.type {
                         return true
+                    } else if case let .TextUrl(url) = entity.type, url.hasPrefix("tg://emoji?id=") {
+                        return true
                     } else {
                         return false
                     }

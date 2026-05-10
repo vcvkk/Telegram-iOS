@@ -268,6 +268,8 @@ final class MessageItemComponent: Component {
                             return true
                         }
                         return false
+                    case let .TextUrl(url):
+                        return url.hasPrefix("tg://emoji?id=")
                     default:
                         return false
                     }

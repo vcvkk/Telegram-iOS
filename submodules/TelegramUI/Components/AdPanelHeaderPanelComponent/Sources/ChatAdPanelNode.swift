@@ -411,6 +411,8 @@ final class ChatAdPanelNode: ASDisplayNode {
                 switch entity.type {
                 case .CustomEmoji:
                     return true
+                case let .TextUrl(url):
+                    return url.hasPrefix("tg://emoji?id=")
                 default:
                     return false
                 }

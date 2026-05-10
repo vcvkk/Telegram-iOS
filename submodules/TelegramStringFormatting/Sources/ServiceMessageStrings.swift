@@ -50,6 +50,13 @@ private func addServiceMessageTextEntities(_ entities: [MessageTextEntity], to a
             attributedString.addAttribute(NSAttributedString.Key(rawValue: TelegramTextAttributes.Spoiler), value: true, range: entityRange)
         case let .CustomEmoji(_, fileId):
             attributedString.addAttribute(ChatTextInputAttributes.customEmoji, value: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: fileId, file: associatedMedia[MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)] as? TelegramMediaFile), range: entityRange)
+        case let .TextUrl(url):
+            if url.hasPrefix("tg://emoji?id=") {
+                let idPart = String(url.dropFirst("tg://emoji?id=".count)).components(separatedBy: "&").first ?? ""
+                if let fileId = Int64(idPart) {
+                    attributedString.addAttribute(ChatTextInputAttributes.customEmoji, value: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: fileId, file: associatedMedia[MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)] as? TelegramMediaFile), range: entityRange)
+                }
+            }
         default:
             break
         }
@@ -287,6 +294,8 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
                         switch entity.type {
                         case .Spoiler, .CustomEmoji:
                             return true
+                        case let .TextUrl(url):
+                            return url.hasPrefix("tg://emoji?id=")
                         default:
                             return false
                         }
@@ -1826,6 +1835,8 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
                     switch entity.type {
                     case .Spoiler, .CustomEmoji:
                         return true
+                    case let .TextUrl(url):
+                        return url.hasPrefix("tg://emoji?id=")
                     default:
                         return false
                     }
@@ -1864,6 +1875,8 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
                     switch entity.type {
                     case .Spoiler, .CustomEmoji:
                         return true
+                    case let .TextUrl(url):
+                        return url.hasPrefix("tg://emoji?id=")
                     default:
                         return false
                     }
