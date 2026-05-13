@@ -32,6 +32,7 @@ private enum EGDebugDisclosureLink: String {
     case sessionBackupManager
     case messageFilter
     case debugIAP
+    case pluginIconDebug
 }
 
 private enum EGDebugActions: String {
@@ -71,6 +72,7 @@ private func EGDebugControllerEntries(presentationData: PresentationData) -> [EG
     entries.append(.action(id: id.count, section: .base, actionType: .toggleDevBadgeSelf, text: "Toggle DEV badge (self)", kind: .generic))
     entries.append(.action(id: id.count, section: .base, actionType: .showBadgeCache, text: "Show badge cache", kind: .generic))
     entries.append(.action(id: id.count, section: .base, actionType: .clearBadgeCache, text: "Clear Badge cache", kind: .destructive))
+    entries.append(.disclosure(id: id.count, section: .base, link: .pluginIconDebug, text: "Plugin Icon Debug"))
     entries.append(.toggle(id: id.count, section: .base, settingName: .forceImmediateShareSheet, value: EGSimpleSettings.shared.forceSystemSharing, text: "Force System Share Sheet", enabled: true))
     
     entries.append(.toggle(id: id.count, section: .notifications, settingName: .legacyNotificationsFix, value: EGSimpleSettings.shared.legacyNotificationsFix, text: "[OLD] Fix empty notifications", enabled: true))
@@ -110,7 +112,13 @@ public func egDebugController(context: AccountContext) -> ViewController {
             })
         ])])
         presentControllerImpl?(actionSheet, ViewControllerPresentationArguments(presentationAnimation: .modalSheet))
-    }, openDisclosureLink: { _ in
+    }, openDisclosureLink: { link in
+        switch link {
+        case .pluginIconDebug:
+            pushControllerImpl?(egPluginIconDebugController(context: context))
+        default:
+            break
+        }
     }, action: { actionType in
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
         switch actionType {
@@ -199,10 +207,7 @@ public func egDebugController(context: AccountContext) -> ViewController {
     pushControllerImpl = { [weak controller] c in
         (controller?.navigationController as? NavigationController)?.pushViewController(c)
     }
-    // Workaround
-    let _ = pushControllerImpl
     
     return controller
 }
-
 

@@ -54,7 +54,9 @@ swift_library(
         "//submodules/PresentationDataUtils:PresentationDataUtils",
         "//submodules/OverlayStatusController:OverlayStatusController",
         "//submodules/AccountContext:AccountContext",
-        "//submodules/UndoUI:UndoUI"
+        "//submodules/UndoUI:UndoUI",
+        "//submodules/AnimatedStickerNode:AnimatedStickerNode",
+        "//submodules/TelegramAnimatedStickerNode:TelegramAnimatedStickerNode",
     ] + flex_dependency,
     visibility = [
         "//visibility:public",
