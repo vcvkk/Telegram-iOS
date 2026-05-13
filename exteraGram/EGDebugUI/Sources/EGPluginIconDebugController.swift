@@ -118,7 +118,7 @@ private struct DebugIconView: UIViewRepresentable {
                     }
                     self.log("\u{2705} Item[\(index)] found")
                     let file = items[index].file._parse()
-                    self.log("\u{1F4C4} resource.id=\(file.resource.id.uniqueId) isVideo=\(file.isVideoSticker)")
+                    self.log("\u{1F4C4} resource.id=\(file.resource.id.stringRepresentation) isVideo=\(file.isVideoSticker)")
 
                     self.pathDisposable = (AnimatedStickerResourceSource(
                         account: self.context.account,
@@ -279,7 +279,6 @@ private struct EGPluginIconDebugView: View {
                         .font(.system(size: 14, design: .monospaced))
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
-                        .submitLabel(.done)
                 }
             } header: { Text("Configuration") }
 
