@@ -671,19 +671,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
                     demoController?.replace(with: c)
                 }
                 pushControllerImpl?(demoController)
-                
-            // MARK: exteraGram
-            } else if icon.isEGPro && context.sharedContext.immediateSGStatus.status < 2 {
-                
-                let payWallOpt = context.sharedContext.makeSGPayWallController(context: context)
-                if let payWallController = payWallOpt {
-                    let args = ViewControllerPresentationArguments(presentationAnimation: .modalSheet)
-                    presentControllerImpl?(payWallController, args)
-                } else {
-                    let updateController = context.sharedContext.makeSGUpdateIOSController()
-                    presentControllerImpl?(updateController, nil)
-                }
-                
+
             } else {
                 currentAppIconName.set(icon.name)
                 context.sharedContext.applicationBindings.requestSetAlternateIconName(icon.isDefault ? nil : icon.name, { _ in })
@@ -818,8 +806,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
                                     }
                                     controllers.append(controller)
                                     return controllers
-                                })
-                            }))
+                                }))
                             
                             c?.dismiss(completion: {
                                 pushControllerImpl?(controller)
@@ -1674,4 +1661,3 @@ private final class ContextControllerContentSourceImpl: ContextControllerContent
     
     func animatedIn() {
     }
-}
