@@ -806,7 +806,8 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
                                     }
                                     controllers.append(controller)
                                     return controllers
-                                }))
+                                })
+                            }))
                             
                             c?.dismiss(completion: {
                                 pushControllerImpl?(controller)
@@ -1661,3 +1662,4 @@ private final class ContextControllerContentSourceImpl: ContextControllerContent
     
     func animatedIn() {
     }
+}
