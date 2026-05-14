@@ -535,7 +535,9 @@ public final class IpcGroupCallBufferBroadcastContext {
     private var callActiveInfoTimer: SwiftSignalKit.Timer?
     private var keepaliveInfoTimer: SwiftSignalKit.Timer?
     private var screencastCutoffTimer: SwiftSignalKit.Timer?
-    
+    private var callActiveCheckFailCount: Int = 0
+    private let maxCallActiveCheckFailCount: Int = 10
+
     public init(basePath: String) {
         self.basePath = basePath
         let _ = try? FileManager.default.createDirectory(atPath: basePath, withIntermediateDirectories: true, attributes: nil)
@@ -583,14 +585,21 @@ public final class IpcGroupCallBufferBroadcastContext {
     private func updateCallIsActive() {
         let filePath = payloadDescriptionPath(basePath: self.basePath)
         guard let payloadDescriptionData = try? Data(contentsOf: URL(fileURLWithPath: filePath)) else {
-            self.statusPromise.set(.single(.finished(.error)))
+            self.callActiveCheckFailCount += 1
+            if self.callActiveCheckFailCount >= self.maxCallActiveCheckFailCount {
+                self.statusPromise.set(.single(.finished(.error)))
+            }
             return
         }
 
         guard let payloadDescription = try? JSONDecoder().decode(IpcGroupCallBufferAppContext.PayloadDescription.self, from: payloadDescriptionData) else {
-            self.statusPromise.set(.single(.finished(.error)))
+            self.callActiveCheckFailCount += 1
+            if self.callActiveCheckFailCount >= self.maxCallActiveCheckFailCount {
+                self.statusPromise.set(.single(.finished(.error)))
+            }
             return
         }
+        self.callActiveCheckFailCount = 0
         let timestamp = Int32(Date().timeIntervalSince1970)
         if payloadDescription.timestamp < timestamp - 4 {
             self.statusPromise.set(.single(.finished(.callEnded)))
