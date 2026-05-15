@@ -39,7 +39,13 @@ struct EGPluginFileMetadata {
             case "description": meta.description = value
             case "author":      meta.author = value
             case "version":     meta.version = value
-            case "icon":        meta.icon = value
+            case "icon":
+                // Mirror Android Plugin.setIcon() / isIconValid(): only accept "packName/N" format.
+                // Bare icon names like "msg_reactions" from plugin code bodies are silently ignored.
+                if let slash = value.lastIndex(of: "/"),
+                   Int(value[value.index(after: slash)...]) != nil {
+                    meta.icon = value
+                }
             case "requirements":
                 meta.requirements = value.components(separatedBy: ",")
                     .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -52,18 +58,17 @@ struct EGPluginFileMetadata {
         return meta
     }
 
-    // Parses Python dunder metadata assignment lines (__key__ or __key only):
+    // Parses Python metadata assignment lines in all formats:
     //   __key__ = "value"  /  __key__ = 'value'
     //   __key = "value"    /  __key = 'value'
-    // Non-dunder assignments like `icon = "..."` inside class bodies are ignored.
+    //   key = "value"      /  key = 'value'
     private static func parseLine(_ line: String) -> (key: String, value: String)? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { return nil }
         guard let eqIdx = trimmed.firstIndex(of: "=") else { return nil }
-        let keyPart = String(trimmed[trimmed.startIndex..<eqIdx])
+        let rawKey = String(trimmed[trimmed.startIndex..<eqIdx])
             .trimmingCharacters(in: .whitespaces)
-        guard keyPart.hasPrefix("__") else { return nil }
-        let rawKey = keyPart.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
         let valuePart = String(trimmed[trimmed.index(after: eqIdx)...])
             .trimmingCharacters(in: .whitespaces)
         guard !rawKey.isEmpty, !valuePart.isEmpty else { return nil }
@@ -148,7 +153,6 @@ private struct EGPluginIconLoader: UIViewRepresentable {
         private let context: AccountContext
         private let size: CGFloat
         private var node: DefaultAnimatedStickerNodeImpl?
-        private var isShowing = false
         private var packDisposable: Disposable?
         private var fetchDisposable: Disposable?
 
@@ -160,10 +164,7 @@ private struct EGPluginIconLoader: UIViewRepresentable {
 
         func load(into container: UIView) {
             guard let slashIdx = iconStr.lastIndex(of: "/"),
-                  let index = Int(iconStr[iconStr.index(after: slashIdx)...]) else {
-                showPlaceholder(in: container)
-                return
-            }
+                  let index = Int(iconStr[iconStr.index(after: slashIdx)...]) else { return }
             let packName = String(iconStr[iconStr.startIndex..<slashIdx])
             let iconSize = CGSize(width: size, height: size)
             let pixelSide = Int(size * UIScreen.main.scale)
@@ -173,61 +174,37 @@ private struct EGPluginIconLoader: UIViewRepresentable {
                 |> deliverOnMainQueue
             ).startStandalone(next: { [weak container, weak self] result in
                 guard let self, let container else { return }
-                guard !self.isShowing else { return }
-                switch result {
-                case .fetching:
-                    break
-                case .none:
-                    self.isShowing = true
-                    self.showPlaceholder(in: container)
-                case .result(_, let items, _):
-                    guard index < items.count else {
-                        self.isShowing = true
-                        self.showPlaceholder(in: container)
-                        return
-                    }
-                    self.isShowing = true
-                    let file = items[index].file._parse()
-                    let node = DefaultAnimatedStickerNodeImpl()
-                    node.setup(
-                        source: AnimatedStickerResourceSource(
-                            account: self.context.account,
-                            resource: file.resource,
-                            isVideo: file.isVideoSticker
-                        ),
-                        width: pixelSide, height: pixelSide,
-                        playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
-                    )
-                    node.updateLayout(size: iconSize)
-                    // overrideVisibility bypasses didEnterHierarchy tracking; required when the
-                    // node is embedded in a plain UIView rather than an ASDisplayNode tree.
-                    node.overrideVisibility = true
-                    node.visibility = true
-                    node.frame = CGRect(origin: .zero, size: iconSize)
-                    node.view.frame = CGRect(origin: .zero, size: iconSize)
-                    container.addSubview(node.view)
-                    self.node = node
+                guard self.node == nil else { return }
+                guard case .result(_, let items, _) = result, index < items.count else { return }
 
-                    self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
+                let file = items[index].file._parse()
+                let node = DefaultAnimatedStickerNodeImpl()
+                node.setup(
+                    source: AnimatedStickerResourceSource(
                         account: self.context.account,
-                        userLocation: .other,
-                        fileReference: stickerPackFileReference(file),
-                        resource: file.resource
-                    ).startStandalone()
-                }
-            })
-        }
+                        resource: file.resource,
+                        isVideo: file.isVideoSticker
+                    ),
+                    width: pixelSide, height: pixelSide,
+                    playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
+                )
+                node.updateLayout(size: iconSize)
+                // overrideVisibility bypasses didEnterHierarchy tracking; required when the
+                // node is embedded in a plain UIView rather than an ASDisplayNode tree.
+                node.overrideVisibility = true
+                node.visibility = true
+                node.frame = CGRect(origin: .zero, size: iconSize)
+                node.view.frame = CGRect(origin: .zero, size: iconSize)
+                container.addSubview(node.view)
+                self.node = node
 
-        private func showPlaceholder(in container: UIView) {
-            container.backgroundColor = UIColor.secondarySystemFill
-            if let img = UIImage(systemName: "puzzlepiece.extension") {
-                let iv = UIImageView(image: img)
-                iv.tintColor = UIColor.secondaryLabel
-                iv.contentMode = .scaleAspectFit
-                let inset = size * 0.3
-                iv.frame = CGRect(x: inset / 2, y: inset / 2, width: size - inset, height: size - inset)
-                container.addSubview(iv)
-            }
+                self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
+                    account: self.context.account,
+                    userLocation: .other,
+                    fileReference: stickerPackFileReference(file),
+                    resource: file.resource
+                ).startStandalone()
+            })
         }
     }
 }
