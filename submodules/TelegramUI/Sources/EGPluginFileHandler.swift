@@ -32,6 +32,13 @@ struct EGPluginFileMetadata {
     static func parse(from text: String) -> EGPluginFileMetadata {
         var meta = EGPluginFileMetadata()
         for line in text.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Metadata is always in the file header — stop when we reach actual Python code.
+            if trimmed.hasPrefix("class ") || trimmed.hasPrefix("def ") ||
+               trimmed.hasPrefix("import ") || trimmed.hasPrefix("from ") ||
+               trimmed.hasPrefix("@") {
+                break
+            }
             guard let (key, value) = parseLine(line) else { continue }
             switch key {
             case "id":          meta.id = value
@@ -147,6 +154,7 @@ private struct EGPluginIconLoader: UIViewRepresentable {
         private let context: AccountContext
         private let size: CGFloat
         private var node: DefaultAnimatedStickerNodeImpl?
+        private var isShowing = false
         private var packDisposable: Disposable?
         private var fetchDisposable: Disposable?
 
@@ -158,7 +166,10 @@ private struct EGPluginIconLoader: UIViewRepresentable {
 
         func load(into container: UIView) {
             guard let slashIdx = iconStr.lastIndex(of: "/"),
-                  let index = Int(iconStr[iconStr.index(after: slashIdx)...]) else { return }
+                  let index = Int(iconStr[iconStr.index(after: slashIdx)...]) else {
+                showPlaceholder(in: container)
+                return
+            }
             let packName = String(iconStr[iconStr.startIndex..<slashIdx])
             let iconSize = CGSize(width: size, height: size)
             let pixelSide = Int(size * UIScreen.main.scale)
@@ -168,37 +179,61 @@ private struct EGPluginIconLoader: UIViewRepresentable {
                 |> deliverOnMainQueue
             ).startStandalone(next: { [weak container, weak self] result in
                 guard let self, let container else { return }
-                guard self.node == nil else { return }
-                guard case .result(_, let items, _) = result, index < items.count else { return }
+                guard !self.isShowing else { return }
+                switch result {
+                case .fetching:
+                    break
+                case .none:
+                    self.isShowing = true
+                    self.showPlaceholder(in: container)
+                case .result(_, let items, _):
+                    guard index < items.count else {
+                        self.isShowing = true
+                        self.showPlaceholder(in: container)
+                        return
+                    }
+                    self.isShowing = true
+                    let file = items[index].file._parse()
+                    let node = DefaultAnimatedStickerNodeImpl()
+                    node.setup(
+                        source: AnimatedStickerResourceSource(
+                            account: self.context.account,
+                            resource: file.resource,
+                            isVideo: file.isVideoSticker
+                        ),
+                        width: pixelSide, height: pixelSide,
+                        playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
+                    )
+                    node.updateLayout(size: iconSize)
+                    // overrideVisibility bypasses didEnterHierarchy tracking; required when the
+                    // node is embedded in a plain UIView rather than an ASDisplayNode tree.
+                    node.overrideVisibility = true
+                    node.visibility = true
+                    node.frame = CGRect(origin: .zero, size: iconSize)
+                    node.view.frame = CGRect(origin: .zero, size: iconSize)
+                    container.addSubview(node.view)
+                    self.node = node
 
-                let file = items[index].file._parse()
-                let node = DefaultAnimatedStickerNodeImpl()
-                node.setup(
-                    source: AnimatedStickerResourceSource(
+                    self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
                         account: self.context.account,
-                        resource: file.resource,
-                        isVideo: file.isVideoSticker
-                    ),
-                    width: pixelSide, height: pixelSide,
-                    playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
-                )
-                node.updateLayout(size: iconSize)
-                // overrideVisibility bypasses didEnterHierarchy tracking; required when the
-                // node is embedded in a plain UIView rather than an ASDisplayNode tree.
-                node.overrideVisibility = true
-                node.visibility = true
-                node.frame = CGRect(origin: .zero, size: iconSize)
-                node.view.frame = CGRect(origin: .zero, size: iconSize)
-                container.addSubview(node.view)
-                self.node = node
-
-                self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
-                    account: self.context.account,
-                    userLocation: .other,
-                    fileReference: stickerPackFileReference(file),
-                    resource: file.resource
-                ).startStandalone()
+                        userLocation: .other,
+                        fileReference: stickerPackFileReference(file),
+                        resource: file.resource
+                    ).startStandalone()
+                }
             })
+        }
+
+        private func showPlaceholder(in container: UIView) {
+            container.backgroundColor = UIColor.secondarySystemFill
+            if let img = UIImage(systemName: "puzzlepiece.extension") {
+                let iv = UIImageView(image: img)
+                iv.tintColor = UIColor.secondaryLabel
+                iv.contentMode = .scaleAspectFit
+                let inset = size * 0.3
+                iv.frame = CGRect(x: inset / 2, y: inset / 2, width: size - inset, height: size - inset)
+                container.addSubview(iv)
+            }
         }
     }
 }
