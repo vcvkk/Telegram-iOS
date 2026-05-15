@@ -251,7 +251,7 @@ private struct EGPluginInstallSheet: View {
                         .padding(.horizontal, 21)
                         .padding(.top, 4)
 
-                    // Install button — .borderedProminent picks up Liquid Glass on iOS 26+
+                    // Install button — Feather-style glass tint on iOS 26+
                     installButton
                         .padding(.bottom, 8)
 
@@ -397,45 +397,44 @@ private struct EGPluginInstallSheet: View {
         }
     }
 
-    // MARK: Install button — Liquid Glass on iOS 15+, manual style below
+    // MARK: Install button — Feather-style glass tint on iOS 26+, solid accent below
 
     @ViewBuilder
     private var installButton: some View {
-        if #available(iOS 15.0, *) {
-            Button(action: performInstall) {
-                ZStack {
-                    if isInstalling {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Text("Install Plugin")
-                            .font(.system(size: 17, weight: .semibold))
-                    }
+        let tint: Color = isInstalling ? Color(UIColor.quaternarySystemFill) : Color.accentColor
+        Button(action: performInstall) {
+            ZStack {
+                if isInstalling {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                } else {
+                    Text("Install Plugin")
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isInstalling)
-            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background { installButtonBackground(tint: tint) }
+            .foregroundColor(.white)
+            .clipShape(RoundedRectangle(cornerRadius: installButtonCornerRadius, style: .continuous))
+            .fontWeight(.semibold)
+            .frame(height: 50)
+        }
+        .buttonStyle(.plain)
+        .disabled(isInstalling)
+        .padding(.horizontal, 16)
+    }
+
+    private var installButtonCornerRadius: CGFloat {
+        if #available(iOS 26.0, *) { return 28 }
+        return 12
+    }
+
+    @ViewBuilder
+    private func installButtonBackground(tint: Color) -> some View {
+        if #available(iOS 26.0, *) {
+            Color.clear
+                .glassEffect(.regular.tint(tint), in: .rect(cornerRadius: 28, style: .continuous))
         } else {
-            Button(action: performInstall) {
-                ZStack {
-                    if isInstalling {
-                        ProgressView()
-                    } else {
-                        Text("Install Plugin")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color.accentColor)
-                .cornerRadius(12)
-            }
-            .disabled(isInstalling)
-            .padding(.horizontal, 16)
+            tint
         }
     }
 
