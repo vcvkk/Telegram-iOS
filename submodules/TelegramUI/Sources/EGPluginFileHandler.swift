@@ -32,13 +32,6 @@ struct EGPluginFileMetadata {
     static func parse(from text: String) -> EGPluginFileMetadata {
         var meta = EGPluginFileMetadata()
         for line in text.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            // Metadata is always in the file header — stop when we reach actual Python code.
-            if trimmed.hasPrefix("class ") || trimmed.hasPrefix("def ") ||
-               trimmed.hasPrefix("import ") || trimmed.hasPrefix("from ") ||
-               trimmed.hasPrefix("@") {
-                break
-            }
             guard let (key, value) = parseLine(line) else { continue }
             switch key {
             case "id":          meta.id = value
@@ -59,17 +52,18 @@ struct EGPluginFileMetadata {
         return meta
     }
 
-    // Parses Python metadata assignment lines in all formats:
+    // Parses Python dunder metadata assignment lines (__key__ or __key only):
     //   __key__ = "value"  /  __key__ = 'value'
     //   __key = "value"    /  __key = 'value'
-    //   key = "value"      /  key = 'value'
+    // Non-dunder assignments like `icon = "..."` inside class bodies are ignored.
     private static func parseLine(_ line: String) -> (key: String, value: String)? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { return nil }
         guard let eqIdx = trimmed.firstIndex(of: "=") else { return nil }
-        let rawKey = String(trimmed[trimmed.startIndex..<eqIdx])
+        let keyPart = String(trimmed[trimmed.startIndex..<eqIdx])
             .trimmingCharacters(in: .whitespaces)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+        guard keyPart.hasPrefix("__") else { return nil }
+        let rawKey = keyPart.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
         let valuePart = String(trimmed[trimmed.index(after: eqIdx)...])
             .trimmingCharacters(in: .whitespaces)
         guard !rawKey.isEmpty, !valuePart.isEmpty else { return nil }
