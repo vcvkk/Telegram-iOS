@@ -11,6 +11,9 @@ import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import StickerResources
 import EGSettingsUI
+import ComponentFlow
+import GlassBackgroundComponent
+import ButtonComponent
 
 // MARK: - Metadata Model
 
@@ -209,6 +212,132 @@ private struct EGPluginIconLoader: UIViewRepresentable {
     }
 }
 
+// MARK: - Glass circle button — same GlassBackgroundView as GlassBarButtonComponent in StickerPackScreen
+
+@available(iOS 14.0, *)
+private struct EGGlassCircleButton: UIViewRepresentable {
+    let icon: String
+    let action: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(action) }
+
+    func makeUIView(context: Context) -> GlassBackgroundView {
+        let sz = CGSize(width: 44, height: 44)
+        let glass = GlassBackgroundView(frame: CGRect(origin: .zero, size: sz))
+        glass.update(size: sz, cornerRadius: 22, isDark: false,
+                     tintColor: GlassBackgroundView.TintColor(kind: .panel),
+                     isInteractive: true, transition: .immediate)
+        let cfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)
+        let btn = UIButton(type: .system)
+        btn.setImage(UIImage(systemName: icon, withConfiguration: cfg), for: .normal)
+        btn.tintColor = UIColor.secondaryLabel
+        btn.frame = glass.contentView.bounds
+        btn.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        btn.addTarget(context.coordinator, action: #selector(Coordinator.tapped), for: .touchUpInside)
+        glass.contentView.addSubview(btn)
+        return glass
+    }
+
+    func updateUIView(_ uiView: GlassBackgroundView, context: Context) {
+        context.coordinator.action = action
+        let isDark = uiView.traitCollection.userInterfaceStyle == .dark
+        let sz = uiView.bounds.isEmpty ? CGSize(width: 44, height: 44) : uiView.bounds.size
+        uiView.update(size: sz, cornerRadius: sz.height / 2, isDark: isDark,
+                      tintColor: GlassBackgroundView.TintColor(kind: .panel),
+                      isInteractive: true, transition: .immediate)
+    }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+        init(_ action: @escaping () -> Void) { self.action = action }
+        @objc func tapped() { action() }
+    }
+}
+
+// MARK: - Glass install button — same ButtonComponent(.actualGlass) as StickerPackScreen
+
+@available(iOS 14.0, *)
+private final class EGInstallButtonHost: UIView {
+    let buttonView: ButtonComponent.View
+    private var isInstalling = false
+    private var tapAction: (() -> Void)?
+
+    init() {
+        let seed = ButtonComponent(
+            background: ButtonComponent.Background(
+                style: .actualGlass, color: .systemBlue, foreground: .white,
+                pressedColor: UIColor.systemBlue.withAlphaComponent(0.9)
+            ),
+            content: AnyComponentWithIdentity(
+                id: "install",
+                component: AnyComponent(Text(
+                    text: "Install Plugin",
+                    font: UIFont.systemFont(ofSize: 17, weight: .semibold),
+                    color: UIColor.white
+                ))
+            ),
+            action: {}
+        )
+        buttonView = seed.makeView()
+        super.init(frame: .zero)
+        addSubview(buttonView)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func configure(isInstalling: Bool, action: @escaping () -> Void) {
+        self.isInstalling = isInstalling
+        self.tapAction = action
+        if !bounds.isEmpty { applyUpdate() }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        buttonView.frame = bounds
+        applyUpdate()
+    }
+
+    private func applyUpdate() {
+        guard !bounds.isEmpty, let action = tapAction else { return }
+        let component = ButtonComponent(
+            background: ButtonComponent.Background(
+                style: .actualGlass, color: UIColor.systemBlue, foreground: UIColor.white,
+                pressedColor: UIColor.systemBlue.withAlphaComponent(0.9)
+            ),
+            content: AnyComponentWithIdentity(
+                id: "install",
+                component: AnyComponent(Text(
+                    text: "Install Plugin",
+                    font: UIFont.systemFont(ofSize: 17, weight: .semibold),
+                    color: UIColor.white
+                ))
+            ),
+            isEnabled: !isInstalling,
+            displaysProgress: isInstalling,
+            action: action
+        )
+        let _ = component.update(
+            view: buttonView,
+            availableSize: bounds.size,
+            state: EmptyComponentState(),
+            environment: Environment<Empty>(),
+            transition: .immediate
+        )
+    }
+}
+
+@available(iOS 14.0, *)
+private struct EGGlassInstallButton: UIViewRepresentable {
+    let isInstalling: Bool
+    let action: () -> Void
+
+    func makeUIView(context: Context) -> EGInstallButtonHost { EGInstallButtonHost() }
+
+    func updateUIView(_ uiView: EGInstallButtonHost, context: Context) {
+        uiView.configure(isInstalling: isInstalling, action: action)
+    }
+}
+
 // MARK: - SwiftUI Bottom Sheet
 
 @available(iOS 14.0, *)
@@ -248,7 +377,10 @@ private struct EGPluginInstallSheet: View {
                         .padding(.horizontal, 21)
                         .padding(.top, 4)
 
-                    installButton
+                    EGGlassInstallButton(isInstalling: isInstalling, action: performInstall)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .padding(.horizontal, 16)
                         .padding(.bottom, 8)
 
                     Color.clear.frame(height: 16)
@@ -266,7 +398,8 @@ private struct EGPluginInstallSheet: View {
     @ViewBuilder
     private var headerBar: some View {
         HStack(alignment: .center) {
-            circleButton(icon: "xmark") { presentationMode.wrappedValue.dismiss() }
+            EGGlassCircleButton(icon: "xmark") { presentationMode.wrappedValue.dismiss() }
+                .frame(width: 44, height: 44)
             Spacer()
             HStack(spacing: 0) {
                 if let version = metadata.version {
@@ -286,34 +419,11 @@ private struct EGPluginInstallSheet: View {
                 }
             }
             Spacer()
-            circleButton(icon: "square.and.arrow.up") { showShareSheet = true }
+            EGGlassCircleButton(icon: "square.and.arrow.up") { showShareSheet = true }
+                .frame(width: 44, height: 44)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 8)
         .padding(.bottom, 16)
-    }
-
-    // Circular icon button: glass circle on iOS 26+, filled circle on older iOS
-    @ViewBuilder
-    private func circleButton(icon: String, action: @escaping () -> Void) -> some View {
-        if #available(iOS 26.0, *) {
-            Button(action: action) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular, in: Circle())
-        } else {
-            Button(action: action) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(Color(UIColor.secondaryLabel))
-                    .frame(width: 30, height: 30)
-                    .background(Color(UIColor.tertiarySystemFill))
-                    .clipShape(Circle())
-            }
-        }
     }
 
     // MARK: Info card — glass on iOS 26+, material on iOS 15-25, solid on iOS 14
@@ -392,54 +502,6 @@ private struct EGPluginInstallSheet: View {
                     .font(.system(size: 36))
                     .foregroundColor(.white)
             }
-        }
-    }
-
-    // MARK: Install button — glassEffect directly on Button (iOS 26+), solid below
-
-    @ViewBuilder
-    private var installButton: some View {
-        if #available(iOS 26.0, *) {
-            Button(action: performInstall) {
-                ZStack {
-                    if isInstalling {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                            .tint(.white)
-                    } else {
-                        Text("Install Plugin")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-            }
-            .buttonStyle(.plain)
-            .glassEffect(
-                .regular.tint(isInstalling ? Color(UIColor.quaternarySystemFill) : .accentColor),
-                in: RoundedRectangle(cornerRadius: 28, style: .continuous)
-            )
-            .disabled(isInstalling)
-            .padding(.horizontal, 16)
-        } else {
-            Button(action: performInstall) {
-                ZStack {
-                    if isInstalling {
-                        ProgressView()
-                    } else {
-                        Text("Install Plugin")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color.accentColor)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .disabled(isInstalling)
-            .padding(.horizontal, 16)
         }
     }
 
