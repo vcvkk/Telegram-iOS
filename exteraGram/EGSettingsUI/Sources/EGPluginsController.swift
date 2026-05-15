@@ -332,6 +332,7 @@ private struct EGPluginIconView: UIViewRepresentable {
         private var loadDisposable: Disposable?
         private var fetchDisposable: Disposable?
         private var node: DefaultAnimatedStickerNodeImpl?
+        private var isShowing = false
 
         init(iconUrl: String, size: CGFloat, context: AccountContext) {
             self.iconUrl = iconUrl; self.size = size; self.context = context
@@ -341,7 +342,10 @@ private struct EGPluginIconView: UIViewRepresentable {
 
         func load(into container: UIView) {
             guard let slashIdx = iconUrl.lastIndex(of: "/"),
-                  let index = Int(iconUrl[iconUrl.index(after: slashIdx)...]) else { return }
+                  let index = Int(iconUrl[iconUrl.index(after: slashIdx)...]) else {
+                showPlaceholder(in: container)
+                return
+            }
             let packName = String(iconUrl[iconUrl.startIndex..<slashIdx])
             let iconSize = CGSize(width: size, height: size)
             let pixelSide = Int(size * UIScreen.main.scale)
@@ -351,35 +355,59 @@ private struct EGPluginIconView: UIViewRepresentable {
                 |> deliverOnMainQueue
             ).startStandalone(next: { [weak container, weak self] result in
                 guard let self, let container else { return }
-                guard self.node == nil else { return }
-                guard case .result(_, let items, _) = result, index < items.count else { return }
+                guard !self.isShowing else { return }
+                switch result {
+                case .fetching:
+                    break
+                case .none:
+                    self.isShowing = true
+                    self.showPlaceholder(in: container)
+                case .result(_, let items, _):
+                    guard index < items.count else {
+                        self.isShowing = true
+                        self.showPlaceholder(in: container)
+                        return
+                    }
+                    self.isShowing = true
+                    let file = items[index].file._parse()
+                    let node = DefaultAnimatedStickerNodeImpl()
+                    node.setup(
+                        source: AnimatedStickerResourceSource(
+                            account: self.context.account,
+                            resource: file.resource,
+                            isVideo: file.isVideoSticker
+                        ),
+                        width: pixelSide, height: pixelSide,
+                        playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
+                    )
+                    node.updateLayout(size: iconSize)
+                    node.overrideVisibility = true
+                    node.visibility = true
+                    node.frame = CGRect(origin: .zero, size: iconSize)
+                    node.view.frame = CGRect(origin: .zero, size: iconSize)
+                    container.addSubview(node.view)
+                    self.node = node
 
-                let file = items[index].file._parse()
-                let node = DefaultAnimatedStickerNodeImpl()
-                node.setup(
-                    source: AnimatedStickerResourceSource(
+                    self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
                         account: self.context.account,
-                        resource: file.resource,
-                        isVideo: file.isVideoSticker
-                    ),
-                    width: pixelSide, height: pixelSide,
-                    playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
-                )
-                node.updateLayout(size: iconSize)
-                node.overrideVisibility = true
-                node.visibility = true
-                node.frame = CGRect(origin: .zero, size: iconSize)
-                node.view.frame = CGRect(origin: .zero, size: iconSize)
-                container.addSubview(node.view)
-                self.node = node
-
-                self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
-                    account: self.context.account,
-                    userLocation: .other,
-                    fileReference: stickerPackFileReference(file),
-                    resource: file.resource
-                ).startStandalone()
+                        userLocation: .other,
+                        fileReference: stickerPackFileReference(file),
+                        resource: file.resource
+                    ).startStandalone()
+                }
             })
+        }
+
+        private func showPlaceholder(in container: UIView) {
+            container.backgroundColor = UIColor.secondarySystemFill
+            if let img = UIImage(systemName: "puzzlepiece.extension") {
+                let iv = UIImageView(image: img)
+                iv.tintColor = UIColor.secondaryLabel
+                iv.contentMode = .scaleAspectFit
+                let inset = size * 0.3
+                iv.frame = CGRect(x: inset / 2, y: inset / 2, width: size - inset, height: size - inset)
+                container.addSubview(iv)
+            }
         }
     }
 }
@@ -635,6 +663,11 @@ private struct EGPluginsView: View {
             }
         }
         .listStyle(InsetGroupedListStyle())
+        .onAppear {
+            plugins = PluginsController.shared.plugins
+            isEngineEnabled = PluginsController.shared.isEngineEnabled
+            isCompact = PluginsController.shared.isCompactView
+        }
         // Empty state floats over the list so Spacers can center it on the full screen
         .overlay(
             Group {
