@@ -222,116 +222,144 @@ private struct EGPluginInstallSheet: View {
     @State private var showShareSheet = false
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        VStack(spacing: 0) {
+            // Drag handle
+            Capsule()
+                .fill(Color(UIColor.tertiaryLabel))
+                .frame(width: 36, height: 4)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+
+            // Header bar: [X]  version · author  [share]
+            headerBar
+
             ScrollView {
-                VStack(spacing: 0) {
-                    // Drag handle
-                    Capsule()
-                        .fill(Color(UIColor.tertiaryLabel))
-                        .frame(width: 36, height: 4)
-                        .padding(.top, 8)
-                        .padding(.bottom, 20)
-
-                    // Plugin icon — sticker from pack if available, puzzle piece placeholder otherwise
-                    iconView
-                        .padding(.bottom, 16)
-
-                    // Plugin name
-                    Text(metadata.name ?? "Plugin")
-                        .font(.system(size: 18, weight: .bold))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                        .padding(.bottom, 4)
-
-                    // Version · Author
-                    if metadata.version != nil || metadata.author != nil {
-                        HStack(spacing: 0) {
-                            if let version = metadata.version {
-                                Text("v\(version)")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(Color(UIColor.secondaryLabel))
-                            }
-                            if metadata.version != nil && metadata.author != nil {
-                                Text(" · ")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(Color(UIColor.tertiaryLabel))
-                            }
-                            if let author = metadata.author {
-                                Text(author)
-                                    .font(.system(size: 14))
-                                    .foregroundColor(Color(UIColor.secondaryLabel))
-                            }
-                        }
-                        .padding(.bottom, 12)
-                    }
-
-                    // Trust badge — always "Unknown source" until we have verification
-                    HStack(spacing: 6) {
-                        Image(systemName: "questionmark.circle.fill")
-                            .font(.system(size: 12))
-                        Text("Unknown source")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundColor(Color(UIColor.systemOrange))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(Color(UIColor.systemOrange).opacity(0.12))
-                    .clipShape(Capsule())
-                    .padding(.bottom, 16)
+                VStack(spacing: 12) {
+                    // Main info card with gray fill
+                    infoCard
+                        .padding(.horizontal, 16)
 
                     // Requirements chips
                     if !metadata.requirements.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Requires:")
-                                .font(.system(size: 12))
-                                .foregroundColor(Color(UIColor.secondaryLabel))
-                                .padding(.horizontal, 21)
-                            RequirementChipsView(requirements: metadata.requirements)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, 20)
+                        RequirementChipsView(requirements: metadata.requirements)
+                            .padding(.top, 4)
                     }
-
-                    // Description
-                    if let description = metadata.description, !description.isEmpty {
-                        Text(description)
-                            .font(.system(size: 15))
-                            .foregroundColor(Color(UIColor.label))
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 21)
-                            .padding(.bottom, 20)
-                    }
-
-                    // Install button — .borderedProminent picks up Liquid Glass on iOS 26+
-                    installButton
 
                     // Enable after installation toggle
                     Toggle("Enable after installation", isOn: $enableAfterInstall)
                         .font(.system(size: 15))
                         .padding(.horizontal, 21)
-                        .padding(.bottom, 16)
+                        .padding(.top, 4)
 
-                    // Safe area bottom padding
+                    // Install button — .borderedProminent picks up Liquid Glass on iOS 26+
+                    installButton
+                        .padding(.bottom, 8)
+
                     Color.clear.frame(height: 16)
                 }
+                .padding(.top, 4)
             }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            ActivitySheet(items: [URL(fileURLWithPath: filePath)])
+        }
+    }
 
-            // Top-right: share / open-in button
-            Button(action: { showShareSheet = true }) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 14, weight: .semibold))
+    // MARK: Header bar — dismiss | version · author | share
+
+    @ViewBuilder
+    private var headerBar: some View {
+        HStack(alignment: .center) {
+            Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundColor(Color(UIColor.secondaryLabel))
                     .frame(width: 30, height: 30)
                     .background(Color(UIColor.tertiarySystemFill))
                     .clipShape(Circle())
             }
-            .padding(.top, 16)
-            .padding(.trailing, 16)
-            .sheet(isPresented: $showShareSheet) {
-                ActivitySheet(items: [URL(fileURLWithPath: filePath)])
+
+            Spacer()
+
+            // Version · Author as navigation subtitle
+            HStack(spacing: 0) {
+                if let version = metadata.version {
+                    Text(version)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color(UIColor.secondaryLabel))
+                }
+                if metadata.version != nil && metadata.author != nil {
+                    Text(" · ")
+                        .font(.system(size: 13))
+                        .foregroundColor(Color(UIColor.tertiaryLabel))
+                }
+                if let author = metadata.author {
+                    Text(author)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color(UIColor.secondaryLabel))
+                }
+            }
+
+            Spacer()
+
+            Button(action: { showShareSheet = true }) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color(UIColor.secondaryLabel))
+                    .frame(width: 30, height: 30)
+                    .background(Color(UIColor.tertiarySystemFill))
+                    .clipShape(Circle())
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+    }
+
+    // MARK: Info card — gray fill, name+desc left, icon right, unknown source row
+
+    @ViewBuilder
+    private var infoCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(metadata.name ?? "Plugin")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(Color(UIColor.label))
+
+                    if let desc = metadata.description, !desc.isEmpty {
+                        Text(desc)
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(UIColor.secondaryLabel))
+                            .lineLimit(5)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                iconView
+            }
+            .padding(16)
+
+            // Separator
+            Rectangle()
+                .fill(Color(UIColor.separator))
+                .frame(height: 0.5)
+                .padding(.leading, 16)
+
+            // Trust badge row — always "Unknown source" until we have signed plugin support
+            HStack(spacing: 6) {
+                Image(systemName: "questionmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(UIColor.systemOrange))
+                Text("Unknown source")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(Color(UIColor.systemOrange))
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+        }
+        .background(Color(UIColor.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     // MARK: Icon view — sticker with badge overlay, or puzzle piece placeholder
@@ -339,15 +367,13 @@ private struct EGPluginInstallSheet: View {
     @ViewBuilder
     private var iconView: some View {
         if let iconStr = metadata.icon, !iconStr.isEmpty {
-            // Sticker icon (matches Android BackupImageView with rounded rect + badge)
-            EGPluginIconLoader(iconStr: iconStr, context: context, size: 78)
-                .frame(width: 78, height: 78)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            EGPluginIconLoader(iconStr: iconStr, context: context, size: 90)
+                .frame(width: 90, height: 90)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .overlay(
-                    // Puzzle piece badge at bottom-right (matches Android canvas overlay)
                     ZStack {
                         Circle()
-                            .fill(Color(UIColor.systemBackground))
+                            .fill(Color(UIColor.secondarySystemGroupedBackground))
                             .frame(width: 26, height: 26)
                         Circle()
                             .fill(Color.accentColor)
@@ -360,13 +386,12 @@ private struct EGPluginInstallSheet: View {
                     alignment: .bottomTrailing
                 )
         } else {
-            // Placeholder — plain circle with puzzle piece
             ZStack {
-                Circle()
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(Color.accentColor)
-                    .frame(width: 78, height: 78)
+                    .frame(width: 90, height: 90)
                 Image(systemName: "puzzlepiece.extension.fill")
-                    .font(.system(size: 34))
+                    .font(.system(size: 36))
                     .foregroundColor(.white)
             }
         }
@@ -393,7 +418,6 @@ private struct EGPluginInstallSheet: View {
             .buttonStyle(.borderedProminent)
             .disabled(isInstalling)
             .padding(.horizontal, 16)
-            .padding(.bottom, 8)
         } else {
             Button(action: performInstall) {
                 ZStack {
@@ -412,7 +436,6 @@ private struct EGPluginInstallSheet: View {
             }
             .disabled(isInstalling)
             .padding(.horizontal, 16)
-            .padding(.bottom, 8)
         }
     }
 
