@@ -409,13 +409,13 @@ private struct EGPluginInstallSheet: View {
                         .progressViewStyle(.circular)
                 } else {
                     Text("Install Plugin")
+                        .font(.system(size: 17, weight: .semibold))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background { installButtonBackground(tint: tint) }
+            .background(installButtonBackground(tint: tint))
             .foregroundColor(.white)
             .clipShape(RoundedRectangle(cornerRadius: installButtonCornerRadius, style: .continuous))
-            .fontWeight(.semibold)
             .frame(height: 50)
         }
         .buttonStyle(.plain)
