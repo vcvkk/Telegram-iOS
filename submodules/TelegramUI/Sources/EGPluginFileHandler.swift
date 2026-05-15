@@ -235,23 +235,19 @@ private struct EGPluginInstallSheet: View {
 
             ScrollView {
                 VStack(spacing: 12) {
-                    // Main info card with gray fill
                     infoCard
                         .padding(.horizontal, 16)
 
-                    // Requirements chips
                     if !metadata.requirements.isEmpty {
                         RequirementChipsView(requirements: metadata.requirements)
                             .padding(.top, 4)
                     }
 
-                    // Enable after installation toggle
                     Toggle("Enable after installation", isOn: $enableAfterInstall)
                         .font(.system(size: 15))
                         .padding(.horizontal, 21)
                         .padding(.top, 4)
 
-                    // Install button — Feather-style glass tint on iOS 26+
                     installButton
                         .padding(.bottom, 8)
 
@@ -270,18 +266,8 @@ private struct EGPluginInstallSheet: View {
     @ViewBuilder
     private var headerBar: some View {
         HStack(alignment: .center) {
-            Button(action: { presentationMode.wrappedValue.dismiss() }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(Color(UIColor.secondaryLabel))
-                    .frame(width: 30, height: 30)
-                    .background(Color(UIColor.tertiarySystemFill))
-                    .clipShape(Circle())
-            }
-
+            circleButton(icon: "xmark") { presentationMode.wrappedValue.dismiss() }
             Spacer()
-
-            // Version · Author as navigation subtitle
             HStack(spacing: 0) {
                 if let version = metadata.version {
                     Text(version)
@@ -299,23 +285,38 @@ private struct EGPluginInstallSheet: View {
                         .foregroundColor(Color(UIColor.secondaryLabel))
                 }
             }
-
             Spacer()
+            circleButton(icon: "square.and.arrow.up") { showShareSheet = true }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+    }
 
-            Button(action: { showShareSheet = true }) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 12, weight: .semibold))
+    // Circular icon button: glass circle on iOS 26+, filled circle on older iOS
+    @ViewBuilder
+    private func circleButton(icon: String, action: @escaping () -> Void) -> some View {
+        if #available(iOS 26.0, *) {
+            Button(action: action) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular, in: Circle())
+        } else {
+            Button(action: action) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundColor(Color(UIColor.secondaryLabel))
                     .frame(width: 30, height: 30)
                     .background(Color(UIColor.tertiarySystemFill))
                     .clipShape(Circle())
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
     }
 
-    // MARK: Info card — gray fill, name+desc left, icon right, unknown source row
+    // MARK: Info card — glass on iOS 26+, material on iOS 15-25, solid on iOS 14
 
     @ViewBuilder
     private var infoCard: some View {
@@ -339,13 +340,11 @@ private struct EGPluginInstallSheet: View {
             }
             .padding(16)
 
-            // Separator
             Rectangle()
                 .fill(Color(UIColor.separator))
                 .frame(height: 0.5)
                 .padding(.leading, 16)
 
-            // Trust badge row — always "Unknown source" until we have signed plugin support
             HStack(spacing: 6) {
                 Image(systemName: "questionmark.circle.fill")
                     .font(.system(size: 13))
@@ -358,11 +357,10 @@ private struct EGPluginInstallSheet: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
         }
-        .background(Color(UIColor.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .cardGlass()
     }
 
-    // MARK: Icon view — sticker with badge overlay, or puzzle piece placeholder
+    // MARK: Icon view
 
     @ViewBuilder
     private var iconView: some View {
@@ -373,7 +371,7 @@ private struct EGPluginInstallSheet: View {
                 .overlay(
                     ZStack {
                         Circle()
-                            .fill(Color(UIColor.secondarySystemGroupedBackground))
+                            .fill(Color(UIColor.systemBackground))
                             .frame(width: 26, height: 26)
                         Circle()
                             .fill(Color.accentColor)
@@ -397,44 +395,51 @@ private struct EGPluginInstallSheet: View {
         }
     }
 
-    // MARK: Install button — Feather-style glass tint on iOS 26+, solid accent below
+    // MARK: Install button — glassEffect directly on Button (iOS 26+), solid below
 
     @ViewBuilder
     private var installButton: some View {
-        let tint: Color = isInstalling ? Color(UIColor.quaternarySystemFill) : Color.accentColor
-        Button(action: performInstall) {
-            ZStack {
-                if isInstalling {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                } else {
-                    Text("Install Plugin")
-                        .font(.system(size: 17, weight: .semibold))
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(installButtonBackground(tint: tint))
-            .foregroundColor(.white)
-            .clipShape(RoundedRectangle(cornerRadius: installButtonCornerRadius, style: .continuous))
-            .frame(height: 50)
-        }
-        .buttonStyle(.plain)
-        .disabled(isInstalling)
-        .padding(.horizontal, 16)
-    }
-
-    private var installButtonCornerRadius: CGFloat {
-        if #available(iOS 26.0, *) { return 28 }
-        return 12
-    }
-
-    @ViewBuilder
-    private func installButtonBackground(tint: Color) -> some View {
         if #available(iOS 26.0, *) {
-            Color.clear
-                .glassEffect(.regular.tint(tint), in: .rect(cornerRadius: 28, style: .continuous))
+            Button(action: performInstall) {
+                ZStack {
+                    if isInstalling {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(.white)
+                    } else {
+                        Text("Install Plugin")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(
+                .regular.tint(isInstalling ? Color(UIColor.quaternarySystemFill) : .accentColor),
+                in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+            )
+            .disabled(isInstalling)
+            .padding(.horizontal, 16)
         } else {
-            tint
+            Button(action: performInstall) {
+                ZStack {
+                    if isInstalling {
+                        ProgressView()
+                    } else {
+                        Text("Install Plugin")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.accentColor)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .disabled(isInstalling)
+            .padding(.horizontal, 16)
         }
     }
 
@@ -484,6 +489,27 @@ private struct EGPluginInstallSheet: View {
         }
     }
 
+}
+
+// MARK: - Card background helper
+
+@available(iOS 14.0, *)
+private extension View {
+    @ViewBuilder
+    func cardGlass() -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        } else if #available(iOS 15.0, *) {
+            self.background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Material.regular)
+            )
+        } else {
+            self
+                .background(Color(UIColor.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
 }
 
 // MARK: - Presentation Helper
