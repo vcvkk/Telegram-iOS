@@ -106,6 +106,7 @@ private enum EGBoolSetting: String {
     case nyStyleSnow
     case nyStyleLightning
     case tabBarSearchEnabled
+    case pluginSheetPlainBackground
 }
 
 private enum EGOneFromManySetting: String {
@@ -328,7 +329,8 @@ private func EGControllerEntries(presentationData: PresentationData, callListSet
     entries.append(.notice(id: id.count, section: .other, text: i18n("Settings.DefaultEmojisFirst.Notice", lang)))
     entries.append(.toggle(id: id.count, section: .other, settingName: .hidePhoneInSettings, value: EGSimpleSettings.shared.hidePhoneInSettings, text: i18n("Settings.HidePhoneInSettingsUI", lang), enabled: true))
     entries.append(.notice(id: id.count, section: .other, text: i18n("Settings.HidePhoneInSettingsUI.Notice", lang)))
-    
+    entries.append(.toggle(id: id.count, section: .other, settingName: .pluginSheetPlainBackground, value: EGSimpleSettings.shared.pluginSheetPlainBackground, text: "[Debug] Plugin sheet: plain background", enabled: true))
+
     return filterSGItemListUIEntrires(entries: entries, by: state.searchQuery)
 }
 
@@ -406,6 +408,8 @@ public func egSettingsController(context: AccountContext/*, focusOnItemTag: Int?
             EGSimpleSettings.shared.warnOnStoriesOpen = value
         case .sendWithReturnKey:
             EGSimpleSettings.shared.sendWithReturnKey = value
+        case .pluginSheetPlainBackground:
+            EGSimpleSettings.shared.pluginSheetPlainBackground = value
         case .rememberLastFolder:
             EGSimpleSettings.shared.rememberLastFolder = value
         case .sendLargePhotos:
