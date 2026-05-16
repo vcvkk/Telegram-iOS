@@ -1,6 +1,9 @@
 name: Build exteraGram
 
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       configuration:
