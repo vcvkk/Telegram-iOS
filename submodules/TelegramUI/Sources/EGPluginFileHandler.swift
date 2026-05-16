@@ -12,10 +12,7 @@ import TelegramAnimatedStickerNode
 import StickerResources
 import EGSettingsUI
 import ComponentFlow
-import GlassBackgroundComponent
 import ButtonComponent
-import GlassBarButtonComponent
-import BundleIconComponent
 
 // MARK: - Metadata Model
 
@@ -230,47 +227,39 @@ private struct EGPluginIconLoader: UIViewRepresentable {
     }
 }
 
-// MARK: - Glass circle button — ComponentHostView + GlassBarButtonComponent, identical to browser close button
+// MARK: - Glass circle button — pure SwiftUI, native Liquid Glass on iOS 26+
 
 @available(iOS 14.0, *)
-private struct EGGlassCircleButton: UIViewRepresentable {
-    let bundleIcon: String   // e.g. "Navigation/Close", "Chat/Context Menu/Share"
+private struct EGGlassCircleButton: View {
+    let bundleIcon: String
     let action: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(action) }
-
-    func makeUIView(context: Context) -> ComponentHostView<Empty> {
-        ComponentHostView<Empty>()
+    var body: some View {
+        Button(action: action) {
+            Image(uiImage: UIImage(bundleImageName: bundleIcon) ?? UIImage())
+                .renderingMode(.template)
+                .foregroundColor(.secondary)
+        }
+        .frame(width: 44, height: 44)
+        .circleGlass()
     }
+}
 
-    func updateUIView(_ uiView: ComponentHostView<Empty>, context: Context) {
-        context.coordinator.action = action
-        let isDark = uiView.traitCollection.userInterfaceStyle == .dark
-        let coordinator = context.coordinator
-        let _ = uiView.update(
-            transition: .immediate,
-            component: AnyComponent(GlassBarButtonComponent(
-                size: CGSize(width: 44.0, height: 44.0),
-                backgroundColor: nil,
-                isDark: isDark,
-                state: .glass,
-                component: AnyComponentWithIdentity(
-                    id: "icon",
-                    component: AnyComponent(BundleIconComponent(
-                        name: bundleIcon,
-                        tintColor: UIColor.secondaryLabel
-                    ))
-                ),
-                action: { [weak coordinator] _ in coordinator?.action() }
-            )),
-            environment: {},
-            containerSize: CGSize(width: 44.0, height: 44.0)
-        )
-    }
-
-    final class Coordinator: NSObject {
-        var action: () -> Void
-        init(_ action: @escaping () -> Void) { self.action = action }
+@available(iOS 14.0, *)
+private extension View {
+    @ViewBuilder
+    func circleGlass() -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular, in: Circle())
+        } else if #available(iOS 15.0, *) {
+            self
+                .background(Circle().fill(.thinMaterial))
+                .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
+        } else {
+            self
+                .background(Circle().fill(Color(UIColor.systemFill)))
+                .overlay(Circle().stroke(Color.secondary.opacity(0.15), lineWidth: 0.5))
+        }
     }
 }
 
