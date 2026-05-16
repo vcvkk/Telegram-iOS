@@ -11,6 +11,7 @@ import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import StickerResources
 import EGSettingsUI
+import EGSimpleSettings
 import ComponentFlow
 import GlassBackgroundComponent
 import ButtonComponent
@@ -234,6 +235,7 @@ private struct EGPluginIconLoader: UIViewRepresentable {
 private final class EGGlassCircleHost: UIView {
     private let container: GlassBackgroundContainerView
     private let glass: GlassBackgroundView
+    private let plainCircle: UIView
     private let icon: UIImageView
     private var bundleIcon: String = ""
 
@@ -242,6 +244,7 @@ private final class EGGlassCircleHost: UIView {
     override init(frame: CGRect) {
         self.container = GlassBackgroundContainerView()
         self.glass = GlassBackgroundView()
+        self.plainCircle = UIView()
         self.icon = UIImageView()
         super.init(frame: frame)
 
@@ -251,8 +254,14 @@ private final class EGGlassCircleHost: UIView {
 
         self.addSubview(self.container)
         self.container.contentView.addSubview(self.glass)
-        self.glass.contentView.addSubview(self.icon)
+        self.addSubview(self.plainCircle)
+        self.addSubview(self.icon)
+        self.plainCircle.isHidden = true
+
         self.glass.contentView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(self.tapped))
+        )
+        self.plainCircle.addGestureRecognizer(
             UITapGestureRecognizer(target: self, action: #selector(self.tapped))
         )
     }
@@ -261,7 +270,7 @@ private final class EGGlassCircleHost: UIView {
 
     @objc private func tapped() { self.action?() }
 
-    func configure(bundleIcon: String, size: CGSize, isDark: Bool) {
+    func configure(bundleIcon: String, size: CGSize, isDark: Bool, isPlain: Bool) {
         if self.bundleIcon != bundleIcon {
             self.bundleIcon = bundleIcon
             self.icon.image = UIImage(bundleImageName: bundleIcon)?
@@ -270,17 +279,28 @@ private final class EGGlassCircleHost: UIView {
         self.icon.tintColor = UIColor.secondaryLabel
 
         let bounds = CGRect(origin: .zero, size: size)
-        self.container.frame = bounds
-        self.container.update(size: size, isDark: isDark, transition: .immediate)
-        self.glass.frame = bounds
-        self.glass.update(
-            size: size,
-            cornerRadius: size.height * 0.5,
-            isDark: isDark,
-            tintColor: .init(kind: .panel),
-            isInteractive: true,
-            transition: .immediate
-        )
+
+        if isPlain {
+            self.container.isHidden = true
+            self.plainCircle.isHidden = false
+            self.plainCircle.frame = bounds
+            self.plainCircle.layer.cornerRadius = size.height * 0.5
+            self.plainCircle.backgroundColor = UIColor.secondarySystemFill
+        } else {
+            self.container.isHidden = false
+            self.plainCircle.isHidden = true
+            self.container.frame = bounds
+            self.container.update(size: size, isDark: isDark, transition: .immediate)
+            self.glass.frame = bounds
+            self.glass.update(
+                size: size,
+                cornerRadius: size.height * 0.5,
+                isDark: isDark,
+                tintColor: .init(kind: .panel),
+                isInteractive: true,
+                transition: .immediate
+            )
+        }
         if let image = self.icon.image {
             self.icon.frame = image.size.centered(in: bounds)
         }
@@ -301,10 +321,12 @@ private struct EGGlassCircleButton: UIViewRepresentable {
     func updateUIView(_ uiView: EGGlassCircleHost, context: Context) {
         uiView.action = action
         let isDark = uiView.traitCollection.userInterfaceStyle == .dark
+        let isPlain = EGSimpleSettings.shared.pluginSheetPlainBackground
         uiView.configure(
             bundleIcon: bundleIcon,
             size: CGSize(width: 44, height: 44),
-            isDark: isDark
+            isDark: isDark,
+            isPlain: isPlain
         )
     }
 }
@@ -393,6 +415,60 @@ private struct EGGlassInstallButton: UIViewRepresentable {
     }
 }
 
+// MARK: - Author text with tappable @username segments
+
+@available(iOS 14.0, *)
+private struct EGAuthorView: View {
+    let author: String
+    let onUsernameTap: (String) -> Void
+
+    private struct Segment {
+        let text: String
+        let isUsername: Bool
+        var rawUsername: String { isUsername ? String(text.dropFirst()) : text }
+    }
+
+    private var segments: [Segment] {
+        guard let pattern = try? NSRegularExpression(pattern: "@[a-zA-Z][a-zA-Z0-9_]{1,31}") else {
+            return [Segment(text: author, isUsername: false)]
+        }
+        var result: [Segment] = []
+        var lastUpperBound = author.startIndex
+        let nsRange = NSRange(author.startIndex..., in: author)
+        for match in pattern.matches(in: author, range: nsRange) {
+            guard let matchRange = Range(match.range, in: author) else { continue }
+            if matchRange.lowerBound > lastUpperBound {
+                result.append(Segment(text: String(author[lastUpperBound..<matchRange.lowerBound]), isUsername: false))
+            }
+            result.append(Segment(text: String(author[matchRange]), isUsername: true))
+            lastUpperBound = matchRange.upperBound
+        }
+        if lastUpperBound < author.endIndex {
+            result.append(Segment(text: String(author[lastUpperBound...]), isUsername: false))
+        }
+        return result.isEmpty ? [Segment(text: author, isUsername: false)] : result
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
+                if seg.isUsername {
+                    Button(action: { onUsernameTap(seg.rawUsername) }) {
+                        Text(seg.text)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Color(UIColor.systemBlue))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text(seg.text)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color(UIColor.secondaryLabel))
+                }
+            }
+        }
+    }
+}
+
 // MARK: - SwiftUI Bottom Sheet
 
 @available(iOS 14.0, *)
@@ -400,6 +476,7 @@ private struct EGPluginInstallSheet: View {
     let metadata: EGPluginFileMetadata
     let filePath: String
     let context: AccountContext
+    var navigationController: UINavigationController?
     @SwiftUI.Environment(\.presentationMode) private var presentationMode
     @State private var isInstalling = false
     @State private var enableAfterInstall = true
@@ -448,80 +525,84 @@ private struct EGPluginInstallSheet: View {
         }
     }
 
-    // MARK: Header bar — dismiss | version · author | share
+    // MARK: Header bar — dismiss | version · author | share  +  source pill
 
     @ViewBuilder
     private var headerBar: some View {
-        HStack(alignment: .center) {
-            EGGlassCircleButton(bundleIcon: "Navigation/Close") { presentationMode.wrappedValue.dismiss() }
-                .frame(width: 44, height: 44)
-            Spacer()
-            HStack(spacing: 0) {
-                if let version = metadata.version {
-                    Text(version)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(Color(UIColor.secondaryLabel))
+        VStack(spacing: 0) {
+            HStack(alignment: .center) {
+                EGGlassCircleButton(bundleIcon: "Navigation/Close") { presentationMode.wrappedValue.dismiss() }
+                    .frame(width: 44, height: 44)
+                Spacer()
+                HStack(spacing: 0) {
+                    if let version = metadata.version {
+                        Text(version)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Color(UIColor.secondaryLabel))
+                    }
+                    if metadata.version != nil && metadata.author != nil {
+                        Text(" · ")
+                            .font(.system(size: 13))
+                            .foregroundColor(Color(UIColor.tertiaryLabel))
+                    }
+                    if let author = metadata.author {
+                        EGAuthorView(author: author) { username in openUsername(username) }
+                    }
                 }
-                if metadata.version != nil && metadata.author != nil {
-                    Text(" · ")
-                        .font(.system(size: 13))
-                        .foregroundColor(Color(UIColor.tertiaryLabel))
-                }
-                if let author = metadata.author {
-                    Text(author)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(Color(UIColor.secondaryLabel))
-                }
+                Spacer()
+                EGGlassCircleButton(bundleIcon: "Chat/Context Menu/Share") { showShareSheet = true }
+                    .frame(width: 44, height: 44)
             }
-            Spacer()
-            EGGlassCircleButton(bundleIcon: "Chat/Context Menu/Share") { showShareSheet = true }
-                .frame(width: 44, height: 44)
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+
+            HStack(spacing: 6) {
+                Image(systemName: "questionmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color(UIColor.systemRed))
+                Text("Unknown source")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color(UIColor.systemRed))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(Color(UIColor.systemRed).opacity(0.12))
+            .clipShape(Capsule())
+            .padding(.bottom, 12)
         }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 16)
     }
 
     // MARK: Info card — glass on iOS 26+, material on iOS 15-25, solid on iOS 14
 
     @ViewBuilder
     private var infoCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(metadata.name ?? "Plugin")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(Color(UIColor.label))
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(metadata.name ?? "Plugin")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(Color(UIColor.label))
 
-                    if let desc = metadata.description, !desc.isEmpty {
+                if let desc = metadata.description, !desc.isEmpty {
+                    if #available(iOS 15.0, *),
+                       let attrStr = try? AttributedString(markdown: desc,
+                           options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+                        Text(attrStr)
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(UIColor.secondaryLabel))
+                            .lineLimit(5)
+                    } else {
                         Text(desc)
                             .font(.system(size: 14))
                             .foregroundColor(Color(UIColor.secondaryLabel))
                             .lineLimit(5)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                iconView
             }
-            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Rectangle()
-                .fill(Color(UIColor.separator))
-                .frame(height: 0.5)
-                .padding(.leading, 16)
-
-            HStack(spacing: 6) {
-                Image(systemName: "questionmark.circle.fill")
-                    .font(.system(size: 13))
-                    .foregroundColor(Color(UIColor.systemOrange))
-                Text("Unknown source")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(Color(UIColor.systemOrange))
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 11)
+            iconView
         }
+        .padding(16)
         .cardGlass()
     }
 
@@ -606,6 +687,30 @@ private struct EGPluginInstallSheet: View {
         }
     }
 
+    private func openUsername(_ username: String) {
+        let nc = navigationController
+        let ctx = context
+        let pm = presentationMode
+        let _ = (ctx.engine.peers.resolvePeerByName(name: username, referrer: nil)
+            |> mapToSignal { result -> Signal<EnginePeer?, NoError> in
+                guard case let .result(result) = result else { return .complete() }
+                return .single(result)
+            }
+            |> deliverOnMainQueue
+        ).startStandalone(next: { peer in
+            guard let peer else { return }
+            pm.wrappedValue.dismiss()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                guard let nc else { return }
+                ctx.sharedContext.navigateToChatController(NavigateToChatControllerParams(
+                    navigationController: nc,
+                    context: ctx,
+                    chatLocation: .peer(peer)
+                ))
+            }
+        })
+    }
+
 }
 
 // MARK: - Card background helper
@@ -614,8 +719,10 @@ private struct EGPluginInstallSheet: View {
 private extension View {
     @ViewBuilder
     func cardGlass() -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // On iOS 26: transparent (sheet's own Liquid Glass provides the background).
+        // When debug toggle is on: fall through to Material.regular for plain-fill comparison.
+        if #available(iOS 26.0, *), !EGSimpleSettings.shared.pluginSheetPlainBackground {
+            self
         } else if #available(iOS 15.0, *) {
             self.background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -649,15 +756,27 @@ func presentEGPluginMetadataIfAvailable(
         guard let rootController = navigationController?.view.window?.rootViewController else { return }
 
         if #available(iOS 14.0, *) {
-            let sheet = UIHostingController(rootView: EGPluginInstallSheet(metadata: metadata, filePath: data.path, context: context))
+            var sheetView = EGPluginInstallSheet(metadata: metadata, filePath: data.path, context: context)
+            sheetView.navigationController = navigationController
+            let sheet = UIHostingController(rootView: sheetView)
 
             if #available(iOS 16.0, *) {
                 sheet.modalPresentationStyle = .pageSheet
                 if let sc = sheet.sheetPresentationController {
                     let screenH = UIScreen.main.bounds.height
+                    let screenW = UIScreen.main.bounds.width
                     let deviceRadius = (UIScreen.main.value(forKey: "_displayCornerRadius") as? CGFloat) ?? 44
+
+                    sheet.view.layoutIfNeeded()
+                    let fittingH = sheet.view.systemLayoutSizeFitting(
+                        CGSize(width: screenW, height: UIView.layoutFittingCompressedSize.height),
+                        withHorizontalFittingPriority: .required,
+                        verticalFittingPriority: .fittingSizeLevel
+                    ).height
+                    let detentH = max(300, min(fittingH + 20, screenH * 0.85))
+
                     sc.detents = [
-                        .custom { _ in min(screenH * 0.58, 540) },
+                        .custom { _ in detentH },
                         .large()
                     ]
                     sc.prefersGrabberVisible = false
