@@ -688,7 +688,7 @@ private struct EGPluginInstallSheet: View {
     }
 
     private func openUsername(_ username: String) {
-        let nc = navigationController
+        let nc = navigationController as? NavigationController
         let ctx = context
         let pm = presentationMode
         let _ = (ctx.engine.peers.resolvePeerByName(name: username, referrer: nil)
