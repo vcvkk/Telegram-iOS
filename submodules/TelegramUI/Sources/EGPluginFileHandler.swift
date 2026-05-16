@@ -12,6 +12,7 @@ import TelegramAnimatedStickerNode
 import StickerResources
 import EGSettingsUI
 import ComponentFlow
+import GlassBackgroundComponent
 import ButtonComponent
 
 // MARK: - Metadata Model
@@ -227,39 +228,84 @@ private struct EGPluginIconLoader: UIViewRepresentable {
     }
 }
 
-// MARK: - Glass circle button — pure SwiftUI, native Liquid Glass on iOS 26+
+// MARK: - Glass circle button — same UIKit pattern as ChatSearchNavigationContentNode close button
 
 @available(iOS 14.0, *)
-private struct EGGlassCircleButton: View {
-    let bundleIcon: String
-    let action: () -> Void
+private final class EGGlassCircleHost: UIView {
+    private let container: GlassBackgroundContainerView
+    private let glass: GlassBackgroundView
+    private let icon: UIImageView
+    private var bundleIcon: String = ""
 
-    var body: some View {
-        Button(action: action) {
-            Image(uiImage: UIImage(bundleImageName: bundleIcon) ?? UIImage())
-                .renderingMode(.template)
-                .foregroundColor(.secondary)
+    var action: (() -> Void)?
+
+    override init(frame: CGRect) {
+        self.container = GlassBackgroundContainerView()
+        self.glass = GlassBackgroundView()
+        self.icon = UIImageView()
+        super.init(frame: frame)
+
+        self.clipsToBounds = false
+        self.container.clipsToBounds = false
+        self.glass.clipsToBounds = false
+
+        self.addSubview(self.container)
+        self.container.contentView.addSubview(self.glass)
+        self.glass.contentView.addSubview(self.icon)
+        self.glass.contentView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(self.tapped))
+        )
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func tapped() { self.action?() }
+
+    func configure(bundleIcon: String, size: CGSize, isDark: Bool) {
+        if self.bundleIcon != bundleIcon {
+            self.bundleIcon = bundleIcon
+            self.icon.image = UIImage(bundleImageName: bundleIcon)?
+                .withRenderingMode(.alwaysTemplate)
         }
-        .frame(width: 44, height: 44)
-        .circleGlass()
+        self.icon.tintColor = UIColor.secondaryLabel
+
+        let bounds = CGRect(origin: .zero, size: size)
+        self.container.frame = bounds
+        self.container.update(size: size, isDark: isDark, transition: .immediate)
+        self.glass.frame = bounds
+        self.glass.update(
+            size: size,
+            cornerRadius: size.height * 0.5,
+            isDark: isDark,
+            tintColor: .init(kind: .panel),
+            isInteractive: true,
+            transition: .immediate
+        )
+        if let image = self.icon.image {
+            self.icon.frame = image.size.centered(in: bounds)
+        }
     }
 }
 
 @available(iOS 14.0, *)
-private extension View {
-    @ViewBuilder
-    func circleGlass() -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect(.regular, in: Circle())
-        } else if #available(iOS 15.0, *) {
-            self
-                .background(Circle().fill(.thinMaterial))
-                .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
-        } else {
-            self
-                .background(Circle().fill(Color(UIColor.systemFill)))
-                .overlay(Circle().stroke(Color.secondary.opacity(0.15), lineWidth: 0.5))
-        }
+private struct EGGlassCircleButton: UIViewRepresentable {
+    let bundleIcon: String
+    let action: () -> Void
+
+    func makeUIView(context: Context) -> EGGlassCircleHost {
+        let view = EGGlassCircleHost()
+        view.action = action
+        return view
+    }
+
+    func updateUIView(_ uiView: EGGlassCircleHost, context: Context) {
+        uiView.action = action
+        let isDark = uiView.traitCollection.userInterfaceStyle == .dark
+        uiView.configure(
+            bundleIcon: bundleIcon,
+            size: CGSize(width: 44, height: 44),
+            isDark: isDark
+        )
     }
 }
 
