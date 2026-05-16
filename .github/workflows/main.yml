@@ -60,26 +60,21 @@ jobs:
 
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
 
-          python3 -u build-system/Make/Make.py \
-            --bazelUserRoot="$BAZEL_USER_ROOT" \
-            --cacheDir="$HOME/telegram-bazel-cache" \
-            --overrideXcodeVersion \
-            build \
-            --configurationPath="build-system/appstore-configuration.json" \
-            --codesigningInformationPath=build-system/fake-codesigning \
-            --configuration=${{ github.event.inputs.configuration || 'release_arm64' }} \
-            --buildNumber="$BUILD_NUMBER"
-
           OUTPUT_PATH="build/artifacts"
           rm -rf "$OUTPUT_PATH"
           mkdir -p "$OUTPUT_PATH"
 
-          # IPA is at bazel-bin/Telegram/exteraGram.ipa
-          cp bazel-bin/Telegram/exteraGram.ipa "$OUTPUT_PATH/exteraGram.ipa"
-
-          mkdir -p build/DSYMs
-          find bazel-out bazel-bin \( -name "*.dSYM" \) -exec cp -R {} build/DSYMs/ \; 2>/dev/null || true
-          zip -r "$OUTPUT_PATH/exteraGram.DSYMs.zip" build/DSYMs 1>/dev/null
+          python3 -u build-system/Make/Make.py \
+            --bazelUserRoot="$BAZEL_USER_ROOT" \
+            --cacheDir="$HOME/telegram-bazel-cache" \
+            --overrideXcodeVersion \
+            --bazelArguments="--apple_generate_dsym --output_groups=+dsyms" \
+            build \
+            --configurationPath="build-system/appstore-configuration.json" \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --configuration=${{ github.event.inputs.configuration || 'release_arm64' }} \
+            --buildNumber="$BUILD_NUMBER" \
+            --outputBuildArtifactsPath="$OUTPUT_PATH"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
