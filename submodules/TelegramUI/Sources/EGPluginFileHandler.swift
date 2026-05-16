@@ -165,7 +165,23 @@ private struct EGPluginIconLoader: UIViewRepresentable {
             self.iconStr = iconStr; self.context = context; self.size = size
         }
 
-        deinit { packDisposable?.dispose(); fetchDisposable?.dispose() }
+        deinit {
+            let nodeView = node?.view
+            let d1 = packDisposable
+            let d2 = fetchDisposable
+            // UI nodes and TelegramCore signal disposal must happen on the main thread.
+            if Thread.isMainThread {
+                nodeView?.removeFromSuperview()
+                d1?.dispose()
+                d2?.dispose()
+            } else {
+                DispatchQueue.main.async {
+                    nodeView?.removeFromSuperview()
+                    d1?.dispose()
+                    d2?.dispose()
+                }
+            }
+        }
 
         func load(into container: UIView) {
             guard let slashIdx = iconStr.lastIndex(of: "/"),
