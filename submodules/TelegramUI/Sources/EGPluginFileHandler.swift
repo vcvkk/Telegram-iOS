@@ -14,6 +14,8 @@ import EGSettingsUI
 import ComponentFlow
 import GlassBackgroundComponent
 import ButtonComponent
+import GlassBarButtonComponent
+import BundleIconComponent
 
 // MARK: - Metadata Model
 
@@ -212,45 +214,47 @@ private struct EGPluginIconLoader: UIViewRepresentable {
     }
 }
 
-// MARK: - Glass circle button — same GlassBackgroundView as GlassBarButtonComponent in StickerPackScreen
+// MARK: - Glass circle button — ComponentHostView + GlassBarButtonComponent, identical to browser close button
 
 @available(iOS 14.0, *)
 private struct EGGlassCircleButton: UIViewRepresentable {
-    let icon: String
+    let bundleIcon: String   // e.g. "Navigation/Close", "Chat/Context Menu/Share"
     let action: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(action) }
 
-    func makeUIView(context: Context) -> GlassBackgroundView {
-        let sz = CGSize(width: 44, height: 44)
-        let glass = GlassBackgroundView(frame: CGRect(origin: .zero, size: sz))
-        glass.update(size: sz, cornerRadius: 22, isDark: false,
-                     tintColor: GlassBackgroundView.TintColor(kind: .panel),
-                     isInteractive: true, transition: .immediate)
-        let cfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)
-        let btn = UIButton(type: .system)
-        btn.setImage(UIImage(systemName: icon, withConfiguration: cfg), for: .normal)
-        btn.tintColor = UIColor.secondaryLabel
-        btn.frame = glass.contentView.bounds
-        btn.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        btn.addTarget(context.coordinator, action: #selector(Coordinator.tapped), for: .touchUpInside)
-        glass.contentView.addSubview(btn)
-        return glass
+    func makeUIView(context: Context) -> ComponentHostView<Empty> {
+        ComponentHostView<Empty>()
     }
 
-    func updateUIView(_ uiView: GlassBackgroundView, context: Context) {
+    func updateUIView(_ uiView: ComponentHostView<Empty>, context: Context) {
         context.coordinator.action = action
         let isDark = uiView.traitCollection.userInterfaceStyle == .dark
-        let sz = uiView.bounds.isEmpty ? CGSize(width: 44, height: 44) : uiView.bounds.size
-        uiView.update(size: sz, cornerRadius: sz.height / 2, isDark: isDark,
-                      tintColor: GlassBackgroundView.TintColor(kind: .panel),
-                      isInteractive: true, transition: .immediate)
+        let coordinator = context.coordinator
+        let _ = uiView.update(
+            transition: .immediate,
+            component: AnyComponent(GlassBarButtonComponent(
+                size: CGSize(width: 44.0, height: 44.0),
+                backgroundColor: nil,
+                isDark: isDark,
+                state: .glass,
+                component: AnyComponentWithIdentity(
+                    id: "icon",
+                    component: AnyComponent(BundleIconComponent(
+                        name: bundleIcon,
+                        tintColor: UIColor.secondaryLabel
+                    ))
+                ),
+                action: { [weak coordinator] _ in coordinator?.action() }
+            )),
+            environment: {},
+            containerSize: CGSize(width: 44.0, height: 44.0)
+        )
     }
 
     final class Coordinator: NSObject {
         var action: () -> Void
         init(_ action: @escaping () -> Void) { self.action = action }
-        @objc func tapped() { action() }
     }
 }
 
@@ -398,7 +402,7 @@ private struct EGPluginInstallSheet: View {
     @ViewBuilder
     private var headerBar: some View {
         HStack(alignment: .center) {
-            EGGlassCircleButton(icon: "xmark") { presentationMode.wrappedValue.dismiss() }
+            EGGlassCircleButton(bundleIcon: "Navigation/Close") { presentationMode.wrappedValue.dismiss() }
                 .frame(width: 44, height: 44)
             Spacer()
             HStack(spacing: 0) {
@@ -419,7 +423,7 @@ private struct EGPluginInstallSheet: View {
                 }
             }
             Spacer()
-            EGGlassCircleButton(icon: "square.and.arrow.up") { showShareSheet = true }
+            EGGlassCircleButton(bundleIcon: "Chat/Context Menu/Share") { showShareSheet = true }
                 .frame(width: 44, height: 44)
         }
         .padding(.horizontal, 8)
