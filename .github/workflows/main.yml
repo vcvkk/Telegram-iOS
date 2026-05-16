@@ -76,6 +76,12 @@ jobs:
             --buildNumber="$BUILD_NUMBER" \
             --outputBuildArtifactsPath="$OUTPUT_PATH"
 
+          # Inject symbol maps into IPA so on-device symbolication works
+          # without downloading a separate dSYM zip.
+          python3 $SOURCE_DIR/.github/scripts/inject_symbols.py \
+            "$OUTPUT_PATH/DSYMs" \
+            "$OUTPUT_PATH/exteraGram.ipa" || true
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:

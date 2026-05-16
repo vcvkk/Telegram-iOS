@@ -158,6 +158,86 @@ private func uncaughtExceptionHandler(_ exception: NSException) {
     try? report.write(toFile: crashFilePath(), atomically: true, encoding: .utf8)
 }
 
+// MARK: - On-device symbolication using bundled symbol maps
+
+// Symbol maps are injected into the IPA by the CI script inject_symbols.py.
+// Each file lives at <Bundle>/eg_symbols/<FrameworkName>.sym and contains
+// lines of the form:   <hex_addr>\t<symbol_name>
+// sorted ascending by address.
+
+private typealias SymTable = [(addr: UInt64, name: String)]
+
+private var symTableCache: [String: SymTable] = [:]
+
+private func loadSymTable(framework: String) -> SymTable {
+    if let cached = symTableCache[framework] { return cached }
+
+    let symDir = Bundle.main.bundlePath + "/eg_symbols"
+    let filePath = symDir + "/\(framework).sym"
+    guard let text = try? String(contentsOfFile: filePath, encoding: .utf8) else {
+        symTableCache[framework] = []
+        return []
+    }
+
+    var table: SymTable = []
+    for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+        guard let tab = line.firstIndex(of: "\t") else { continue }
+        let addrStr = line[line.startIndex..<tab]
+        let name = String(line[line.index(after: tab)...])
+        if let addr = UInt64(addrStr, radix: 16) {
+            table.append((addr, name))
+        }
+    }
+    // Already sorted by CI script; sort defensively.
+    table.sort { $0.addr < $1.addr }
+    symTableCache[framework] = table
+    return table
+}
+
+private func lookupSymbol(in table: SymTable, offset: UInt64) -> (name: String, delta: UInt64)? {
+    guard !table.isEmpty else { return nil }
+    // Binary search: largest addr <= offset
+    var lo = 0, hi = table.count - 1
+    while lo < hi {
+        let mid = (lo + hi + 1) / 2
+        if table[mid].addr <= offset { lo = mid } else { hi = mid - 1 }
+    }
+    guard table[lo].addr <= offset else { return nil }
+    let delta = offset - table[lo].addr
+    guard delta < 131072 else { return nil }  // sanity: max 128 KB past symbol start
+    return (table[lo].name, delta)
+}
+
+// Pattern: "\tat SomeFramework + 0x1a2b3c"  (produced by frameString() above)
+private let unsymFrameRE = try! NSRegularExpression(
+    pattern: #"^\tat ([A-Za-z0-9_.]+) \+ 0x([0-9a-fA-F]+)$"#
+)
+
+private func symbolicate(_ report: String) -> String {
+    let symDir = Bundle.main.bundlePath + "/eg_symbols"
+    guard FileManager.default.fileExists(atPath: symDir) else { return report }
+
+    var lines = report.components(separatedBy: "\n")
+    for (i, line) in lines.enumerated() {
+        let ns = line as NSString
+        guard let m = unsymFrameRE.firstMatch(
+                in: line, range: NSRange(location: 0, length: ns.length)),
+              let modRange = Range(m.range(at: 1), in: line),
+              let offRange = Range(m.range(at: 2), in: line) else { continue }
+
+        let module = String(line[modRange])
+        guard let offset = UInt64(String(line[offRange]), radix: 16) else { continue }
+
+        let table = loadSymTable(framework: module)
+        guard let (name, delta) = lookupSymbol(in: table, offset: offset) else { continue }
+
+        lines[i] = delta == 0
+            ? "\tat \(module) (\(name))"
+            : "\tat \(module) (\(name) + \(delta))"
+    }
+    return lines.joined(separator: "\n")
+}
+
 // MARK: - Public API
 
 public class EGCrashCatcher {
@@ -181,10 +261,14 @@ public class EGCrashCatcher {
     public static func checkAndReport(in window: UIWindow?) {
         let path = crashFilePath()
         guard FileManager.default.fileExists(atPath: path),
-              let report = try? String(contentsOfFile: path, encoding: .utf8),
-              !report.isEmpty else { return }
+              let raw = try? String(contentsOfFile: path, encoding: .utf8),
+              !raw.isEmpty else { return }
 
         try? FileManager.default.removeItem(atPath: path)
+
+        // Symbolicate on next launch — safe, no signal-handler constraints here.
+        let report = symbolicate(raw)
+
         UIPasteboard.general.string = report
 
         DispatchQueue.main.async {
