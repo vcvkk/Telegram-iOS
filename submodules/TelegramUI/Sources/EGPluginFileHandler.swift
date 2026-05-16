@@ -320,7 +320,7 @@ private final class EGInstallButtonHost: UIView {
             view: buttonView,
             availableSize: bounds.size,
             state: EmptyComponentState(),
-            environment: Environment<Empty>(),
+            environment: ComponentFlow.Environment<Empty>(),
             transition: .immediate
         )
     }
@@ -345,7 +345,7 @@ private struct EGPluginInstallSheet: View {
     let metadata: EGPluginFileMetadata
     let filePath: String
     let context: AccountContext
-    @Environment(\.presentationMode) private var presentationMode
+    @SwiftUI.Environment(\.presentationMode) private var presentationMode
     @State private var isInstalling = false
     @State private var enableAfterInstall = true
     @State private var showShareSheet = false
