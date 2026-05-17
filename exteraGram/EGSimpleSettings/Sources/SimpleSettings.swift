@@ -174,7 +174,6 @@ public class EGSimpleSettings {
         case warnOnStoriesOpen
         case showProfileId
         case sendWithReturnKey
-        case pluginSheetPlainBackground
     }
 
     public enum DownloadSpeedBoostValues: String, CaseIterable {
@@ -326,8 +325,7 @@ public class EGSimpleSettings {
         Keys.hideStories.rawValue: false,
         Keys.warnOnStoriesOpen.rawValue: false,
         Keys.showProfileId.rawValue: true,
-        Keys.sendWithReturnKey.rawValue: false,
-        Keys.pluginSheetPlainBackground.rawValue: false
+        Keys.sendWithReturnKey.rawValue: false
     ]
     
     public static let groupDefaultValues: [String: Any] = [
@@ -553,9 +551,6 @@ public class EGSimpleSettings {
 
     @UserDefault(key: Keys.sendWithReturnKey.rawValue)
     public var sendWithReturnKey: Bool
-
-    @UserDefault(key: Keys.pluginSheetPlainBackground.rawValue)
-    public var pluginSheetPlainBackground: Bool
 
     @UserDefault(key: Keys.pinnedMessageNotifications.rawValue, userDefaults: UserDefaults(suiteName: APP_GROUP_IDENTIFIER) ?? .standard)
     public var pinnedMessageNotifications: String
