@@ -7,6 +7,7 @@ import SwiftSignalKit
 import Postbox
 import TelegramCore
 import AccountContext
+import Display
 import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import StickerResources
