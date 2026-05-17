@@ -397,17 +397,18 @@ private struct EGGlassInstallButton: UIViewRepresentable {
         uiView.isUserInteractionEnabled = !isInstalling
         uiView.alpha = isInstalling ? 0.6 : 1.0
 
-        // Update label text when isInstalling changes
-        let findLabel: (UIView) -> UILabel? = { root in
-            root.subviews.compactMap { $0 as? UILabel }.first(where: { $0.tag == 1 })
-            ?? root.subviews.compactMap {
-                $0.subviews.compactMap { $0 as? UILabel }.first(where: { $0.tag == 1 })
-                ?? $0.subviews.compactMap {
-                    $0.subviews.compactMap { $0 as? UILabel }.first(where: { $0.tag == 1 })
-                }.first
-            }.first
+        // Find the label (tag 1) up to 3 levels deep and update its text
+        var found: UILabel?
+        outer: for s1 in uiView.subviews {
+            if let l = s1 as? UILabel, l.tag == 1 { found = l; break }
+            for s2 in s1.subviews {
+                if let l = s2 as? UILabel, l.tag == 1 { found = l; break outer }
+                for s3 in s2.subviews {
+                    if let l = s3 as? UILabel, l.tag == 1 { found = l; break outer }
+                }
+            }
         }
-        findLabel(uiView)?.text = isInstalling ? "" : "Install Plugin"
+        found?.text = isInstalling ? "" : "Install Plugin"
     }
 }
 
