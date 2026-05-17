@@ -323,6 +323,11 @@ private final class EGGlassCircleButtonView: UIView {
         super.traitCollectionDidChange(previousTraitCollection)
         setNeedsLayout()
     }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { setNeedsLayout() }
+    }
 }
 
 @available(iOS 14.0, *)
@@ -375,8 +380,7 @@ private final class EGGlassInstallButtonView: UIView {
         glass.update(
             size: sz, cornerRadius: sz.height / 2,
             isDark: traitCollection.userInterfaceStyle == .dark,
-            tintColor: .init(kind: .custom(style: .default, color: UIColor.systemBlue),
-                             innerColor: UIColor.systemBlue.withAlphaComponent(0.4)),
+            tintColor: .init(kind: .panel, innerColor: UIColor.systemBlue.withAlphaComponent(0.45)),
             isInteractive: true, transition: .immediate
         )
     }
@@ -384,6 +388,11 @@ private final class EGGlassInstallButtonView: UIView {
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
         setNeedsLayout()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { setNeedsLayout() }
     }
 
     func setInstalling(_ installing: Bool) {
@@ -472,7 +481,7 @@ private struct EGPluginInstallSheet: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.horizontal, 16).padding(.bottom, 4)
 
-                    // ── version · author (centered) ─────────────────
+                    // ── version · author (centered) ──────────────────
                     HStack(spacing: 0) {
                         if let v = metadata.version {
                             Text(v).font(.system(size: 14)).foregroundColor(Color(UIColor.secondaryLabel))
@@ -670,13 +679,10 @@ func presentEGPluginMetadataIfAvailable(
                     ).height
                     let detentH = max(300, min(fittingH + 20, screenH * 0.85))
 
-                    sc.detents = [
-                        .custom { _ in detentH },
-                        .large()
-                    ]
+                    sc.detents = [.custom { _ in detentH }]
                     sc.prefersGrabberVisible = false
                     sc.preferredCornerRadius = deviceRadius
-                    sc.prefersScrollingExpandsWhenScrolledToEdge = true
+                    sc.prefersScrollingExpandsWhenScrolledToEdge = false
                 }
             } else {
                 sheet.modalPresentationStyle = .overFullScreen
