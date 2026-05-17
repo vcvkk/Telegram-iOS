@@ -11,6 +11,7 @@ import Display
 import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import StickerResources
+import EGSettingsUI
 
 // MARK: - Metadata Model
 
