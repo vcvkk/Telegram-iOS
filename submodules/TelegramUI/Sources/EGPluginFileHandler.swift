@@ -12,6 +12,8 @@ import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import StickerResources
 import EGSettingsUI
+import ComponentFlow
+import GlassBackgroundComponent
 
 // MARK: - Metadata Model
 
@@ -280,135 +282,130 @@ private struct EGAuthorView: View {
     }
 }
 
-// MARK: - Glass circle button (UIGlassEffect on iOS 26+, tertiarySystemFill fallback)
+// MARK: - Glass circle button (GlassBackgroundView — same glass as native Telegram UI)
+
+private final class EGGlassCircleButtonView: UIView {
+    private let glass = GlassBackgroundView()
+    private let imageView: UIImageView
+    var tapAction: (() -> Void)?
+
+    init(systemImage: String) {
+        let cfg = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        imageView = UIImageView(image: UIImage(systemName: systemImage, withConfiguration: cfg))
+        super.init(frame: .zero)
+        glass.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(glass)
+        imageView.tintColor = .white
+        imageView.contentMode = .center
+        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(imageView)
+        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func tapped() { tapAction?() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let sz = bounds.size
+        guard sz.width > 0, sz.height > 0 else { return }
+        glass.frame = bounds
+        imageView.frame = bounds
+        glass.update(
+            size: sz, cornerRadius: sz.height / 2,
+            isDark: traitCollection.userInterfaceStyle == .dark,
+            tintColor: .init(kind: .panel),
+            isInteractive: true, transition: .immediate
+        )
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        setNeedsLayout()
+    }
+}
 
 @available(iOS 14.0, *)
 private struct EGGlassCircleButton: UIViewRepresentable {
     let systemImage: String
     let action: () -> Void
 
-    class Coordinator: NSObject {
-        let action: () -> Void
-        init(_ a: @escaping () -> Void) { self.action = a }
-        @objc func tap() { action() }
+    func makeUIView(context: Context) -> EGGlassCircleButtonView {
+        let v = EGGlassCircleButtonView(systemImage: systemImage)
+        v.tapAction = action
+        return v
     }
-    func makeCoordinator() -> Coordinator { Coordinator(action) }
-
-    func makeUIView(context: Context) -> UIView {
-        let size: CGFloat = 36
-        let container = UIView(frame: CGRect(origin: .zero, size: CGSize(width: size, height: size)))
-        container.layer.cornerRadius = size / 2
-        container.clipsToBounds = true
-
-        let cfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
-        let img = UIImage(systemName: systemImage, withConfiguration: cfg)
-
-        if #available(iOS 26.0, *) {
-            let effect = UIGlassEffect()
-            effect.isInteractive = true
-            let effectView = UIVisualEffectView(effect: effect)
-            effectView.frame = container.bounds
-            effectView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            container.addSubview(effectView)
-
-            let iv = UIImageView(image: img)
-            iv.tintColor = .white
-            iv.contentMode = .center
-            iv.frame = container.bounds
-            effectView.contentView.addSubview(iv)
-        } else {
-            container.backgroundColor = UIColor.tertiarySystemFill
-            let iv = UIImageView(image: img)
-            iv.tintColor = UIColor.secondaryLabel
-            iv.contentMode = .center
-            iv.frame = container.bounds
-            container.addSubview(iv)
-        }
-
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap))
-        container.addGestureRecognizer(tap)
-        container.isUserInteractionEnabled = true
-        return container
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: EGGlassCircleButtonView, context: Context) {}
 }
 
-// MARK: - Glass install button (UIGlassEffect + blue tint on iOS 26+, solid blue fallback)
+// MARK: - Glass install button (GlassBackgroundView + blue tint, capsule shape)
+
+private final class EGGlassInstallButtonView: UIView {
+    private let glass = GlassBackgroundView()
+    private let label = UILabel()
+    private let spinner = UIActivityIndicatorView(style: .medium)
+    var tapAction: (() -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        glass.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(glass)
+        label.text = "Install Plugin"
+        label.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(label)
+        spinner.color = .white
+        spinner.hidesWhenStopped = true
+        addSubview(spinner)
+        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func tapped() { tapAction?() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let sz = bounds.size
+        guard sz.width > 0, sz.height > 0 else { return }
+        glass.frame = bounds
+        label.frame = bounds
+        spinner.center = CGPoint(x: sz.width / 2, y: sz.height / 2)
+        glass.update(
+            size: sz, cornerRadius: sz.height / 2,
+            isDark: traitCollection.userInterfaceStyle == .dark,
+            tintColor: .init(kind: .custom(style: .default, color: UIColor.systemBlue),
+                             innerColor: UIColor.systemBlue.withAlphaComponent(0.4)),
+            isInteractive: true, transition: .immediate
+        )
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        setNeedsLayout()
+    }
+
+    func setInstalling(_ installing: Bool) {
+        isUserInteractionEnabled = !installing
+        alpha = installing ? 0.6 : 1.0
+        label.isHidden = installing
+        if installing { spinner.startAnimating() } else { spinner.stopAnimating() }
+    }
+}
 
 @available(iOS 14.0, *)
 private struct EGGlassInstallButton: UIViewRepresentable {
     let isInstalling: Bool
     let action: () -> Void
 
-    class Coordinator: NSObject {
-        let action: () -> Void
-        init(_ a: @escaping () -> Void) { self.action = a }
-        @objc func tap() { action() }
+    func makeUIView(context: Context) -> EGGlassInstallButtonView {
+        let v = EGGlassInstallButtonView()
+        v.tapAction = action
+        return v
     }
-    func makeCoordinator() -> Coordinator { Coordinator(action) }
-
-    func makeUIView(context: Context) -> UIView {
-        let container = UIView()
-        container.layer.cornerRadius = 25
-        container.clipsToBounds = true
-
-        if #available(iOS 26.0, *) {
-            let effect = UIGlassEffect()
-            effect.isInteractive = true
-            let effectView = UIVisualEffectView(effect: effect)
-            effectView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            container.addSubview(effectView)
-
-            let tintView = UIView()
-            tintView.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.55)
-            tintView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            effectView.contentView.addSubview(tintView)
-
-            let label = UILabel()
-            label.tag = 1
-            label.text = "Install Plugin"
-            label.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
-            label.textColor = .white
-            label.textAlignment = .center
-            label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            effectView.contentView.addSubview(label)
-        } else {
-            container.backgroundColor = UIColor.systemBlue
-
-            let label = UILabel()
-            label.tag = 1
-            label.text = "Install Plugin"
-            label.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
-            label.textColor = .white
-            label.textAlignment = .center
-            label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            container.addSubview(label)
-        }
-
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap))
-        container.addGestureRecognizer(tap)
-        container.isUserInteractionEnabled = !isInstalling
-        container.alpha = isInstalling ? 0.6 : 1.0
-        return container
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {
-        uiView.isUserInteractionEnabled = !isInstalling
-        uiView.alpha = isInstalling ? 0.6 : 1.0
-
-        // Find the label (tag 1) up to 3 levels deep and update its text
-        var found: UILabel?
-        outer: for s1 in uiView.subviews {
-            if let l = s1 as? UILabel, l.tag == 1 { found = l; break }
-            for s2 in s1.subviews {
-                if let l = s2 as? UILabel, l.tag == 1 { found = l; break outer }
-                for s3 in s2.subviews {
-                    if let l = s3 as? UILabel, l.tag == 1 { found = l; break outer }
-                }
-            }
-        }
-        found?.text = isInstalling ? "" : "Install Plugin"
+    func updateUIView(_ uiView: EGGlassInstallButtonView, context: Context) {
+        uiView.setInstalling(isInstalling)
     }
 }
 
@@ -435,12 +432,12 @@ private struct EGPluginInstallSheet: View {
                         EGGlassCircleButton(systemImage: "xmark") {
                             presentationMode.wrappedValue.dismiss()
                         }
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         Spacer()
                         EGGlassCircleButton(systemImage: "square.and.arrow.up") {
                             showShareSheet = true
                         }
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                     }
                     .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 14)
 
