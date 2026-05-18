@@ -2,7 +2,6 @@
 
 import Foundation
 import UIKit
-import SwiftUI
 import SwiftSignalKit
 import Postbox
 import TelegramCore
@@ -12,8 +11,6 @@ import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import StickerResources
 import EGSettingsUI
-import ComponentFlow
-import GlassBackgroundComponent
 
 // MARK: - Metadata Model
 
@@ -43,8 +40,6 @@ struct EGPluginFileMetadata {
             case "author":      meta.author = value
             case "version":     meta.version = value
             case "icon":
-                // Mirror Android Plugin.setIcon() / isIconValid(): only accept "packName/N" format.
-                // Bare icon names like "msg_reactions" from plugin code bodies are silently ignored.
                 if let slash = value.lastIndex(of: "/"),
                    Int(value[value.index(after: slash)...]) != nil {
                     meta.icon = value
@@ -61,10 +56,6 @@ struct EGPluginFileMetadata {
         return meta
     }
 
-    // Parses Python metadata assignment lines in all formats:
-    //   __key__ = "value"  /  __key__ = 'value'
-    //   __key = "value"    /  __key = 'value'
-    //   key = "value"      /  key = 'value'
     private static func parseLine(_ line: String) -> (key: String, value: String)? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { return nil }
@@ -86,520 +77,254 @@ struct EGPluginFileMetadata {
     }
 }
 
-// MARK: - Activity Sheet
+// MARK: - Plugin Install Alert (same presentation as SavedTagNameAlertController)
 
-@available(iOS 14.0, *)
-private struct ActivitySheet: UIViewControllerRepresentable {
-    let items: [Any]
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
-}
+private final class EGPluginAlertViewController: UIViewController {
+    private let metadata: EGPluginFileMetadata
+    private let filePath: String
+    private let accountContext: AccountContext
 
-// MARK: - Requirements Chips (matches Android PluginRequirementsView)
+    private let dimView = UIView()
+    private let cardView = UIView()
 
-@available(iOS 14.0, *)
-private struct RequirementChipsView: View {
-    let requirements: [String]
+    private let iconContainerView = UIView()
+    private let nameLabel = UILabel()
+    private let authorLabel = UILabel()
+    private let pillView = UIView()
+    private let pillIconView = UIImageView()
+    private let pillTextLabel = UILabel()
+    private let requirementsLabel = UILabel()
 
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(requirements, id: \.self) { req in
-                    Button(action: { openPyPI(req) }) {
-                        Text(req)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(Color(UIColor.systemBlue))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color(UIColor.systemBlue).opacity(0.10))
-                            .clipShape(Capsule())
-                    }
-                }
-            }
-            .padding(.horizontal, 21)
-        }
-    }
+    private let hSeparator = UIView()
+    private let cancelButton = UIButton(type: .system)
+    private let shareButton = UIButton(type: .system)
+    private let installButton = UIButton(type: .system)
+    private let vSep1 = UIView()
+    private let vSep2 = UIView()
+    private let installSpinner = UIActivityIndicatorView(style: .medium)
 
-    private func openPyPI(_ spec: String) {
-        let pkg = spec.components(separatedBy: CharacterSet(charactersIn: "><=!~")).first?
-            .trimmingCharacters(in: .whitespaces) ?? spec
-        guard let url = URL(string: "https://pypi.org/project/\(pkg)/") else { return }
-        UIApplication.shared.open(url)
-    }
-}
+    private var isInstalling = false
+    private var stickerNode: DefaultAnimatedStickerNodeImpl?
+    private var packDisposable: Disposable?
+    private var fetchDisposable: Disposable?
 
-// MARK: - Plugin Icon Loader (matches Android setPlaceholderImageByIndex pattern)
-// Fetches sticker pack by name, picks item at index, renders it — all inside the Coordinator
-// so no @State mutation is needed. Identical pattern to EGPluginIconView in EGPluginsController.
-
-@available(iOS 14.0, *)
-private struct EGPluginIconLoader: UIViewRepresentable {
-    let iconStr: String   // "packName/index"
-    let context: AccountContext
-    let size: CGFloat
-
-    func makeCoordinator() -> Coordinator { Coordinator(iconStr: iconStr, context: context, size: size) }
-
-    func makeUIView(context uiCtx: Context) -> UIView {
-        let v = UIView()
-        v.backgroundColor = .clear
-        uiCtx.coordinator.load(into: v)
-        return v
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {}
-
-    final class Coordinator {
-        private let iconStr: String
-        private let context: AccountContext
-        private let size: CGFloat
-        private var node: DefaultAnimatedStickerNodeImpl?
-        private var packDisposable: Disposable?
-        private var fetchDisposable: Disposable?
-
-        init(iconStr: String, context: AccountContext, size: CGFloat) {
-            self.iconStr = iconStr; self.context = context; self.size = size
-        }
-
-        deinit {
-            let nodeView = node?.view
-            let d1 = packDisposable
-            let d2 = fetchDisposable
-            // UI nodes and TelegramCore signal disposal must happen on the main thread.
-            if Thread.isMainThread {
-                nodeView?.removeFromSuperview()
-                d1?.dispose()
-                d2?.dispose()
-            } else {
-                DispatchQueue.main.async {
-                    nodeView?.removeFromSuperview()
-                    d1?.dispose()
-                    d2?.dispose()
-                }
-            }
-        }
-
-        func load(into container: UIView) {
-            guard let slashIdx = iconStr.lastIndex(of: "/"),
-                  let index = Int(iconStr[iconStr.index(after: slashIdx)...]) else { return }
-            let packName = String(iconStr[iconStr.startIndex..<slashIdx])
-            let iconSize = CGSize(width: size, height: size)
-            let pixelSide = Int(size * UIScreen.main.scale)
-
-            packDisposable = (context.engine.stickers.loadedStickerPack(
-                    reference: .name(packName), forceActualized: false)
-                |> deliverOnMainQueue
-            ).startStandalone(next: { [weak container, weak self] result in
-                guard let self, let container else { return }
-                guard self.node == nil else { return }
-                guard case .result(_, let items, _) = result, index < items.count else { return }
-
-                let file = items[index].file._parse()
-                let node = DefaultAnimatedStickerNodeImpl()
-                node.setup(
-                    source: AnimatedStickerResourceSource(
-                        account: self.context.account,
-                        resource: file.resource,
-                        isVideo: file.isVideoSticker
-                    ),
-                    width: pixelSide, height: pixelSide,
-                    playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
-                )
-                node.updateLayout(size: iconSize)
-                // overrideVisibility bypasses didEnterHierarchy tracking; required when the
-                // node is embedded in a plain UIView rather than an ASDisplayNode tree.
-                node.overrideVisibility = true
-                node.visibility = true
-                node.frame = CGRect(origin: .zero, size: iconSize)
-                node.view.frame = CGRect(origin: .zero, size: iconSize)
-                container.addSubview(node.view)
-                self.node = node
-
-                self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
-                    account: self.context.account,
-                    userLocation: .other,
-                    fileReference: stickerPackFileReference(file),
-                    resource: file.resource
-                ).startStandalone()
-            })
-        }
-    }
-}
-
-// MARK: - Author text with tappable @username segments
-
-@available(iOS 14.0, *)
-private struct EGAuthorView: View {
-    let author: String
-    let onUsernameTap: (String) -> Void
-
-    private struct Segment {
-        let text: String
-        let isUsername: Bool
-        var rawUsername: String { isUsername ? String(text.dropFirst()) : text }
-    }
-
-    private var segments: [Segment] {
-        guard let pattern = try? NSRegularExpression(pattern: "@[a-zA-Z][a-zA-Z0-9_]{1,31}") else {
-            return [Segment(text: author, isUsername: false)]
-        }
-        var result: [Segment] = []
-        var lastUpperBound = author.startIndex
-        let nsRange = NSRange(author.startIndex..., in: author)
-        for match in pattern.matches(in: author, range: nsRange) {
-            guard let matchRange = Range(match.range, in: author) else { continue }
-            if matchRange.lowerBound > lastUpperBound {
-                result.append(Segment(text: String(author[lastUpperBound..<matchRange.lowerBound]), isUsername: false))
-            }
-            result.append(Segment(text: String(author[matchRange]), isUsername: true))
-            lastUpperBound = matchRange.upperBound
-        }
-        if lastUpperBound < author.endIndex {
-            result.append(Segment(text: String(author[lastUpperBound...]), isUsername: false))
-        }
-        return result.isEmpty ? [Segment(text: author, isUsername: false)] : result
-    }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
-                if seg.isUsername {
-                    Button(action: { onUsernameTap(seg.rawUsername) }) {
-                        Text(seg.text)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(Color(UIColor.systemBlue))
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Text(seg.text)
-                        .font(.system(size: 14))
-                        .foregroundColor(Color(UIColor.secondaryLabel))
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Glass circle button (GlassBackgroundView — same glass as native Telegram UI)
-
-private final class EGGlassCircleButtonView: UIView {
-    private let glass = GlassBackgroundView()
-    private let imageView: UIImageView
-    var tapAction: (() -> Void)?
-
-    init(systemImage: String) {
-        let cfg = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-        imageView = UIImageView(image: UIImage(systemName: systemImage, withConfiguration: cfg))
-        super.init(frame: .zero)
-        glass.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(glass)
-        imageView.tintColor = .white
-        imageView.contentMode = .center
-        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(imageView)
-        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
+    init(metadata: EGPluginFileMetadata, filePath: String, context: AccountContext) {
+        self.metadata = metadata
+        self.filePath = filePath
+        self.accountContext = context
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .overFullScreen
+        modalTransitionStyle = .crossDissolve
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    @objc private func tapped() { tapAction?() }
+    deinit {
+        packDisposable?.dispose()
+        fetchDisposable?.dispose()
+    }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let sz = bounds.size
-        guard sz.width > 0, sz.height > 0 else { return }
-        glass.frame = bounds
-        imageView.frame = bounds
-        glass.update(
-            size: sz, cornerRadius: sz.height / 2,
-            isDark: traitCollection.userInterfaceStyle == .dark,
-            tintColor: .init(kind: .panel),
-            isInteractive: true, transition: .immediate
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+
+        dimView.backgroundColor = UIColor(white: 0, alpha: 0.4)
+        dimView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        dimView.frame = view.bounds
+        view.addSubview(dimView)
+        dimView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(cancelTapped)))
+
+        cardView.backgroundColor = UIColor.secondarySystemGroupedBackground
+        cardView.layer.cornerRadius = 14
+        cardView.layer.masksToBounds = true
+        view.addSubview(cardView)
+
+        // Icon
+        iconContainerView.backgroundColor = UIColor.systemBlue
+        iconContainerView.layer.cornerRadius = 18
+        iconContainerView.clipsToBounds = true
+        let symCfg = UIImage.SymbolConfiguration(pointSize: 28, weight: .semibold)
+        let fallback = UIImageView(image: UIImage(systemName: "puzzlepiece.extension.fill", withConfiguration: symCfg))
+        fallback.tintColor = .white
+        fallback.contentMode = .center
+        fallback.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        iconContainerView.addSubview(fallback)
+        cardView.addSubview(iconContainerView)
+        if let iconStr = metadata.icon, !iconStr.isEmpty { loadStickerIcon(iconStr) }
+
+        // Name
+        nameLabel.text = metadata.name ?? "Plugin"
+        nameLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        nameLabel.textColor = .label
+        nameLabel.textAlignment = .center
+        nameLabel.numberOfLines = 2
+        cardView.addSubview(nameLabel)
+
+        // Author/version
+        let parts = [metadata.version, metadata.author].compactMap { $0 }.filter { !$0.isEmpty }
+        authorLabel.text = parts.joined(separator: " · ")
+        authorLabel.font = .systemFont(ofSize: 13)
+        authorLabel.textColor = .secondaryLabel
+        authorLabel.textAlignment = .center
+        authorLabel.numberOfLines = 2
+        authorLabel.isHidden = parts.isEmpty
+        cardView.addSubview(authorLabel)
+
+        // Unknown source pill
+        pillView.backgroundColor = .systemRed
+        pillView.layer.masksToBounds = true
+        let pillSymCfg = UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        pillIconView.image = UIImage(systemName: "questionmark.circle.fill", withConfiguration: pillSymCfg)
+        pillIconView.tintColor = .white
+        pillIconView.contentMode = .scaleAspectFit
+        pillTextLabel.text = "Unknown source"
+        pillTextLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        pillTextLabel.textColor = .white
+        pillView.addSubview(pillIconView)
+        pillView.addSubview(pillTextLabel)
+        cardView.addSubview(pillView)
+
+        // Requirements
+        requirementsLabel.text = metadata.requirements.joined(separator: "  •  ")
+        requirementsLabel.font = .systemFont(ofSize: 11)
+        requirementsLabel.textColor = .secondaryLabel
+        requirementsLabel.textAlignment = .center
+        requirementsLabel.numberOfLines = 0
+        requirementsLabel.isHidden = metadata.requirements.isEmpty
+        cardView.addSubview(requirementsLabel)
+
+        // Separators
+        [hSeparator, vSep1, vSep2].forEach { $0.backgroundColor = .separator; cardView.addSubview($0) }
+
+        // Buttons — same style as TextAlertContentActionNode
+        cancelButton.setTitle("Cancel", for: .normal)
+        cancelButton.titleLabel?.font = .systemFont(ofSize: 17)
+        cancelButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
+
+        shareButton.setTitle("Share", for: .normal)
+        shareButton.titleLabel?.font = .systemFont(ofSize: 17)
+        shareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
+
+        installButton.setTitle("Install", for: .normal)
+        installButton.titleLabel?.font = .boldSystemFont(ofSize: 17)
+        installButton.addTarget(self, action: #selector(installTapped), for: .touchUpInside)
+
+        [cancelButton, shareButton, installButton].forEach { cardView.addSubview($0) }
+
+        installSpinner.hidesWhenStopped = true
+        cardView.addSubview(installSpinner)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        layoutCard()
+    }
+
+    private func layoutCard() {
+        let cardW: CGFloat = 270
+        let btnH: CGFloat = 44
+        let iconSide: CGFloat = 60
+        let hPad: CGFloat = 16
+        let px: CGFloat = 1.0 / UIScreen.main.scale
+        var y: CGFloat = 16
+
+        iconContainerView.frame = CGRect(x: (cardW - iconSide) / 2, y: y, width: iconSide, height: iconSide)
+        y += iconSide + 10
+
+        let tw = cardW - hPad * 2
+        let nameH = ceil(nameLabel.sizeThatFits(CGSize(width: tw, height: 200)).height)
+        nameLabel.frame = CGRect(x: hPad, y: y, width: tw, height: nameH)
+        y += nameH + 2
+
+        if !authorLabel.isHidden {
+            let ah = ceil(authorLabel.sizeThatFits(CGSize(width: tw, height: 100)).height)
+            authorLabel.frame = CGRect(x: hPad, y: y, width: tw, height: ah)
+            y += ah
+        }
+        y += 10
+
+        // Pill
+        let pillH: CGFloat = 22
+        let iconW: CGFloat = 12
+        let tsz = pillTextLabel.sizeThatFits(CGSize(width: 200, height: pillH))
+        let pp: CGFloat = 10
+        let pillW = pp + iconW + 4 + tsz.width + pp
+        pillView.frame = CGRect(x: (cardW - pillW) / 2, y: y, width: pillW, height: pillH)
+        pillView.layer.cornerRadius = pillH / 2
+        pillIconView.frame = CGRect(x: pp, y: (pillH - iconW) / 2, width: iconW, height: iconW)
+        pillTextLabel.frame = CGRect(x: pp + iconW + 4, y: (pillH - tsz.height) / 2, width: tsz.width, height: tsz.height)
+        y += pillH + 8
+
+        if !requirementsLabel.isHidden {
+            let rh = ceil(requirementsLabel.sizeThatFits(CGSize(width: tw, height: 100)).height)
+            requirementsLabel.frame = CGRect(x: hPad, y: y, width: tw, height: rh)
+            y += rh + 8
+        }
+
+        y += 8
+        let cardH = y + btnH
+
+        cardView.frame = CGRect(
+            x: (view.bounds.width - cardW) / 2,
+            y: (view.bounds.height - cardH) / 2,
+            width: cardW,
+            height: cardH
         )
+
+        hSeparator.frame = CGRect(x: 0, y: y, width: cardW, height: px)
+
+        let bw = floor(cardW / 3)
+        cancelButton.frame  = CGRect(x: 0,      y: y, width: bw,             height: btnH)
+        shareButton.frame   = CGRect(x: bw,     y: y, width: bw,             height: btnH)
+        installButton.frame = CGRect(x: bw * 2, y: y, width: cardW - bw * 2, height: btnH)
+        vSep1.frame = CGRect(x: bw,     y: y, width: px, height: btnH)
+        vSep2.frame = CGRect(x: bw * 2, y: y, width: px, height: btnH)
+        installSpinner.center = CGPoint(x: bw * 2 + (cardW - bw * 2) / 2, y: y + btnH / 2)
     }
 
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        setNeedsLayout()
+    @objc private func cancelTapped() {
+        dismiss(animated: true)
     }
 
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        if window != nil { setNeedsLayout() }
-    }
-}
-
-@available(iOS 14.0, *)
-private struct EGGlassCircleButton: UIViewRepresentable {
-    let systemImage: String
-    let action: () -> Void
-
-    func makeUIView(context: Context) -> EGGlassCircleButtonView {
-        let v = EGGlassCircleButtonView(systemImage: systemImage)
-        v.tapAction = action
-        return v
-    }
-    func updateUIView(_ uiView: EGGlassCircleButtonView, context: Context) {}
-}
-
-// MARK: - Glass install button (GlassBackgroundView + blue tint, capsule shape)
-
-private final class EGGlassInstallButtonView: UIView {
-    private let glass = GlassBackgroundView()
-    private let label = UILabel()
-    private let spinner = UIActivityIndicatorView(style: .medium)
-    var tapAction: (() -> Void)?
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        glass.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(glass)
-        label.text = "Install Plugin"
-        label.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
-        label.textColor = .white
-        label.textAlignment = .center
-        label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(label)
-        spinner.color = .white
-        spinner.hidesWhenStopped = true
-        addSubview(spinner)
-        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
-    }
-    required init?(coder: NSCoder) { fatalError() }
-
-    @objc private func tapped() { tapAction?() }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let sz = bounds.size
-        guard sz.width > 0, sz.height > 0 else { return }
-        glass.frame = bounds
-        label.frame = bounds
-        spinner.center = CGPoint(x: sz.width / 2, y: sz.height / 2)
-        glass.update(
-            size: sz, cornerRadius: sz.height / 2,
-            isDark: traitCollection.userInterfaceStyle == .dark,
-            tintColor: .init(kind: .panel, innerColor: UIColor.systemBlue.withAlphaComponent(0.45)),
-            isInteractive: true, transition: .immediate
-        )
+    @objc private func shareTapped() {
+        let avc = UIActivityViewController(activityItems: [URL(fileURLWithPath: filePath)], applicationActivities: nil)
+        avc.popoverPresentationController?.sourceView = shareButton
+        present(avc, animated: true)
     }
 
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        setNeedsLayout()
-    }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        if window != nil { setNeedsLayout() }
-    }
-
-    func setInstalling(_ installing: Bool) {
-        isUserInteractionEnabled = !installing
-        alpha = installing ? 0.6 : 1.0
-        label.isHidden = installing
-        if installing { spinner.startAnimating() } else { spinner.stopAnimating() }
-    }
-}
-
-@available(iOS 14.0, *)
-private struct EGGlassInstallButton: UIViewRepresentable {
-    let isInstalling: Bool
-    let action: () -> Void
-
-    func makeUIView(context: Context) -> EGGlassInstallButtonView {
-        let v = EGGlassInstallButtonView()
-        v.tapAction = action
-        return v
-    }
-    func updateUIView(_ uiView: EGGlassInstallButtonView, context: Context) {
-        uiView.setInstalling(isInstalling)
-    }
-}
-
-// MARK: - SwiftUI Bottom Sheet
-
-@available(iOS 14.0, *)
-private struct EGPluginInstallSheet: View {
-    let metadata: EGPluginFileMetadata
-    let filePath: String
-    let context: AccountContext
-    var navigationController: UINavigationController?
-    @SwiftUI.Environment(\.presentationMode) private var presentationMode
-    @State private var isInstalling = false
-    @State private var showShareSheet = false
-
-    var body: some View {
-        ZStack {
-            Color(UIColor.secondarySystemGroupedBackground).ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-
-                    // ── Top bar: glass circle buttons ────────────────
-                    HStack {
-                        EGGlassCircleButton(systemImage: "xmark") {
-                            presentationMode.wrappedValue.dismiss()
-                        }
-                        .frame(width: 44, height: 44)
-                        Spacer()
-                        EGGlassCircleButton(systemImage: "square.and.arrow.up") {
-                            showShareSheet = true
-                        }
-                        .frame(width: 44, height: 44)
-                    }
-                    .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 14)
-
-                    // ── Unknown source pill (solid red, white text) ──
-                    HStack(spacing: 6) {
-                        Image(systemName: "questionmark.circle.fill").font(.system(size: 13))
-                        Text("Unknown source").font(.system(size: 13, weight: .semibold))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 7)
-                    .background(Color(UIColor.systemRed))
-                    .clipShape(Capsule())
-                    .frame(maxWidth: .infinity)
-                    .padding(.bottom, 20)
-
-                    // ── Description (left) | Icon (right) ───────────
-                    HStack(alignment: .center, spacing: 14) {
-                        if let desc = metadata.description, !desc.isEmpty {
-                            descriptionView(desc)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        } else {
-                            Spacer()
-                        }
-                        iconView
-                    }
-                    .padding(.horizontal, 16).padding(.bottom, 16)
-
-                    // ── Plugin name (centered) ───────────────────────
-                    Text(metadata.name ?? "Plugin")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(Color(UIColor.label))
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.horizontal, 16).padding(.bottom, 4)
-
-                    // ── version · author (centered) ──────────────────
-                    HStack(spacing: 0) {
-                        if let v = metadata.version {
-                            Text(v).font(.system(size: 14)).foregroundColor(Color(UIColor.secondaryLabel))
-                        }
-                        if metadata.version != nil && metadata.author != nil {
-                            Text(" · ").font(.system(size: 14)).foregroundColor(Color(UIColor.tertiaryLabel))
-                        }
-                        if let a = metadata.author {
-                            EGAuthorView(author: a) { openUsername($0) }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.horizontal, 16).padding(.bottom, 20)
-
-                    // ── Requirements chips ───────────────────────────
-                    if !metadata.requirements.isEmpty {
-                        RequirementChipsView(requirements: metadata.requirements)
-                            .padding(.bottom, 16)
-                    }
-
-                    // ── Install button (glass + oval) ────────────────
-                    EGGlassInstallButton(isInstalling: isInstalling, action: performInstall)
-                        .frame(height: 50)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
-                }
-            }
-        }
-        .sheet(isPresented: $showShareSheet) {
-            ActivitySheet(items: [URL(fileURLWithPath: filePath)])
-        }
-    }
-
-    // MARK: Description view (markdown on iOS 15+, plain on iOS 14)
-
-    @ViewBuilder
-    private func descriptionView(_ desc: String) -> some View {
-        if #available(iOS 15.0, *),
-           let attrStr = try? AttributedString(markdown: desc,
-               options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-            Text(attrStr)
-                .font(.system(size: 14))
-                .foregroundColor(Color(UIColor.secondaryLabel))
-                .lineLimit(5)
-        } else {
-            Text(desc)
-                .font(.system(size: 14))
-                .foregroundColor(Color(UIColor.secondaryLabel))
-                .lineLimit(5)
-        }
-    }
-
-    // MARK: Icon view (78×78, cornerRadius 18)
-
-    @ViewBuilder
-    private var iconView: some View {
-        if let iconStr = metadata.icon, !iconStr.isEmpty {
-            EGPluginIconLoader(iconStr: iconStr, context: context, size: 78)
-                .frame(width: 78, height: 78)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(
-                    ZStack {
-                        Circle()
-                            .fill(Color(UIColor.systemBackground))
-                            .frame(width: 26, height: 26)
-                        Circle()
-                            .fill(Color.accentColor)
-                            .frame(width: 22, height: 22)
-                        Image(systemName: "puzzlepiece.extension.fill")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                    .offset(x: 3, y: 3),
-                    alignment: .bottomTrailing
-                )
-        } else {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.accentColor)
-                    .frame(width: 78, height: 78)
-                Image(systemName: "puzzlepiece.extension.fill")
-                    .font(.system(size: 36))
-                    .foregroundColor(.white)
-            }
-        }
-    }
-
-    // MARK: Install — copies file to persistent storage and registers with PluginsController
-
-    private func performInstall() {
+    @objc private func installTapped() {
+        guard !isInstalling else { return }
         isInstalling = true
-        let capturedMetadata = metadata
-        let capturedFilePath = filePath
+        installButton.isHidden = true
+        installSpinner.startAnimating()
+
+        let meta = metadata
+        let fp = filePath
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let fileManager = FileManager.default
-            let pluginId = capturedMetadata.id ?? UUID().uuidString
+            let fm = FileManager.default
+            let pluginId = meta.id ?? UUID().uuidString
 
-            if let supportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            if let supportDir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
                 let pluginsDir = supportDir.appendingPathComponent("EGPlugins", isDirectory: true)
-                try? fileManager.createDirectory(at: pluginsDir, withIntermediateDirectories: true)
+                try? fm.createDirectory(at: pluginsDir, withIntermediateDirectories: true)
                 let destURL = pluginsDir.appendingPathComponent("\(pluginId).plugin")
-                try? fileManager.removeItem(at: destURL)
-                try? fileManager.copyItem(atPath: capturedFilePath, toPath: destURL.path)
+                try? fm.removeItem(at: destURL)
+                try? fm.copyItem(atPath: fp, toPath: destURL.path)
             }
 
             let plugin = EGPlugin(
                 id: pluginId,
-                name: capturedMetadata.name ?? "Unknown Plugin",
-                subtitle: capturedMetadata.author ?? "",
-                pluginDescription: capturedMetadata.description ?? "",
-                version: capturedMetadata.version ?? "1.0",
-                iconUrl: capturedMetadata.icon,
+                name: meta.name ?? "Unknown Plugin",
+                subtitle: meta.author ?? "",
+                pluginDescription: meta.description ?? "",
+                version: meta.version ?? "1.0",
+                iconUrl: meta.icon,
                 isEnabled: true,
-                requiresPermissions: capturedMetadata.requirements
+                requiresPermissions: meta.requirements
             )
 
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
                 var plugins = PluginsController.shared.plugins
                 if let idx = plugins.firstIndex(where: { $0.id == pluginId }) {
                     plugins[idx] = plugin
@@ -607,36 +332,52 @@ private struct EGPluginInstallSheet: View {
                     plugins.append(plugin)
                 }
                 PluginsController.shared.plugins = plugins
-                isInstalling = false
-                presentationMode.wrappedValue.dismiss()
+                self.dismiss(animated: true)
             }
         }
     }
 
-    private func openUsername(_ username: String) {
-        let nc = navigationController as? NavigationController
-        let ctx = context
-        let pm = presentationMode
-        let _ = (ctx.engine.peers.resolvePeerByName(name: username, referrer: nil)
-            |> mapToSignal { result -> Signal<EnginePeer?, NoError> in
-                guard case let .result(result) = result else { return .complete() }
-                return .single(result)
-            }
+    private func loadStickerIcon(_ iconStr: String) {
+        guard let slashIdx = iconStr.lastIndex(of: "/"),
+              let index = Int(iconStr[iconStr.index(after: slashIdx)...]) else { return }
+        let packName = String(iconStr[iconStr.startIndex..<slashIdx])
+        let size: CGFloat = 60
+        let iconSize = CGSize(width: size, height: size)
+        let pixelSide = Int(size * UIScreen.main.scale)
+
+        packDisposable = (accountContext.engine.stickers.loadedStickerPack(
+                reference: .name(packName), forceActualized: false)
             |> deliverOnMainQueue
-        ).startStandalone(next: { peer in
-            guard let peer else { return }
-            pm.wrappedValue.dismiss()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                guard let nc else { return }
-                ctx.sharedContext.navigateToChatController(NavigateToChatControllerParams(
-                    navigationController: nc,
-                    context: ctx,
-                    chatLocation: .peer(peer)
-                ))
-            }
+        ).startStandalone(next: { [weak self] result in
+            guard let self, self.stickerNode == nil else { return }
+            guard case .result(_, let items, _) = result, index < items.count else { return }
+            let file = items[index].file._parse()
+            let node = DefaultAnimatedStickerNodeImpl()
+            node.setup(
+                source: AnimatedStickerResourceSource(
+                    account: self.accountContext.account,
+                    resource: file.resource,
+                    isVideo: file.isVideoSticker
+                ),
+                width: pixelSide, height: pixelSide,
+                playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
+            )
+            node.updateLayout(size: iconSize)
+            node.overrideVisibility = true
+            node.visibility = true
+            node.frame = CGRect(origin: .zero, size: iconSize)
+            node.view.frame = CGRect(origin: .zero, size: iconSize)
+            self.iconContainerView.addSubview(node.view)
+            self.stickerNode = node
+
+            self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
+                account: self.accountContext.account,
+                userLocation: .other,
+                fileReference: stickerPackFileReference(file),
+                resource: file.resource
+            ).startStandalone()
         })
     }
-
 }
 
 // MARK: - Presentation Helper
@@ -650,62 +391,12 @@ func presentEGPluginMetadataIfAvailable(
     |> take(1)
     |> deliverOnMainQueue).startStandalone(next: { data in
         guard data.complete,
-              let text = try? String(contentsOfFile: data.path, encoding: .utf8) else {
-            return
-        }
+              let text = try? String(contentsOfFile: data.path, encoding: .utf8) else { return }
         let metadata = EGPluginFileMetadata.parse(from: text)
         guard !metadata.isEmpty else { return }
-
         guard let rootController = navigationController?.view.window?.rootViewController else { return }
 
-        if #available(iOS 14.0, *) {
-            var sheetView = EGPluginInstallSheet(metadata: metadata, filePath: data.path, context: context)
-            sheetView.navigationController = navigationController
-            let sheet = UIHostingController(rootView: sheetView)
-
-            if #available(iOS 16.0, *) {
-                sheet.view.backgroundColor = UIColor.secondarySystemGroupedBackground
-                sheet.modalPresentationStyle = .pageSheet
-                if let sc = sheet.sheetPresentationController {
-                    let screenH = UIScreen.main.bounds.height
-                    let screenW = UIScreen.main.bounds.width
-                    let deviceRadius = (UIScreen.main.value(forKey: "_displayCornerRadius") as? CGFloat) ?? 44
-
-                    sheet.view.layoutIfNeeded()
-                    let fittingH = sheet.view.systemLayoutSizeFitting(
-                        CGSize(width: screenW, height: UIView.layoutFittingCompressedSize.height),
-                        withHorizontalFittingPriority: .required,
-                        verticalFittingPriority: .fittingSizeLevel
-                    ).height
-                    let detentH = max(300, min(fittingH + 20, screenH * 0.85))
-
-                    sc.detents = [.custom { _ in detentH }]
-                    sc.prefersGrabberVisible = false
-                    sc.preferredCornerRadius = deviceRadius
-                    sc.prefersScrollingExpandsWhenScrolledToEdge = false
-                }
-            } else {
-                sheet.modalPresentationStyle = .overFullScreen
-                sheet.view.backgroundColor = .clear
-            }
-            rootController.present(sheet, animated: true)
-        } else {
-            // iOS 13 fallback: alert with key metadata
-            let lines = [
-                metadata.name.map { "Plugin: \($0)" },
-                metadata.author.map { "Author: \($0)" },
-                metadata.version.map { "Version: \($0)" },
-                metadata.description.map { "\($0)" },
-                metadata.requirements.isEmpty ? nil : "Requires: \(metadata.requirements.joined(separator: ", "))"
-            ].compactMap { $0 }
-            let alert = UIAlertController(
-                title: metadata.name ?? "Plugin Info",
-                message: lines.dropFirst().joined(separator: "\n"),
-                preferredStyle: .actionSheet
-            )
-            alert.addAction(UIAlertAction(title: "Install", style: .default))
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-            rootController.present(alert, animated: true)
-        }
+        let vc = EGPluginAlertViewController(metadata: metadata, filePath: data.path, context: context)
+        rootController.present(vc, animated: true)
     })
 }
