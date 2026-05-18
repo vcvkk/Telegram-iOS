@@ -575,7 +575,7 @@ final class EGPluginInstallScreen: ViewControllerComponentContainer {
 func presentEGPluginMetadataIfAvailable(
     file: TelegramMediaFile,
     context: AccountContext,
-    navigationController: UINavigationController?
+    navigationController: NavigationController?
 ) {
     let _ = (context.account.postbox.mediaBox.resourceData(file.resource, option: .complete(waitUntilFetchStatus: true))
     |> take(1)
@@ -584,8 +584,7 @@ func presentEGPluginMetadataIfAvailable(
               let text = try? String(contentsOfFile: data.path, encoding: .utf8) else { return }
         let metadata = EGPluginFileMetadata.parse(from: text)
         guard !metadata.isEmpty else { return }
-        guard let rootController = navigationController?.view.window?.rootViewController else { return }
         let vc = EGPluginInstallScreen(metadata: metadata, filePath: data.path, context: context)
-        rootController.present(vc, animated: true)
+        navigationController?.pushViewController(vc)
     })
 }
