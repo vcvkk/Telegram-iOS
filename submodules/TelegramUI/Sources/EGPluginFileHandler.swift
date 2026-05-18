@@ -82,36 +82,104 @@ struct EGPluginFileMetadata {
     }
 }
 
-// MARK: - SF Symbol Component (inner icon for GlassBarButtonComponent)
+// MARK: - Plugin Icon Component (animated sticker with fallback)
 
-private final class EGSFSymbolComponent: Component {
-    let systemName: String
-    let pointSize: CGFloat
-    let weight: UIImage.SymbolWeight
-    let tintColor: UIColor
+private final class EGPluginIconComponent: Component {
+    let iconUrl: String?
+    let accountContext: AccountContext
+    let size: CGFloat
 
-    init(systemName: String, pointSize: CGFloat = 15, weight: UIImage.SymbolWeight = .semibold, tintColor: UIColor) {
-        self.systemName = systemName
-        self.pointSize = pointSize
-        self.weight = weight
-        self.tintColor = tintColor
+    init(iconUrl: String?, accountContext: AccountContext, size: CGFloat) {
+        self.iconUrl = iconUrl
+        self.accountContext = accountContext
+        self.size = size
     }
 
-    static func ==(lhs: EGSFSymbolComponent, rhs: EGSFSymbolComponent) -> Bool {
-        return lhs.systemName == rhs.systemName
-            && lhs.pointSize == rhs.pointSize
-            && lhs.weight == rhs.weight
-            && lhs.tintColor == rhs.tintColor
+    static func ==(lhs: EGPluginIconComponent, rhs: EGPluginIconComponent) -> Bool {
+        return lhs.iconUrl == rhs.iconUrl && lhs.size == rhs.size
     }
 
-    final class View: UIImageView {
-        func update(component: EGSFSymbolComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
-            let cfg = UIImage.SymbolConfiguration(pointSize: component.pointSize, weight: component.weight)
-            self.image = UIImage(systemName: component.systemName, withConfiguration: cfg)?
-                .withTintColor(component.tintColor, renderingMode: .alwaysOriginal)
-            self.contentMode = .scaleAspectFit
-            let sz = self.image?.size ?? CGSize(width: component.pointSize, height: component.pointSize)
-            return CGSize(width: min(sz.width, availableSize.width), height: min(sz.height, availableSize.height))
+    final class View: UIView {
+        private let fallbackBg = UIView()
+        private let fallbackIcon = UIImageView()
+        private var stickerNode: DefaultAnimatedStickerNodeImpl?
+        private var packDisposable: Disposable?
+        private var fetchDisposable: Disposable?
+        private var loadedIconUrl: String?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            clipsToBounds = true
+            fallbackBg.backgroundColor = UIColor.secondarySystemFill
+            fallbackBg.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            addSubview(fallbackBg)
+            let cfg = UIImage.SymbolConfiguration(pointSize: 28, weight: .medium)
+            fallbackIcon.image = UIImage(systemName: "puzzlepiece.extension", withConfiguration: cfg)
+            fallbackIcon.tintColor = UIColor.secondaryLabel
+            fallbackIcon.contentMode = .center
+            fallbackIcon.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            addSubview(fallbackIcon)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        deinit {
+            let node = stickerNode; let d1 = packDisposable; let d2 = fetchDisposable
+            if Thread.isMainThread {
+                node?.view.removeFromSuperview(); d1?.dispose(); d2?.dispose()
+            } else {
+                DispatchQueue.main.async { node?.view.removeFromSuperview(); d1?.dispose(); d2?.dispose() }
+            }
+        }
+
+        func update(component: EGPluginIconComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
+            let size = component.size
+            layer.cornerRadius = size * 0.22
+
+            if loadedIconUrl != component.iconUrl {
+                loadedIconUrl = component.iconUrl
+                stickerNode?.view.removeFromSuperview(); stickerNode = nil
+                packDisposable?.dispose(); fetchDisposable?.dispose()
+                fallbackBg.isHidden = false; fallbackIcon.isHidden = false
+
+                if let url = component.iconUrl, !url.isEmpty {
+                    loadSticker(url, size: size, context: component.accountContext)
+                }
+            }
+            return CGSize(width: size, height: size)
+        }
+
+        private func loadSticker(_ iconStr: String, size: CGFloat, context: AccountContext) {
+            guard let slashIdx = iconStr.lastIndex(of: "/"),
+                  let index = Int(iconStr[iconStr.index(after: slashIdx)...]) else { return }
+            let packName = String(iconStr[iconStr.startIndex..<slashIdx])
+            let iconSize = CGSize(width: size, height: size)
+            let pixelSide = Int(size * UIScreen.main.scale)
+
+            packDisposable = (context.engine.stickers.loadedStickerPack(reference: .name(packName), forceActualized: false)
+                |> deliverOnMainQueue
+            ).startStandalone(next: { [weak self] result in
+                guard let self, self.stickerNode == nil else { return }
+                guard case .result(_, let items, _) = result, index < items.count else { return }
+                let file = items[index].file._parse()
+                let node = DefaultAnimatedStickerNodeImpl()
+                node.setup(
+                    source: AnimatedStickerResourceSource(account: context.account, resource: file.resource, isVideo: file.isVideoSticker),
+                    width: pixelSide, height: pixelSide,
+                    playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
+                )
+                node.updateLayout(size: iconSize)
+                node.overrideVisibility = true; node.visibility = true
+                node.frame = CGRect(origin: .zero, size: iconSize)
+                node.view.frame = CGRect(origin: .zero, size: iconSize)
+                self.fallbackBg.isHidden = true; self.fallbackIcon.isHidden = true
+                self.addSubview(node.view)
+                self.stickerNode = node
+
+                self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
+                    account: context.account, userLocation: .other,
+                    fileReference: stickerPackFileReference(file), resource: file.resource
+                ).startStandalone()
+            })
         }
     }
 
@@ -132,6 +200,7 @@ private final class EGSourcePillComponent: Component {
 
         override init(frame: CGRect) {
             super.init(frame: frame)
+            clipsToBounds = true
             let cfg = UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
             iconView.image = UIImage(systemName: "questionmark.circle.fill", withConfiguration: cfg)
             iconView.tintColor = .white
@@ -139,7 +208,7 @@ private final class EGSourcePillComponent: Component {
             label.text = "Unknown source"
             label.font = .systemFont(ofSize: 12, weight: .semibold)
             label.textColor = .white
-            backgroundColor = .systemRed
+            backgroundColor = UIColor.systemRed.withAlphaComponent(0.82)
             addSubview(iconView)
             addSubview(label)
         }
@@ -236,8 +305,7 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
     static var body: Body {
         let closeButton  = Child(GlassBarButtonComponent.self)
         let shareButton  = Child(GlassBarButtonComponent.self)
-        let iconBg       = Child(RoundedRectangle.self)
-        let iconSymbol   = Child(EGSFSymbolComponent.self)
+        let iconView     = Child(EGPluginIconComponent.self)
         let titleText    = Child(BalancedTextComponent.self)
         let descText     = Child(BalancedTextComponent.self)
         let metaText     = Child(BalancedTextComponent.self)
@@ -279,36 +347,29 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
                     isDark: isDark,
                     state: .glass,
                     component: AnyComponentWithIdentity(id: "share", component: AnyComponent(
-                        EGSFSymbolComponent(
-                            systemName: "square.and.arrow.up",
-                            pointSize: 15,
-                            weight: .semibold,
-                            tintColor: theme.chat.inputPanel.panelControlColor
-                        )
+                        BundleIconComponent(name: "Chat/Context Menu/Share", tintColor: theme.chat.inputPanel.panelControlColor)
                     )),
                     action: { _ in component.share() }
                 ),
                 availableSize: CGSize(width: 44, height: 44),
                 transition: .immediate
             )
-            context.add(shareBtn.position(CGPoint(x: hPad + closeBtn.size.width + 8 + shareBtn.size.width / 2, y: y + shareBtn.size.height / 2)))
+            context.add(shareBtn.position(CGPoint(x: width - hPad - shareBtn.size.width / 2, y: y + shareBtn.size.height / 2)))
 
             y += max(closeBtn.size.height, shareBtn.size.height) + 16.0
 
             // ── Plugin icon ───────────────────────────────────────
             let iconSide: CGFloat = 80.0
-            let bg = iconBg.update(
-                component: RoundedRectangle(color: UIColor.systemBlue, cornerRadius: iconSide / 2, size: CGSize(width: iconSide, height: iconSide)),
+            let icon = iconView.update(
+                component: EGPluginIconComponent(
+                    iconUrl: component.metadata.icon,
+                    accountContext: component.accountContext,
+                    size: iconSide
+                ),
                 availableSize: CGSize(width: iconSide, height: iconSide),
                 transition: .immediate
             )
-            context.add(bg.position(CGPoint(x: width / 2, y: y + iconSide / 2)))
-            let sym = iconSymbol.update(
-                component: EGSFSymbolComponent(systemName: "puzzlepiece.extension.fill", pointSize: 34, weight: .semibold, tintColor: .white),
-                availableSize: CGSize(width: iconSide, height: iconSide),
-                transition: .immediate
-            )
-            context.add(sym.position(CGPoint(x: width / 2, y: y + iconSide / 2)))
+            context.add(icon.position(CGPoint(x: width / 2, y: y + iconSide / 2)))
             y += iconSide + 18.0
 
             // ── Plugin name (bold 24pt, centered) ─────────────────────
