@@ -119,8 +119,21 @@ private final class EGPluginAlertViewController: UIViewController {
     required init?(coder: NSCoder) { fatalError() }
 
     deinit {
-        packDisposable?.dispose()
-        fetchDisposable?.dispose()
+        let node = stickerNode
+        let d1 = packDisposable
+        let d2 = fetchDisposable
+        // ASDisplayKit nodes and TelegramCore signal disposal must happen on the main thread.
+        if Thread.isMainThread {
+            node?.view.removeFromSuperview()
+            d1?.dispose()
+            d2?.dispose()
+        } else {
+            DispatchQueue.main.async {
+                node?.view.removeFromSuperview()
+                d1?.dispose()
+                d2?.dispose()
+            }
+        }
     }
 
     override func viewDidLoad() {
