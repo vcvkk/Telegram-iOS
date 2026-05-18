@@ -15,6 +15,9 @@ import BalancedTextComponent
 import BundleIconComponent
 import GlassBarButtonComponent
 import ButtonComponent
+import AnimatedStickerNode
+import TelegramAnimatedStickerNode
+import StickerResources
 import EGSettingsUI
 
 // MARK: - Metadata Model
