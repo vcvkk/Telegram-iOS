@@ -240,6 +240,115 @@ private final class EGSourcePillComponent: Component {
     }
 }
 
+// MARK: - Author Row Component (version · @tappable-usernames)
+
+private final class EGAuthorRowComponent: Component {
+    let version: String?
+    let author: String?
+    let textColor: UIColor
+    let onUsernameTap: (String) -> Void
+
+    init(version: String?, author: String?, textColor: UIColor, onUsernameTap: @escaping (String) -> Void) {
+        self.version = version
+        self.author = author
+        self.textColor = textColor
+        self.onUsernameTap = onUsernameTap
+    }
+
+    static func ==(lhs: EGAuthorRowComponent, rhs: EGAuthorRowComponent) -> Bool {
+        return lhs.version == rhs.version && lhs.author == rhs.author
+    }
+
+    final class View: UIView {
+        private let stack = UIStackView()
+        private var usernameButtons: [(button: UIButton, username: String)] = []
+        private var onUsernameTap: ((String) -> Void)?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            stack.axis = .horizontal
+            stack.spacing = 0
+            stack.alignment = .center
+            addSubview(stack)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        func update(component: EGAuthorRowComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
+            stack.arrangedSubviews.forEach { stack.removeArrangedSubview($0); $0.removeFromSuperview() }
+            usernameButtons = []
+            onUsernameTap = component.onUsernameTap
+
+            func addLabel(_ text: String, color: UIColor) {
+                let l = UILabel()
+                l.text = text
+                l.font = .systemFont(ofSize: 13)
+                l.textColor = color
+                stack.addArrangedSubview(l)
+            }
+
+            if let v = component.version {
+                addLabel(v, color: component.textColor)
+            }
+            if component.version != nil && component.author != nil {
+                addLabel(" · ", color: component.textColor)
+            }
+            if let author = component.author {
+                for seg in Self.parseSegments(author) {
+                    if seg.isUsername {
+                        let btn = UIButton(type: .system)
+                        btn.setTitle(seg.text, for: .normal)
+                        btn.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+                        btn.setTitleColor(.systemBlue, for: .normal)
+                        btn.contentEdgeInsets = .zero
+                        btn.addTarget(self, action: #selector(buttonTapped(_:)), for: .touchUpInside)
+                        usernameButtons.append((btn, seg.rawUsername))
+                        stack.addArrangedSubview(btn)
+                    } else {
+                        addLabel(seg.text, color: component.textColor)
+                    }
+                }
+            }
+
+            let size = stack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+            stack.frame = CGRect(origin: .zero, size: size)
+            return size
+        }
+
+        @objc private func buttonTapped(_ sender: UIButton) {
+            if let pair = usernameButtons.first(where: { $0.button === sender }) {
+                onUsernameTap?(pair.username)
+            }
+        }
+
+        private struct Segment {
+            let text: String
+            let isUsername: Bool
+            var rawUsername: String { isUsername ? String(text.dropFirst()) : text }
+        }
+
+        private static func parseSegments(_ author: String) -> [Segment] {
+            guard let re = try? NSRegularExpression(pattern: "@[a-zA-Z][a-zA-Z0-9_]{1,31}") else {
+                return [Segment(text: author, isUsername: false)]
+            }
+            var result: [Segment] = []
+            var last = author.startIndex
+            for match in re.matches(in: author, range: NSRange(author.startIndex..., in: author)) {
+                guard let r = Range(match.range, in: author) else { continue }
+                if r.lowerBound > last { result.append(Segment(text: String(author[last..<r.lowerBound]), isUsername: false)) }
+                result.append(Segment(text: String(author[r]), isUsername: true))
+                last = r.upperBound
+            }
+            if last < author.endIndex { result.append(Segment(text: String(author[last...]), isUsername: false)) }
+            return result.isEmpty ? [Segment(text: author, isUsername: false)] : result
+        }
+    }
+
+    func makeView() -> View { View(frame: .zero) }
+    func update(view: View, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
+        return view.update(component: self, availableSize: availableSize, state: state, environment: environment, transition: transition)
+    }
+}
+
 // MARK: - Sheet Content
 
 private final class EGPluginInstallSheetContent: CombinedComponent {
@@ -250,13 +359,15 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
     let accountContext: AccountContext
     let dismiss: () -> Void
     let share: () -> Void
+    let openUsername: (String) -> Void
 
-    init(metadata: EGPluginFileMetadata, filePath: String, accountContext: AccountContext, dismiss: @escaping () -> Void, share: @escaping () -> Void) {
+    init(metadata: EGPluginFileMetadata, filePath: String, accountContext: AccountContext, dismiss: @escaping () -> Void, share: @escaping () -> Void, openUsername: @escaping (String) -> Void) {
         self.metadata = metadata
         self.filePath = filePath
         self.accountContext = accountContext
         self.dismiss = dismiss
         self.share = share
+        self.openUsername = openUsername
     }
 
     static func ==(lhs: EGPluginInstallSheetContent, rhs: EGPluginInstallSheetContent) -> Bool {
@@ -314,7 +425,7 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
         let iconView     = Child(EGPluginIconComponent.self)
         let titleText    = Child(BalancedTextComponent.self)
         let descText     = Child(BalancedTextComponent.self)
-        let metaText     = Child(BalancedTextComponent.self)
+        let authorRow    = Child(EGAuthorRowComponent.self)
         let sourcePill   = Child(EGSourcePillComponent.self)
         let installBtn   = Child(ButtonComponent.self)
 
@@ -410,23 +521,20 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
                 y += desc.size.height + 10.0
             }
 
-            // ── version · author (secondary 13pt, centered) ─────────
-            let metaParts = [component.metadata.version, component.metadata.author]
-                .compactMap { $0 }.filter { !$0.isEmpty }
-            if !metaParts.isEmpty {
-                let metaStr = metaParts.joined(separator: " · ")
-                let meta = metaText.update(
-                    component: BalancedTextComponent(
-                        text: .plain(NSAttributedString(string: metaStr, font: Font.regular(13.0), textColor: theme.actionSheet.secondaryTextColor)),
-                        horizontalAlignment: .center,
-                        maximumNumberOfLines: 1,
-                        lineSpacing: 0.1
+            // ── version · author (centered, @username in blue and tappable) ──
+            if component.metadata.version != nil || component.metadata.author != nil {
+                let row = authorRow.update(
+                    component: EGAuthorRowComponent(
+                        version: component.metadata.version,
+                        author: component.metadata.author,
+                        textColor: theme.actionSheet.secondaryTextColor,
+                        onUsernameTap: component.openUsername
                     ),
                     availableSize: CGSize(width: width - hPad * 2, height: 40),
                     transition: .immediate
                 )
-                context.add(meta.position(CGPoint(x: width / 2, y: y + meta.size.height / 2)))
-                y += meta.size.height + 10.0
+                context.add(row.position(CGPoint(x: width / 2, y: y + row.size.height / 2)))
+                y += row.size.height + 10.0
             }
 
             // ── "Unknown source" red pill (centered) ────────────────
@@ -537,6 +645,29 @@ private final class EGPluginInstallSheetComponent: CombinedComponent {
                 vc.present(avc, animated: true)
             }
 
+            let ctx = context.component.accountContext
+            let openUsername: (String) -> Void = { username in
+                dismiss(true)
+                let _ = (ctx.engine.peers.resolvePeerByName(name: username, referrer: nil)
+                    |> mapToSignal { result -> Signal<EnginePeer?, NoError> in
+                        guard case let .result(r) = result else { return .complete() }
+                        return .single(r)
+                    }
+                    |> deliverOnMainQueue
+                ).startStandalone(next: { peer in
+                    guard let peer else { return }
+                    guard let vc = controller() as? EGPluginInstallScreen,
+                          let nc = vc.navigationController as? NavigationController else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        ctx.sharedContext.navigateToChatController(NavigateToChatControllerParams(
+                            navigationController: nc,
+                            context: ctx,
+                            chatLocation: .peer(peer)
+                        ))
+                    }
+                })
+            }
+
             let sheet = sheet.update(
                 component: SheetComponent<EnvironmentType>(
                     content: AnyComponent<EnvironmentType>(EGPluginInstallSheetContent(
@@ -544,7 +675,8 @@ private final class EGPluginInstallSheetComponent: CombinedComponent {
                         filePath: context.component.filePath,
                         accountContext: context.component.accountContext,
                         dismiss: { dismiss(true) },
-                        share: share
+                        share: share,
+                        openUsername: openUsername
                     )),
                     style: .glass,
                     backgroundColor: .color(env.theme.actionSheet.opaqueItemBackgroundColor),
