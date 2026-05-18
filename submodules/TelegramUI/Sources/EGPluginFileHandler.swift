@@ -198,12 +198,15 @@ private final class EGSourcePillComponent: Component {
     static func ==(lhs: EGSourcePillComponent, rhs: EGSourcePillComponent) -> Bool { return true }
 
     final class View: UIView {
+        private let bgView = UIView()
         private let iconView = UIImageView()
         private let label = UILabel()
 
         override init(frame: CGRect) {
             super.init(frame: frame)
-            clipsToBounds = true
+            bgView.clipsToBounds = true
+            bgView.backgroundColor = UIColor.systemRed.withAlphaComponent(0.82)
+            addSubview(bgView)
             let cfg = UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
             iconView.image = UIImage(systemName: "questionmark.circle.fill", withConfiguration: cfg)
             iconView.tintColor = .white
@@ -211,9 +214,8 @@ private final class EGSourcePillComponent: Component {
             label.text = "Unknown source"
             label.font = .systemFont(ofSize: 12, weight: .semibold)
             label.textColor = .white
-            backgroundColor = UIColor.systemRed.withAlphaComponent(0.82)
-            addSubview(iconView)
-            addSubview(label)
+            bgView.addSubview(iconView)
+            bgView.addSubview(label)
         }
         required init?(coder: NSCoder) { fatalError() }
 
@@ -224,7 +226,8 @@ private final class EGSourcePillComponent: Component {
             let hPad: CGFloat = 10
             let textW = label.sizeThatFits(CGSize(width: 200, height: h)).width
             let totalW = hPad + iconSide + gap + textW + hPad
-            layer.cornerRadius = h / 2
+            bgView.frame = CGRect(x: 0, y: 0, width: totalW, height: h)
+            bgView.layer.cornerRadius = h / 2
             iconView.frame = CGRect(x: hPad, y: (h - iconSide) / 2, width: iconSide, height: iconSide)
             label.frame = CGRect(x: hPad + iconSide + gap, y: (h - 15) / 2, width: textW, height: 15)
             return CGSize(width: totalW, height: h)
