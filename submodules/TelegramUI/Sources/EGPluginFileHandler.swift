@@ -85,7 +85,7 @@ struct EGPluginFileMetadata {
     }
 }
 
-// MARK: - Plugin Icon Component (animated sticker with fallback)
+// MARK: - Plugin Icon Component (animated sticker, blue fallback, puzzle badge)
 
 private final class EGPluginIconComponent: Component {
     let iconUrl: String?
@@ -103,8 +103,16 @@ private final class EGPluginIconComponent: Component {
     }
 
     final class View: UIView {
+        // Icon content in a clipping subview so the badge can overflow
+        private let clipView = UIView()
         private let fallbackBg = UIView()
         private let fallbackIcon = UIImageView()
+        // Badge: white ring → blue dot → puzzle icon (bottom-right, +3 offset)
+        private let badgeView = UIView()
+        private let badgeOuterCircle = UIView()
+        private let badgeInnerCircle = UIView()
+        private let badgeIconView = UIImageView()
+
         private var stickerNode: DefaultAnimatedStickerNodeImpl?
         private var packDisposable: Disposable?
         private var fetchDisposable: Disposable?
@@ -112,16 +120,44 @@ private final class EGPluginIconComponent: Component {
 
         override init(frame: CGRect) {
             super.init(frame: frame)
-            clipsToBounds = true
-            fallbackBg.backgroundColor = UIColor.secondarySystemFill
+
+            // Clip view carries the rounded corners and clips sticker/fallback
+            clipView.clipsToBounds = true
+            addSubview(clipView)
+
+            // Fallback: blue background + white filled puzzle piece (Fix 3)
+            fallbackBg.backgroundColor = UIColor.systemBlue
             fallbackBg.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            addSubview(fallbackBg)
-            let cfg = UIImage.SymbolConfiguration(pointSize: 28, weight: .medium)
-            fallbackIcon.image = UIImage(systemName: "puzzlepiece.extension", withConfiguration: cfg)
-            fallbackIcon.tintColor = UIColor.secondaryLabel
+            clipView.addSubview(fallbackBg)
+
+            let cfg = UIImage.SymbolConfiguration(pointSize: 36, weight: .regular)
+            fallbackIcon.image = UIImage(systemName: "puzzlepiece.extension.fill", withConfiguration: cfg)
+            fallbackIcon.tintColor = .white
             fallbackIcon.contentMode = .center
             fallbackIcon.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            addSubview(fallbackIcon)
+            clipView.addSubview(fallbackIcon)
+
+            // Badge (Fix 6): mirrors InstallerPreviewSheet — white ring, blue dot, puzzle icon
+            addSubview(badgeView)
+
+            badgeOuterCircle.backgroundColor = UIColor.systemBackground
+            badgeOuterCircle.layer.cornerRadius = 13
+            badgeOuterCircle.clipsToBounds = true
+            badgeOuterCircle.frame = CGRect(x: 0, y: 0, width: 26, height: 26)
+            badgeView.addSubview(badgeOuterCircle)
+
+            badgeInnerCircle.backgroundColor = UIColor.systemBlue
+            badgeInnerCircle.layer.cornerRadius = 11
+            badgeInnerCircle.clipsToBounds = true
+            badgeInnerCircle.frame = CGRect(x: 2, y: 2, width: 22, height: 22)
+            badgeView.addSubview(badgeInnerCircle)
+
+            let badgeCfg = UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+            badgeIconView.image = UIImage(systemName: "puzzlepiece.extension.fill", withConfiguration: badgeCfg)
+            badgeIconView.tintColor = .white
+            badgeIconView.contentMode = .center
+            badgeIconView.frame = CGRect(x: 2, y: 2, width: 22, height: 22)
+            badgeView.addSubview(badgeIconView)
         }
         required init?(coder: NSCoder) { fatalError() }
 
@@ -136,7 +172,12 @@ private final class EGPluginIconComponent: Component {
 
         func update(component: EGPluginIconComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
             let size = component.size
-            layer.cornerRadius = size * 0.22
+            clipView.frame = CGRect(x: 0, y: 0, width: size, height: size)
+            clipView.layer.cornerRadius = size * 0.22
+
+            // Badge: offset (+3, +3) from bottom-right like SwiftUI .offset(x:3, y:3) at .bottomTrailing
+            let badgeSize: CGFloat = 26
+            badgeView.frame = CGRect(x: size - badgeSize + 3, y: size - badgeSize + 3, width: badgeSize, height: badgeSize)
 
             if loadedIconUrl != component.iconUrl {
                 loadedIconUrl = component.iconUrl
@@ -165,18 +206,23 @@ private final class EGPluginIconComponent: Component {
                 guard case .result(_, let items, _) = result, index < items.count else { return }
                 let file = items[index].file._parse()
                 let node = DefaultAnimatedStickerNodeImpl()
+                // Fix 5: set visibility flags and add to hierarchy BEFORE setup()
+                // so didEnterHierarchy fires and isDisplaying=true when setup triggers rendering
+                node.updateLayout(size: iconSize)
+                node.overrideVisibility = true
+                node.visibility = true
+                node.frame = CGRect(origin: .zero, size: iconSize)
+                node.view.frame = CGRect(origin: .zero, size: iconSize)
+                self.fallbackBg.isHidden = true
+                self.fallbackIcon.isHidden = true
+                self.clipView.addSubview(node.view)
+                self.stickerNode = node
+
                 node.setup(
                     source: AnimatedStickerResourceSource(account: context.account, resource: file.resource, isVideo: file.isVideoSticker),
                     width: pixelSide, height: pixelSide,
                     playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
                 )
-                node.updateLayout(size: iconSize)
-                node.overrideVisibility = true; node.visibility = true
-                node.frame = CGRect(origin: .zero, size: iconSize)
-                node.view.frame = CGRect(origin: .zero, size: iconSize)
-                self.fallbackBg.isHidden = true; self.fallbackIcon.isHidden = true
-                self.addSubview(node.view)
-                self.stickerNode = node
 
                 self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
                     account: context.account, userLocation: .other,
@@ -349,6 +395,57 @@ private final class EGAuthorRowComponent: Component {
     }
 }
 
+// MARK: - Toggle Row Component ("Enable after installation")
+
+private final class EGToggleRowComponent: Component {
+    let isOn: Bool
+    let valueChanged: (Bool) -> Void
+
+    init(isOn: Bool, valueChanged: @escaping (Bool) -> Void) {
+        self.isOn = isOn
+        self.valueChanged = valueChanged
+    }
+
+    static func ==(lhs: EGToggleRowComponent, rhs: EGToggleRowComponent) -> Bool {
+        return lhs.isOn == rhs.isOn
+    }
+
+    final class View: UIView {
+        private let label = UILabel()
+        private let toggle = UISwitch()
+        var valueChanged: ((Bool) -> Void)?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            label.text = "Enable after installation"
+            label.font = .systemFont(ofSize: 15)
+            label.textColor = UIColor.label
+            addSubview(label)
+            toggle.addTarget(self, action: #selector(toggled), for: .valueChanged)
+            addSubview(toggle)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        @objc private func toggled() { valueChanged?(toggle.isOn) }
+
+        func update(component: EGToggleRowComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
+            let h: CGFloat = 44
+            valueChanged = component.valueChanged
+            toggle.isOn = component.isOn
+            let sw = toggle.intrinsicContentSize.width
+            let sh = toggle.intrinsicContentSize.height
+            toggle.frame = CGRect(x: availableSize.width - sw, y: (h - sh) / 2, width: sw, height: sh)
+            label.frame = CGRect(x: 0, y: 0, width: availableSize.width - sw - 8, height: h)
+            return CGSize(width: availableSize.width, height: h)
+        }
+    }
+
+    func makeView() -> View { View(frame: .zero) }
+    func update(view: View, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
+        return view.update(component: self, availableSize: availableSize, state: state, environment: environment, transition: transition)
+    }
+}
+
 // MARK: - Sheet Content
 
 private final class EGPluginInstallSheetContent: CombinedComponent {
@@ -376,8 +473,9 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
 
     final class State: ComponentState {
         var isInstalling = false
+        var isEnabled: Bool = true
 
-        func install(metadata: EGPluginFileMetadata, filePath: String, dismiss: @escaping () -> Void) {
+        func install(metadata: EGPluginFileMetadata, filePath: String, isEnabled: Bool, dismiss: @escaping () -> Void) {
             guard !isInstalling else { return }
             isInstalling = true
             updated(transition: .immediate)
@@ -400,7 +498,7 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
                     pluginDescription: meta.description ?? "",
                     version: meta.version ?? "1.0",
                     iconUrl: meta.icon,
-                    isEnabled: true,
+                    isEnabled: isEnabled,
                     requiresPermissions: meta.requirements
                 )
                 DispatchQueue.main.async {
@@ -422,10 +520,11 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
     static var body: Body {
         let closeButton  = Child(GlassBarButtonComponent.self)
         let shareButton  = Child(GlassBarButtonComponent.self)
+        let authorRow    = Child(EGAuthorRowComponent.self)
         let iconView     = Child(EGPluginIconComponent.self)
         let titleText    = Child(BalancedTextComponent.self)
         let descText     = Child(BalancedTextComponent.self)
-        let authorRow    = Child(EGAuthorRowComponent.self)
+        let toggleRow    = Child(EGToggleRowComponent.self)
         let sourcePill   = Child(EGSourcePillComponent.self)
         let installBtn   = Child(ButtonComponent.self)
 
@@ -440,7 +539,7 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
             let width = context.availableSize.width
             var y: CGFloat = 16.0
 
-            // ── Top bar: close (top-left) + share (right of close) ──
+            // ── Top bar: close (left) · version/author (center) · share (right) ──
             let closeBtn = closeButton.update(
                 component: GlassBarButtonComponent(
                     size: CGSize(width: 44, height: 44),
@@ -455,7 +554,7 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
                 availableSize: CGSize(width: 44, height: 44),
                 transition: .immediate
             )
-            context.add(closeBtn.position(CGPoint(x: hPad + closeBtn.size.width / 2, y: y + closeBtn.size.height / 2)))
+            context.add(closeBtn.position(CGPoint(x: hPad + 22, y: y + 22)))
 
             let shareBtn = shareButton.update(
                 component: GlassBarButtonComponent(
@@ -471,9 +570,25 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
                 availableSize: CGSize(width: 44, height: 44),
                 transition: .immediate
             )
-            context.add(shareBtn.position(CGPoint(x: width - hPad - shareBtn.size.width / 2, y: y + shareBtn.size.height / 2)))
+            context.add(shareBtn.position(CGPoint(x: width - hPad - 22, y: y + 22)))
 
-            y += max(closeBtn.size.height, shareBtn.size.height) + 16.0
+            // version · author centered in header bar (Fix 1)
+            if component.metadata.version != nil || component.metadata.author != nil {
+                let headerMaxW = max(0, width - 2 * (hPad + 44 + 4))
+                let headerRow = authorRow.update(
+                    component: EGAuthorRowComponent(
+                        version: component.metadata.version,
+                        author: component.metadata.author,
+                        textColor: theme.actionSheet.secondaryTextColor,
+                        onUsernameTap: component.openUsername
+                    ),
+                    availableSize: CGSize(width: headerMaxW, height: 44),
+                    transition: .immediate
+                )
+                context.add(headerRow.position(CGPoint(x: width / 2, y: y + 22)))
+            }
+
+            y += 44.0 + 16.0
 
             // ── Plugin icon ───────────────────────────────────────
             let iconSide: CGFloat = 80.0
@@ -521,21 +636,17 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
                 y += desc.size.height + 10.0
             }
 
-            // ── version · author (centered, @username in blue and tappable) ──
-            if component.metadata.version != nil || component.metadata.author != nil {
-                let row = authorRow.update(
-                    component: EGAuthorRowComponent(
-                        version: component.metadata.version,
-                        author: component.metadata.author,
-                        textColor: theme.actionSheet.secondaryTextColor,
-                        onUsernameTap: component.openUsername
-                    ),
-                    availableSize: CGSize(width: width - hPad * 2, height: 40),
-                    transition: .immediate
-                )
-                context.add(row.position(CGPoint(x: width / 2, y: y + row.size.height / 2)))
-                y += row.size.height + 10.0
-            }
+            // ── "Enable after installation" toggle (Fix 2) ──────────
+            let tog = toggleRow.update(
+                component: EGToggleRowComponent(
+                    isOn: state.isEnabled,
+                    valueChanged: { newVal in state.isEnabled = newVal; state.updated(transition: .immediate) }
+                ),
+                availableSize: CGSize(width: width - hPad * 2, height: 44),
+                transition: .immediate
+            )
+            context.add(tog.position(CGPoint(x: width / 2, y: y + tog.size.height / 2)))
+            y += tog.size.height + 12.0
 
             // ── "Unknown source" red pill (centered) ────────────────
             let pill = sourcePill.update(
@@ -582,6 +693,7 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
                         state.install(
                             metadata: component.metadata,
                             filePath: component.filePath,
+                            isEnabled: state.isEnabled,
                             dismiss: component.dismiss
                         )
                     }
@@ -637,10 +749,13 @@ private final class EGPluginInstallSheetComponent: CombinedComponent {
 
             let share: () -> Void = {
                 guard let vc = controller() as? EGPluginInstallScreen else { return }
-                let avc = UIActivityViewController(
-                    activityItems: [URL(fileURLWithPath: context.component.filePath)],
-                    applicationActivities: nil
-                )
+                // Fix 4: copy to a temp file with the original .plugin name before sharing
+                let rawName = context.component.metadata.name ?? "Plugin"
+                let safeName = rawName.components(separatedBy: CharacterSet(charactersIn: "/\\:*?\"<>|")).joined(separator: "_")
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).plugin")
+                try? FileManager.default.removeItem(at: tempURL)
+                try? FileManager.default.copyItem(atPath: context.component.filePath, toPath: tempURL.path)
+                let avc = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
                 avc.popoverPresentationController?.sourceView = vc.view
                 vc.present(avc, animated: true)
             }
