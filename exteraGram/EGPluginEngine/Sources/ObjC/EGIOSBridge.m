@@ -82,6 +82,15 @@ static void (^g_suppressAttributeTypeHandler)(NSString *, BOOL) = nil;
 // Wired by PluginsController.wireClientInfo: lets plugins send Telegram messages
 static void (^g_sendMessageHandler)(long long, NSString *) = nil;
 
+// UIKit values that must be read on main thread — cached at engine startup via prepareUIKitCaches.
+// Once written, only ever read (no synchronisation needed for reads after the barrier).
+static struct {
+    int    width;
+    int    height;
+    double scale;
+    BOOL   ready;
+} g_screen = {0, 0, 1.0, NO};
+
 // ---------------------------------------------------------------------------
 // ObjC method-hook registry  (add_method_hook)
 // ---------------------------------------------------------------------------
@@ -976,142 +985,144 @@ static PyObject *py_send_message(PyObject *self, PyObject *args) {
 
 // get_device_info() -> dict
 // Returns: battery_level (float, -1 if unknown), battery_state (str), app_version (str).
+// Safe to call from any thread — battery monitoring must have been enabled on main thread
+// via prepareUIKitCaches before this is called; batteryLevel/batteryState are then atomic reads.
+// NSBundle info is immutable after app launch and thread-safe.
 static PyObject *py_get_device_info(PyObject *self, PyObject *args) {
-    __block NSDictionary *result = nil;
-    dispatch_sync(dispatch_get_main_queue(), ^{
-        UIDevice *device = [UIDevice currentDevice];
-        device.batteryMonitoringEnabled = YES;
-        float level = device.batteryLevel;
-        NSString *state;
-        switch (device.batteryState) {
-            case UIDeviceBatteryStateCharging:  state = @"charging";    break;
-            case UIDeviceBatteryStateFull:      state = @"full";        break;
-            case UIDeviceBatteryStateUnplugged: state = @"discharging"; break;
-            default:                            state = @"unknown";     break;
-        }
-        NSString *shortVer  = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"";
-        NSString *buildNum  = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"";
-        NSString *appVer = buildNum.length
-            ? [NSString stringWithFormat:@"%@ (%@)", shortVer, buildNum]
-            : shortVer;
-        result = @{
-            @"battery_level": @(level),
-            @"battery_state": state,
-            @"app_version":   appVer,
-        };
-    });
-    return ns_to_py(result ?: @{});
+    UIDevice *device = [UIDevice currentDevice];
+    float level = device.batteryLevel;
+    NSString *state;
+    switch (device.batteryState) {
+        case UIDeviceBatteryStateCharging:  state = @"charging";    break;
+        case UIDeviceBatteryStateFull:      state = @"full";        break;
+        case UIDeviceBatteryStateUnplugged: state = @"discharging"; break;
+        default:                            state = @"unknown";     break;
+    }
+    NSString *shortVer = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"";
+    NSString *buildNum = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"";
+    NSString *appVer   = buildNum.length
+        ? [NSString stringWithFormat:@"%@ (%@)", shortVer, buildNum]
+        : shortVer;
+    NSDictionary *result = @{
+        @"battery_level": @(level),
+        @"battery_state": state,
+        @"app_version":   appVer,
+    };
+    return ns_to_py(result);
 }
 
 // get_system_info() -> dict
 // Collects all hardware/OS/network info in ObjC so plugins need no C extensions.
+// Safe to call from any thread — all APIs used here are thread-safe:
+//   sysctl*, uname, gettimeofday, getifaddrs: POSIX, thread-safe by spec.
+//   NSFileManager -attributesOfFileSystemForPath: thread-safe.
+//   NSBundle info: immutable after launch, thread-safe.
+//   UIDevice systemVersion: immutable string, thread-safe.
+//   UIDevice batteryLevel/batteryState: atomic reads once monitoring is enabled (see prepareUIKitCaches).
+//   UIScreen nativeBounds/nativeScale: cached in g_screen by prepareUIKitCaches (main thread).
 // Fields: device_model, architecture, ios_version, kernel_version, uptime_seconds,
 //         battery_level, battery_state, jailbroken, cpu_brand, cpu_count, ram_bytes,
 //         storage_total, storage_free, screen_width, screen_height, screen_scale,
 //         network_ip, network_type, app_version.
 static PyObject *py_get_system_info(PyObject *self, PyObject *args) {
-    __block NSMutableDictionary *d = nil;
-    dispatch_sync(dispatch_get_main_queue(), ^{
-        d = [NSMutableDictionary dictionaryWithCapacity:24];
+    NSMutableDictionary *d = [NSMutableDictionary dictionaryWithCapacity:24];
 
-        // --- Device model ---
-        char hw[256] = {0}; size_t hwsz = sizeof(hw);
-        sysctlbyname("hw.machine", hw, &hwsz, NULL, 0);
-        d[@"device_model"] = hw[0] ? @(hw) : @"Unknown";
+    // --- Device model ---
+    char hw[256] = {0}; size_t hwsz = sizeof(hw);
+    sysctlbyname("hw.machine", hw, &hwsz, NULL, 0);
+    d[@"device_model"] = hw[0] ? @(hw) : @"Unknown";
 
-        // --- Architecture ---
-        struct utsname un; uname(&un);
-        d[@"architecture"] = @(un.machine);
+    // --- Architecture ---
+    struct utsname un; uname(&un);
+    d[@"architecture"] = @(un.machine);
 
-        // --- iOS version ---
-        d[@"ios_version"] = [UIDevice currentDevice].systemVersion ?: @"Unknown";
+    // --- iOS version ---
+    d[@"ios_version"] = [UIDevice currentDevice].systemVersion ?: @"Unknown";
 
-        // --- Kernel version ---
-        char osrel[128] = {0}; size_t orelsz = sizeof(osrel);
-        sysctlbyname("kern.osrelease", osrel, &orelsz, NULL, 0);
-        d[@"kernel_version"] = osrel[0] ? @(osrel) : @"Unknown";
+    // --- Kernel version ---
+    char osrel[128] = {0}; size_t orelsz = sizeof(osrel);
+    sysctlbyname("kern.osrelease", osrel, &orelsz, NULL, 0);
+    d[@"kernel_version"] = osrel[0] ? @(osrel) : @"Unknown";
 
-        // --- Uptime (seconds since boot) ---
-        struct timeval boottime; size_t btsz = sizeof(boottime);
-        if (sysctlbyname("kern.boottime", &boottime, &btsz, NULL, 0) == 0) {
-            struct timeval now; gettimeofday(&now, NULL);
-            d[@"uptime_seconds"] = @(now.tv_sec - boottime.tv_sec);
-        } else {
-            d[@"uptime_seconds"] = @(0);
+    // --- Uptime (seconds since boot) ---
+    struct timeval boottime; size_t btsz = sizeof(boottime);
+    if (sysctlbyname("kern.boottime", &boottime, &btsz, NULL, 0) == 0) {
+        struct timeval now; gettimeofday(&now, NULL);
+        d[@"uptime_seconds"] = @(now.tv_sec - boottime.tv_sec);
+    } else {
+        d[@"uptime_seconds"] = @(0);
+    }
+
+    // --- Battery (monitoring enabled on main thread via prepareUIKitCaches) ---
+    UIDevice *dev = [UIDevice currentDevice];
+    d[@"battery_level"] = @(dev.batteryLevel);
+    switch (dev.batteryState) {
+        case UIDeviceBatteryStateCharging:  d[@"battery_state"] = @"charging";    break;
+        case UIDeviceBatteryStateFull:      d[@"battery_state"] = @"full";        break;
+        case UIDeviceBatteryStateUnplugged: d[@"battery_state"] = @"discharging"; break;
+        default:                            d[@"battery_state"] = @"unknown";     break;
+    }
+
+    // --- Jailbreak markers ---
+    static NSArray *jbPaths = nil;
+    if (!jbPaths) jbPaths = @[
+        @"/bin/bash", @"/etc/apt", @"/var/lib/cydia",
+        @"/Applications/Cydia.app", @"/Applications/Sileo.app",
+        @"/private/var/stash", @"/usr/lib/libhooker.dylib",
+        @"/usr/bin/ssh", @"/usr/sbin/sshd", @"/var/checkra1n.dmg",
+    ];
+    BOOL jb = NO;
+    for (NSString *p in jbPaths) if ([[NSFileManager defaultManager] fileExistsAtPath:p]) { jb = YES; break; }
+    d[@"jailbroken"] = @(jb);
+
+    // --- CPU ---
+    char cpuBrand[256] = {0}; size_t cpusz = sizeof(cpuBrand);
+    sysctlbyname("machdep.cpu.brand_string", cpuBrand, &cpusz, NULL, 0);
+    d[@"cpu_brand"] = cpuBrand[0] ? @(cpuBrand) : @"Apple Silicon";
+    int ncpu = 0; size_t ncpusz = sizeof(ncpu);
+    sysctlbyname("hw.ncpu", &ncpu, &ncpusz, NULL, 0);
+    d[@"cpu_count"] = @(ncpu ?: 1);
+
+    // --- RAM ---
+    int64_t memsize = 0; size_t msz = sizeof(memsize);
+    sysctlbyname("hw.memsize", &memsize, &msz, NULL, 0);
+    d[@"ram_bytes"] = @(memsize);
+
+    // --- Storage ---
+    NSDictionary *attrs = [[NSFileManager defaultManager]
+        attributesOfFileSystemForPath:NSHomeDirectory() error:nil];
+    d[@"storage_total"] = attrs[NSFileSystemSize] ?: @(0LL);
+    d[@"storage_free"]  = attrs[NSFileSystemFreeSize] ?: @(0LL);
+
+    // --- Screen (cached from main thread in prepareUIKitCaches) ---
+    d[@"screen_width"]  = @(g_screen.width);
+    d[@"screen_height"] = @(g_screen.height);
+    d[@"screen_scale"]  = @(g_screen.ready ? g_screen.scale : 1.0);
+
+    // --- Network (getifaddrs: en0=WiFi, pdp_ip*=Cellular) ---
+    struct ifaddrs *ifalist = NULL;
+    NSString *netIP = @"Unknown", *netType = @"none";
+    if (getifaddrs(&ifalist) == 0) {
+        for (struct ifaddrs *ifa = ifalist; ifa; ifa = ifa->ifa_next) {
+            if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
+            char buf[INET_ADDRSTRLEN] = {0};
+            inet_ntop(AF_INET, &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr, buf, sizeof(buf));
+            NSString *ip = @(buf), *name = ifa->ifa_name ? @(ifa->ifa_name) : @"";
+            if ([ip isEqualToString:@"127.0.0.1"]) continue;
+            if ([name isEqualToString:@"en0"])     { netIP = ip; netType = @"wifi";     break; }
+            if ([name hasPrefix:@"pdp_ip"] && [netType isEqualToString:@"none"]) { netIP = ip; netType = @"cellular"; }
         }
+        freeifaddrs(ifalist);
+    }
+    d[@"network_ip"]   = netIP;
+    d[@"network_type"] = netType;
 
-        // --- Battery ---
-        UIDevice *dev = [UIDevice currentDevice];
-        dev.batteryMonitoringEnabled = YES;
-        d[@"battery_level"] = @(dev.batteryLevel);
-        switch (dev.batteryState) {
-            case UIDeviceBatteryStateCharging:  d[@"battery_state"] = @"charging";    break;
-            case UIDeviceBatteryStateFull:      d[@"battery_state"] = @"full";        break;
-            case UIDeviceBatteryStateUnplugged: d[@"battery_state"] = @"discharging"; break;
-            default:                            d[@"battery_state"] = @"unknown";     break;
-        }
+    // --- App version ---
+    NSString *ver   = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"";
+    NSString *build = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"";
+    d[@"app_version"] = build.length ? [NSString stringWithFormat:@"%@ (%@)", ver, build] : ver;
 
-        // --- Jailbreak markers ---
-        static NSArray *jbPaths = nil;
-        if (!jbPaths) jbPaths = @[
-            @"/bin/bash", @"/etc/apt", @"/var/lib/cydia",
-            @"/Applications/Cydia.app", @"/Applications/Sileo.app",
-            @"/private/var/stash", @"/usr/lib/libhooker.dylib",
-            @"/usr/bin/ssh", @"/usr/sbin/sshd", @"/var/checkra1n.dmg",
-        ];
-        BOOL jb = NO;
-        for (NSString *p in jbPaths) if ([[NSFileManager defaultManager] fileExistsAtPath:p]) { jb = YES; break; }
-        d[@"jailbroken"] = @(jb);
-
-        // --- CPU ---
-        char cpuBrand[256] = {0}; size_t cpusz = sizeof(cpuBrand);
-        sysctlbyname("machdep.cpu.brand_string", cpuBrand, &cpusz, NULL, 0);
-        d[@"cpu_brand"] = cpuBrand[0] ? @(cpuBrand) : @"Apple Silicon";
-        int ncpu = 0; size_t ncpusz = sizeof(ncpu);
-        sysctlbyname("hw.ncpu", &ncpu, &ncpusz, NULL, 0);
-        d[@"cpu_count"] = @(ncpu ?: 1);
-
-        // --- RAM ---
-        int64_t memsize = 0; size_t msz = sizeof(memsize);
-        sysctlbyname("hw.memsize", &memsize, &msz, NULL, 0);
-        d[@"ram_bytes"] = @(memsize);
-
-        // --- Storage ---
-        NSDictionary *attrs = [[NSFileManager defaultManager]
-            attributesOfFileSystemForPath:NSHomeDirectory() error:nil];
-        d[@"storage_total"] = attrs[NSFileSystemSize] ?: @(0LL);
-        d[@"storage_free"]  = attrs[NSFileSystemFreeSize] ?: @(0LL);
-
-        // --- Screen ---
-        CGRect native = [UIScreen mainScreen].nativeBounds;
-        d[@"screen_width"]  = @((int)native.size.width);
-        d[@"screen_height"] = @((int)native.size.height);
-        d[@"screen_scale"]  = @([UIScreen mainScreen].nativeScale);
-
-        // --- Network (getifaddrs: en0=WiFi, pdp_ip*=Cellular) ---
-        struct ifaddrs *ifalist = NULL;
-        NSString *netIP = @"Unknown", *netType = @"none";
-        if (getifaddrs(&ifalist) == 0) {
-            for (struct ifaddrs *ifa = ifalist; ifa; ifa = ifa->ifa_next) {
-                if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
-                char buf[INET_ADDRSTRLEN] = {0};
-                inet_ntop(AF_INET, &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr, buf, sizeof(buf));
-                NSString *ip = @(buf), *name = ifa->ifa_name ? @(ifa->ifa_name) : @"";
-                if ([ip isEqualToString:@"127.0.0.1"]) continue;
-                if ([name isEqualToString:@"en0"])     { netIP = ip; netType = @"wifi";     break; }
-                if ([name hasPrefix:@"pdp_ip"] && [netType isEqualToString:@"none"]) { netIP = ip; netType = @"cellular"; }
-            }
-            freeifaddrs(ifalist);
-        }
-        d[@"network_ip"]   = netIP;
-        d[@"network_type"] = netType;
-
-        // --- App version ---
-        NSString *ver   = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"";
-        NSString *build = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"";
-        d[@"app_version"] = build.length ? [NSString stringWithFormat:@"%@ (%@)", ver, build] : ver;
-    });
-    return ns_to_py(d ?: @{});
+    return ns_to_py(d);
 }
 
 // get_network_info() -> dict: {"ip": str, "type": "wifi"|"cellular"|"none"}
@@ -1329,6 +1340,21 @@ static id py_to_ns(PyObject *obj) {
 
 + (void (^)(long long, NSString *))sendMessageHandler { return g_sendMessageHandler; }
 + (void)setSendMessageHandler:(void (^)(long long, NSString *))b { g_sendMessageHandler = [b copy]; }
+
++ (void)prepareUIKitCaches {
+    // Must be called on the main thread once before plugins query system info.
+    // Enables battery monitoring (UIKit requirement) and caches immutable screen
+    // dimensions so bridge functions can run safely from background threads.
+    NSAssert([NSThread isMainThread], @"prepareUIKitCaches must be called on main thread");
+    [UIDevice currentDevice].batteryMonitoringEnabled = YES;
+    if (!g_screen.ready) {
+        CGRect nb    = [UIScreen mainScreen].nativeBounds;
+        g_screen.width  = (int)nb.size.width;
+        g_screen.height = (int)nb.size.height;
+        g_screen.scale  = (double)[UIScreen mainScreen].nativeScale;
+        g_screen.ready  = YES;
+    }
+}
 
 + (BOOL)initializeWithHome:(NSString *)pythonHome
                    sdkPath:(NSString *)sdkPath

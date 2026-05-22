@@ -68,6 +68,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// Called from _ios_bridge.send_message(peer_id, text) to let plugins send messages.
 @property (class, nonatomic, copy, nullable) void (^sendMessageHandler)(long long peerId, NSString *text);
 
+/// Must be called on the main thread before any plugin uses get_system_info / get_device_info.
+/// Enables UIDevice battery monitoring and caches immutable UIScreen dimensions so that
+/// the Python bridge functions can call them safely from background threads without dispatch_sync.
++ (void)prepareUIKitCaches;
+
 @end
 
 NS_ASSUME_NONNULL_END

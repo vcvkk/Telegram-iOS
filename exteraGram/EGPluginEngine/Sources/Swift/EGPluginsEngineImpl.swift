@@ -23,6 +23,11 @@ public final class EGPluginsEngineImpl {
     /// Start engine and load the given plugins.
     /// `plugins` is a list of (id, filePath) pairs from PluginsController.
     public func start(plugins: [(id: String, filePath: String)], completion: @escaping () -> Void) {
+        // Enable battery monitoring and cache UIScreen dims on main thread before the engine
+        // background queue runs — prevents dispatch_sync deadlock in py_get_system_info.
+        DispatchQueue.main.async {
+            EGPythonBridge.prepareUIKitCaches()
+        }
         engineQueue.async {
             EGPluginRuntime.shared.initialize()
             guard EGPythonBridge.isInitialized else {
