@@ -6,6 +6,9 @@
 #import <netinet/in.h>
 #import <arpa/inet.h>
 #import <ifaddrs.h>
+#import <sys/sysctl.h>
+#import <sys/utsname.h>
+#import <sys/time.h>
 #import <os/log.h>
 #import <objc/runtime.h>
 #import <ZipArchive/ZipArchive.h>
@@ -1000,6 +1003,117 @@ static PyObject *py_get_device_info(PyObject *self, PyObject *args) {
     return ns_to_py(result ?: @{});
 }
 
+// get_system_info() -> dict
+// Collects all hardware/OS/network info in ObjC so plugins need no C extensions.
+// Fields: device_model, architecture, ios_version, kernel_version, uptime_seconds,
+//         battery_level, battery_state, jailbroken, cpu_brand, cpu_count, ram_bytes,
+//         storage_total, storage_free, screen_width, screen_height, screen_scale,
+//         network_ip, network_type, app_version.
+static PyObject *py_get_system_info(PyObject *self, PyObject *args) {
+    __block NSMutableDictionary *d = nil;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        d = [NSMutableDictionary dictionaryWithCapacity:24];
+
+        // --- Device model ---
+        char hw[256] = {0}; size_t hwsz = sizeof(hw);
+        sysctlbyname("hw.machine", hw, &hwsz, NULL, 0);
+        d[@"device_model"] = hw[0] ? @(hw) : @"Unknown";
+
+        // --- Architecture ---
+        struct utsname un; uname(&un);
+        d[@"architecture"] = @(un.machine);
+
+        // --- iOS version ---
+        d[@"ios_version"] = [UIDevice currentDevice].systemVersion ?: @"Unknown";
+
+        // --- Kernel version ---
+        char osrel[128] = {0}; size_t orelsz = sizeof(osrel);
+        sysctlbyname("kern.osrelease", osrel, &orelsz, NULL, 0);
+        d[@"kernel_version"] = osrel[0] ? @(osrel) : @"Unknown";
+
+        // --- Uptime (seconds since boot) ---
+        struct timeval boottime; size_t btsz = sizeof(boottime);
+        if (sysctlbyname("kern.boottime", &boottime, &btsz, NULL, 0) == 0) {
+            struct timeval now; gettimeofday(&now, NULL);
+            d[@"uptime_seconds"] = @(now.tv_sec - boottime.tv_sec);
+        } else {
+            d[@"uptime_seconds"] = @(0);
+        }
+
+        // --- Battery ---
+        UIDevice *dev = [UIDevice currentDevice];
+        dev.batteryMonitoringEnabled = YES;
+        d[@"battery_level"] = @(dev.batteryLevel);
+        switch (dev.batteryState) {
+            case UIDeviceBatteryStateCharging:  d[@"battery_state"] = @"charging";    break;
+            case UIDeviceBatteryStateFull:      d[@"battery_state"] = @"full";        break;
+            case UIDeviceBatteryStateUnplugged: d[@"battery_state"] = @"discharging"; break;
+            default:                            d[@"battery_state"] = @"unknown";     break;
+        }
+
+        // --- Jailbreak markers ---
+        static NSArray *jbPaths = nil;
+        if (!jbPaths) jbPaths = @[
+            @"/bin/bash", @"/etc/apt", @"/var/lib/cydia",
+            @"/Applications/Cydia.app", @"/Applications/Sileo.app",
+            @"/private/var/stash", @"/usr/lib/libhooker.dylib",
+            @"/usr/bin/ssh", @"/usr/sbin/sshd", @"/var/checkra1n.dmg",
+        ];
+        BOOL jb = NO;
+        for (NSString *p in jbPaths) if ([[NSFileManager defaultManager] fileExistsAtPath:p]) { jb = YES; break; }
+        d[@"jailbroken"] = @(jb);
+
+        // --- CPU ---
+        char cpuBrand[256] = {0}; size_t cpusz = sizeof(cpuBrand);
+        sysctlbyname("machdep.cpu.brand_string", cpuBrand, &cpusz, NULL, 0);
+        d[@"cpu_brand"] = cpuBrand[0] ? @(cpuBrand) : @"Apple Silicon";
+        int ncpu = 0; size_t ncpusz = sizeof(ncpu);
+        sysctlbyname("hw.ncpu", &ncpu, &ncpusz, NULL, 0);
+        d[@"cpu_count"] = @(ncpu ?: 1);
+
+        // --- RAM ---
+        int64_t memsize = 0; size_t msz = sizeof(memsize);
+        sysctlbyname("hw.memsize", &memsize, &msz, NULL, 0);
+        d[@"ram_bytes"] = @(memsize);
+
+        // --- Storage ---
+        NSDictionary *attrs = [[NSFileManager defaultManager]
+            attributesOfFileSystemForPath:NSHomeDirectory() error:nil];
+        d[@"storage_total"] = attrs[NSFileSystemSize] ?: @(0LL);
+        d[@"storage_free"]  = attrs[NSFileSystemFreeSize] ?: @(0LL);
+
+        // --- Screen ---
+        CGRect native = [UIScreen mainScreen].nativeBounds;
+        d[@"screen_width"]  = @((int)native.size.width);
+        d[@"screen_height"] = @((int)native.size.height);
+        d[@"screen_scale"]  = @([UIScreen mainScreen].nativeScale);
+
+        // --- Network (getifaddrs: en0=WiFi, pdp_ip*=Cellular) ---
+        struct ifaddrs *ifalist = NULL;
+        NSString *netIP = @"Unknown", *netType = @"none";
+        if (getifaddrs(&ifalist) == 0) {
+            for (struct ifaddrs *ifa = ifalist; ifa; ifa = ifa->ifa_next) {
+                if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
+                char buf[INET_ADDRSTRLEN] = {0};
+                inet_ntop(AF_INET, &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr, buf, sizeof(buf));
+                NSString *ip = @(buf), *name = ifa->ifa_name ? @(ifa->ifa_name) : @"";
+                if ([ip isEqualToString:@"127.0.0.1"]) continue;
+                if ([name isEqualToString:@"en0"])     { netIP = ip; netType = @"wifi";     break; }
+                if ([name hasPrefix:@"pdp_ip"] && [netType isEqualToString:@"none"]) { netIP = ip; netType = @"cellular"; }
+            }
+            freeifaddrs(ifalist);
+        }
+        d[@"network_ip"]   = netIP;
+        d[@"network_type"] = netType;
+
+        // --- App version ---
+        NSString *ver   = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"";
+        NSString *build = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"";
+        d[@"app_version"] = build.length ? [NSString stringWithFormat:@"%@ (%@)", ver, build] : ver;
+    });
+    return ns_to_py(d ?: @{});
+}
+
 // get_network_info() -> dict: {"ip": str, "type": "wifi"|"cellular"|"none"}
 // Uses getifaddrs — works entirely in ObjC, no Python socket module needed.
 // en0 = Wi-Fi, pdp_ip* = cellular. Wi-Fi takes priority.
@@ -1091,6 +1205,7 @@ static PyMethodDef ios_bridge_methods[] = {
     {"suppress_attribute_type", py_suppress_attribute_type, METH_VARARGS, "suppress_attribute_type(type_name, suppress=True)"},
     {"send_message",            py_send_message,            METH_VARARGS, "send_message(peer_id, text) — send a Telegram message as the current user"},
     {"get_device_info",         py_get_device_info,         METH_NOARGS,  "get_device_info() -> dict with battery_level, battery_state, app_version"},
+    {"get_system_info",         py_get_system_info,         METH_NOARGS,  "get_system_info() -> dict with all hw/os/network info"},
     {"get_network_type",        py_get_network_type,        METH_NOARGS,  "get_network_type() -> 'wifi' | 'cellular' | 'none'"},
     {"get_network_info",        py_get_network_info,        METH_NOARGS,  "get_network_info() -> {'ip': str, 'type': str}"},
     {NULL, NULL, 0, NULL}

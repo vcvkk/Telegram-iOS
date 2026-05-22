@@ -1,7 +1,7 @@
 __id__          = "exteraFetch"
 __name__        = "exteraFetch"
 __description__ = "Type .efch in any chat to send your system information"
-__version__     = "1.1"
+__version__     = "1.3"
 __author__      = "@exteraiPlugins"
 __os__          = "ios"
 __icon__        = "miyabiZZZ/1"
@@ -34,18 +34,13 @@ __settings__ = {
     ]
 }
 
+# Only safe imports: _ios_bridge (our C ext, always loaded) + threading (built-in _thread).
+# ctypes and socket are in lib-dynload and can't be loaded on non-jailbroken devices.
 import _ios_bridge
-import platform
-import os
 import threading
-import ctypes
-import time
 
 PLUGIN_ID = "exteraFetch"
 
-# ---------------------------------------------------------------------------
-# Settings helper
-# ---------------------------------------------------------------------------
 
 def _s(key):
     val = _ios_bridge.get_plugin_setting(PLUGIN_ID, key, None)
@@ -56,192 +51,93 @@ def _s(key):
     return val
 
 
-# ---------------------------------------------------------------------------
-# sysctl helpers
-# ---------------------------------------------------------------------------
-
-def _libc():
-    return ctypes.cdll.LoadLibrary("libSystem.dylib")
-
-
-def _sysctl_str(name: bytes) -> str:
+def _fmt_uptime(secs) -> str:
     try:
-        lib = _libc()
-        buf  = ctypes.create_string_buffer(256)
-        size = ctypes.c_size_t(256)
-        lib.sysctlbyname(name, buf, ctypes.byref(size), None, 0)
-        return buf.value.decode("utf-8", errors="replace").strip("\x00")
-    except Exception:
-        return ""
-
-
-def _sysctl_i64(name: bytes) -> int:
-    try:
-        lib = _libc()
-        val  = ctypes.c_int64(0)
-        size = ctypes.c_size_t(ctypes.sizeof(val))
-        lib.sysctlbyname(name, ctypes.byref(val), ctypes.byref(size), None, 0)
-        return val.value
-    except Exception:
-        return 0
-
-
-def _sysctl_i32(name: bytes) -> int:
-    try:
-        lib = _libc()
-        val  = ctypes.c_int32(0)
-        size = ctypes.c_size_t(ctypes.sizeof(val))
-        lib.sysctlbyname(name, ctypes.byref(val), ctypes.byref(size), None, 0)
-        return val.value
-    except Exception:
-        return 0
-
-
-# ---------------------------------------------------------------------------
-# Individual collectors
-# ---------------------------------------------------------------------------
-
-def _get_uptime() -> str:
-    """Read kern.boottime (struct timeval) and compute elapsed time."""
-    try:
-        lib = _libc()
-        # struct timeval: tv_sec (c_long 8 bytes arm64), tv_usec (c_long 8 bytes)
-        class timeval(ctypes.Structure):
-            _fields_ = [("tv_sec", ctypes.c_long), ("tv_usec", ctypes.c_long)]
-        tv   = timeval()
-        size = ctypes.c_size_t(ctypes.sizeof(tv))
-        lib.sysctlbyname(b"kern.boottime", ctypes.byref(tv), ctypes.byref(size), None, 0)
-        elapsed = int(time.time()) - tv.tv_sec
-        if elapsed <= 0:
+        secs = int(secs)
+        if secs <= 0:
             return "Unknown"
-        d, rem  = divmod(elapsed, 86400)
-        h, rem  = divmod(rem, 3600)
-        m, s    = divmod(rem, 60)
-        if d:
-            return f"{d}d {h}h {m}m"
-        elif h:
-            return f"{h}h {m}m"
-        else:
-            return f"{m}m {s}s"
+        d, r = divmod(secs, 86400)
+        h, r = divmod(r, 3600)
+        m, s = divmod(r, 60)
+        if d:   return f"{d}d {h}h {m}m"
+        elif h: return f"{h}h {m}m"
+        else:   return f"{m}m {s}s"
     except Exception:
         return "Unknown"
 
 
-def _get_network_info() -> dict:
-    """Get local IP + connection type via getifaddrs (bridge, no socket module)."""
-    try:
-        return _ios_bridge.get_network_info()
-    except Exception:
-        return {"ip": "Unknown", "type": "none"}
-
-
 def _collect() -> dict:
+    # Single bridge call — all sysctl/UIKit/getifaddrs happens in ObjC.
+    si = _ios_bridge.get_system_info()
     info = {}
 
-    # --- Device ---
     if _s("show_device"):
-        info["Device"] = _sysctl_str(b"hw.machine") or platform.machine() or "Unknown"
+        info["Device"] = si.get("device_model") or "Unknown"
 
     if _s("show_arch"):
-        uname = platform.uname()
-        arch  = uname.machine or uname.processor or "Unknown"
-        info["Architecture"] = arch
+        info["Architecture"] = si.get("architecture") or "Unknown"
 
     if _s("show_ios"):
-        ver = platform.mac_ver()[0] or platform.release() or "Unknown"
-        info["iOS"] = ver
+        info["iOS"] = si.get("ios_version") or "Unknown"
 
     if _s("show_kernel"):
-        uname = platform.uname()
-        info["Kernel"] = uname.release or "Unknown"
+        info["Kernel"] = si.get("kernel_version") or "Unknown"
 
     if _s("show_uptime"):
-        info["Uptime"] = _get_uptime()
+        info["Uptime"] = _fmt_uptime(si.get("uptime_seconds", 0))
 
     if _s("show_battery"):
-        try:
-            di    = _ios_bridge.get_device_info()
-            level = di.get("battery_level", -1.0)
-            state = di.get("battery_state", "unknown")
-            if isinstance(level, (int, float)) and level >= 0:
-                info["Battery"] = f"{int(level * 100)}% ({state})"
-            else:
-                info["Battery"] = "N/A (simulator or restricted)"
-        except Exception:
+        level = si.get("battery_level", -1.0)
+        state = si.get("battery_state", "unknown")
+        if isinstance(level, (int, float)) and level >= 0:
+            info["Battery"] = f"{int(level * 100)}% ({state})"
+        else:
             info["Battery"] = "N/A"
 
     if _s("show_jailbreak"):
-        jb_markers = [
-            "/bin/bash", "/etc/apt", "/var/lib/cydia",
-            "/Applications/Cydia.app", "/Applications/Sileo.app",
-            "/private/var/stash", "/usr/lib/libhooker.dylib",
-            "/usr/bin/ssh", "/usr/sbin/sshd", "/var/checkra1n.dmg",
-        ]
-        info["Jailbreak"] = "Yes" if any(os.path.exists(p) for p in jb_markers) else "No"
+        info["Jailbreak"] = "Yes" if si.get("jailbroken") else "No"
 
-    # --- Hardware ---
     if _s("show_cpu"):
-        cores = _sysctl_i32(b"hw.ncpu") or os.cpu_count() or 1
-        brand = _sysctl_str(b"machdep.cpu.brand_string")
-        if not brand:
-            brand = platform.processor() or "Apple Silicon"
+        brand = si.get("cpu_brand") or "Apple Silicon"
+        cores = si.get("cpu_count") or 0
         info["CPU"] = f"{brand} ({cores} cores)"
 
     if _s("show_ram"):
-        mem = _sysctl_i64(b"hw.memsize")
-        if mem > 0:
-            info["RAM"] = f"{mem / (1024 ** 3):.1f} GB"
-        else:
-            info["RAM"] = "Unknown"
+        mem = si.get("ram_bytes", 0)
+        info["RAM"] = f"{mem / (1024**3):.1f} GB" if mem > 0 else "Unknown"
 
     if _s("show_storage"):
-        try:
-            st    = os.statvfs("/")
-            total = st.f_blocks * st.f_frsize
-            free  = st.f_bavail * st.f_frsize
-            used  = total - free
+        total = si.get("storage_total", 0)
+        free_ = si.get("storage_free", 0)
+        if total > 0:
+            used = total - free_
             info["Storage"] = f"{used // (1024**3)} / {total // (1024**3)} GB"
-        except Exception:
+        else:
             info["Storage"] = "Unknown"
 
-    # --- Display ---
     if _s("show_screen"):
-        try:
-            sc    = _ios_bridge.get_screen_info()
-            w     = int(sc.get("width",  0))
-            h     = int(sc.get("height", 0))
-            scale = sc.get("nativeScale") or sc.get("scale") or 1.0
-            info["Screen"] = f"{w}×{h} @{scale:.1f}×"
-        except Exception:
-            info["Screen"] = "Unknown"
-
-    # --- Network (single getifaddrs call for both IP and type) ---
-    _net = None
-    if _s("show_ip") or _s("show_nettype"):
-        _net = _get_network_info()
+        w  = si.get("screen_width", 0)
+        h  = si.get("screen_height", 0)
+        sc = si.get("screen_scale", 1.0)
+        info["Screen"] = f"{w}×{h} @{sc:.1f}×"
 
     if _s("show_ip"):
-        info["IP"] = _net.get("ip", "Unknown") if _net else "Unknown"
+        info["IP"] = si.get("network_ip") or "Unknown"
 
     if _s("show_nettype"):
-        nt = (_net.get("type", "none") if _net else "none")
+        nt = si.get("network_type", "none")
         info["Connection"] = {"wifi": "Wi-Fi", "cellular": "Cellular", "none": "None"}.get(nt, nt.title())
 
     if _s("show_network"):
         state = _ios_bridge.get_connection_state()
         info["Network state"] = state.replace("_", " ").title()
 
-    # --- Telegram ---
     if _s("show_user_id"):
         uid = _ios_bridge.get_user_id()
         info["User ID"] = str(uid) if uid else "Unknown"
 
     if _s("show_app"):
-        try:
-            di = _ios_bridge.get_device_info()
-            info["App"] = di.get("app_version", "Unknown")
-        except Exception:
-            info["App"] = "Unknown"
+        info["App"] = si.get("app_version") or "Unknown"
 
     return info
 
@@ -253,10 +149,6 @@ def _format(info: dict, header: str) -> str:
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# Background processor
-# ---------------------------------------------------------------------------
-
 def _process(peer_id: int, extra_text: str) -> None:
     try:
         info   = _collect()
@@ -267,10 +159,6 @@ def _process(peer_id: int, extra_text: str) -> None:
     except Exception as e:
         _ios_bridge.log_text(f"Error: {e}", PLUGIN_ID)
 
-
-# ---------------------------------------------------------------------------
-# Message intercept hook
-# ---------------------------------------------------------------------------
 
 def on_intercept_message(params: dict) -> None:
     peer_id = params.get("peer_id", 0)
@@ -292,10 +180,6 @@ def on_intercept_message(params: dict) -> None:
         name=f"efch-{peer_id}"
     ).start()
 
-
-# ---------------------------------------------------------------------------
-# Plugin lifecycle
-# ---------------------------------------------------------------------------
 
 def on_load(plugin) -> None:
     from hook_utils import add_tl_hook
