@@ -1220,6 +1220,11 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     if (!m) return NULL;
     // Expose the global hook dict so Python code can inspect it if needed
     if (g_tl_hooks) PyModule_AddObject(m, "_hooks", g_tl_hooks);
+    // Integer version so plugins can guard against missing functions.
+    // Bump when new bridge functions are added.
+    //   1 — initial release
+    //   2 — added get_system_info, get_network_info, send_message
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 2);
     return m;
 }
 

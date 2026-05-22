@@ -40,6 +40,7 @@ import _ios_bridge
 import threading
 
 PLUGIN_ID = "exteraFetch"
+_BRIDGE_VER = getattr(_ios_bridge, "BRIDGE_VERSION", 1)
 
 
 def _s(key):
@@ -66,9 +67,33 @@ def _fmt_uptime(secs) -> str:
         return "Unknown"
 
 
+def _collect_legacy() -> dict:
+    """Bridge v1 fallback: only functions available before BRIDGE_VERSION was added."""
+    si = {}
+    try:
+        di = _ios_bridge.get_device_info()
+        si["battery_level"] = di.get("battery_level", -1)
+        si["battery_state"] = di.get("battery_state", "unknown")
+        si["app_version"]   = di.get("app_version", "Unknown")
+    except Exception:
+        pass
+    try:
+        sc = _ios_bridge.get_screen_info()
+        si["screen_width"]  = int(sc.get("width", 0))
+        si["screen_height"] = int(sc.get("height", 0))
+        si["screen_scale"]  = sc.get("nativeScale") or sc.get("scale") or 1.0
+    except Exception:
+        pass
+    return si
+
+
 def _collect() -> dict:
     # Single bridge call — all sysctl/UIKit/getifaddrs happens in ObjC.
-    si = _ios_bridge.get_system_info()
+    # Fall back to older per-field calls if bridge < v2 (stale cached binary).
+    if _BRIDGE_VER >= 2:
+        si = _ios_bridge.get_system_info()
+    else:
+        si = _collect_legacy()
     info = {}
 
     if _s("show_device"):
