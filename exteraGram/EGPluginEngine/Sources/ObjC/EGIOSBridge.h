@@ -68,6 +68,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// Called from _ios_bridge.send_message(peer_id, text) to let plugins send messages.
 @property (class, nonatomic, copy, nullable) void (^sendMessageHandler)(long long peerId, NSString *text);
 
+/// Wired by PluginsController.wireClientInfo: (peerId, msgId, emoticon) → updateMessageReactionsInteractively.
+/// Called from _ios_bridge.send_reaction(peer_id, msg_id, emoticon) to let plugins add reactions.
+@property (class, nonatomic, copy, nullable) void (^sendReactionHandler)(long long peerId, int32_t msgId, NSString *emoticon);
+
 /// Must be called on the main thread before any plugin uses get_system_info / get_device_info.
 /// Enables UIDevice battery monitoring and caches immutable UIScreen dimensions so that
 /// the Python bridge functions can call them safely from background threads without dispatch_sync.

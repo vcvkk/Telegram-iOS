@@ -81,6 +81,8 @@ static void (^g_suppressEntityTypeHandler)(NSString *, BOOL) = nil;
 static void (^g_suppressAttributeTypeHandler)(NSString *, BOOL) = nil;
 // Wired by PluginsController.wireClientInfo: lets plugins send Telegram messages
 static void (^g_sendMessageHandler)(long long, NSString *) = nil;
+// Wired by PluginsController.wireClientInfo: lets plugins send Telegram reactions
+static void (^g_sendReactionHandler)(long long, int32_t, NSString *) = nil;
 
 // UIKit values that must be read on main thread — cached at engine startup via prepareUIKitCaches.
 // Once written, only ever read (no synchronisation needed for reads after the barrier).
@@ -1082,6 +1084,25 @@ static PyObject *py_send_message(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
+// send_reaction(peer_id: int, msg_id: int, emoticon: str) — plugin-initiated reaction send.
+// Calls g_sendReactionHandler wired to updateMessageReactionsInteractively by PluginsController.
+static PyObject *py_send_reaction(PyObject *self, PyObject *args) {
+    long long peerId = 0;
+    int       msgId  = 0;
+    const char *emoticon = "";
+    if (!PyArg_ParseTuple(args, "Lis", &peerId, &msgId, &emoticon)) return NULL;
+    void (^h)(long long, int32_t, NSString *) = g_sendReactionHandler;
+    if (h) {
+        NSString *nsEmoticon = [NSString stringWithUTF8String:emoticon];
+        h(peerId, (int32_t)msgId, nsEmoticon);
+        EGPluginDebugLog_appendCStr("Bridge", [[NSString stringWithFormat:
+            @"send_reaction: peer=%lld msg=%d emoticon=%s", peerId, msgId, emoticon] UTF8String]);
+    } else {
+        EGPluginDebugLog_appendCStr("Bridge", "send_reaction: handler NIL — wireClientInfo not called?");
+    }
+    Py_RETURN_NONE;
+}
+
 // get_device_info() -> dict
 // Returns: battery_level (float, -1 if unknown), battery_state (str), app_version (str).
 // Safe to call from any thread — battery monitoring must have been enabled on main thread
@@ -1317,6 +1338,7 @@ static PyMethodDef ios_bridge_methods[] = {
     {"suppress_entity_type",    py_suppress_entity_type,    METH_VARARGS, "suppress_entity_type(type_name, suppress=True)"},
     {"suppress_attribute_type", py_suppress_attribute_type, METH_VARARGS, "suppress_attribute_type(type_name, suppress=True)"},
     {"send_message",            py_send_message,            METH_VARARGS, "send_message(peer_id, text) — send a Telegram message as the current user"},
+    {"send_reaction",           py_send_reaction,           METH_VARARGS, "send_reaction(peer_id, msg_id, emoticon) — add a reaction to a message"},
     {"get_device_info",         py_get_device_info,         METH_NOARGS,  "get_device_info() -> dict with battery_level, battery_state, app_version"},
     {"get_system_info",         py_get_system_info,         METH_NOARGS,  "get_system_info() -> dict with all hw/os/network info"},
     {"get_network_type",        py_get_network_type,        METH_NOARGS,  "get_network_type() -> 'wifi' | 'cellular' | 'none'"},
@@ -1443,6 +1465,9 @@ static id py_to_ns(PyObject *obj) {
 
 + (void (^)(long long, NSString *))sendMessageHandler { return g_sendMessageHandler; }
 + (void)setSendMessageHandler:(void (^)(long long, NSString *))b { g_sendMessageHandler = [b copy]; }
+
++ (void (^)(long long, int32_t, NSString *))sendReactionHandler { return g_sendReactionHandler; }
++ (void)setSendReactionHandler:(void (^)(long long, int32_t, NSString *))b { g_sendReactionHandler = [b copy]; }
 
 + (void)prepareUIKitCaches {
     // Must be called on the main thread once before plugins query system info.

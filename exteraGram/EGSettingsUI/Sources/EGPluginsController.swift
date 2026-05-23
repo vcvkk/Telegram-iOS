@@ -252,8 +252,7 @@ public final class PluginsController {
         })
         EGPluginClientInfo.connectionStateProvider = { stateBox.value }
 
-        // Wire send_message() for plugins. EGPluginHooks.pluginSendMessageHandler is read
-        // by EGPluginsEngineImpl which forwards it to EGPythonBridge (visible there, not here).
+        // Wire send_message() for plugins.
         EGPluginHooks.pluginSendMessageHandler = { [weak context] peerId, text in
             guard let ctx = context else { return }
             let pid = PeerId(peerId)
@@ -272,6 +271,21 @@ public final class PluginsController {
                     correlationId: nil,
                     bubbleUpEmojiOrStickersets: []
                 )]
+            ).startStandalone()
+        }
+
+        // Wire send_reaction() for plugins — appends a builtin emoji reaction to a message.
+        EGPluginHooks.pluginSendReactionHandler = { [weak context] peerId, messageId, emoticon in
+            guard let ctx = context else { return }
+            let pid   = PeerId(peerId)
+            let msgId = MessageId(peerId: pid, namespace: Namespaces.Message.Cloud, id: messageId)
+            let _ = updateMessageReactionsInteractively(
+                account: ctx.account,
+                messageIds: [msgId],
+                reactions: [.builtin(emoticon)],
+                isLarge: false,
+                storeAsRecentlyUsed: true,
+                add: true
             ).startStandalone()
         }
     }

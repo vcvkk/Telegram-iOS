@@ -85,6 +85,9 @@ public final class EGPluginsEngineImpl {
             EGPythonBridge.sendMessageHandler = { peerId, text in
                 EGPluginHooks.pluginSendMessageHandler?(peerId, text)
             }
+            EGPythonBridge.sendReactionHandler = { peerId, msgId, emoticon in
+                EGPluginHooks.pluginSendReactionHandler?(peerId, msgId, emoticon)
+            }
             EGLogger.shared.log("PluginEngine", "Starting \(plugins.count) plugin(s)…")
             for plugin in plugins {
                 // loadPlugin also calls EGPluginRuntime.initialize() — dispatch_once makes it safe.
@@ -109,6 +112,7 @@ public final class EGPluginsEngineImpl {
             EGPluginHooks.eventBusHookAsync = nil
             EGPluginHooks.messageInterceptHook = nil
             EGPythonBridge.sendMessageHandler = nil
+            EGPythonBridge.sendReactionHandler = nil
             for id in pluginIds {
                 if EGPythonBridge.isInitialized {
                     EGPythonBridge.unloadPlugin(id)

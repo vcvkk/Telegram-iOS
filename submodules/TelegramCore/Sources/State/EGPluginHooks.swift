@@ -31,6 +31,10 @@ public enum EGPluginHooks {
     /// Wired by PluginsController.wireClientInfo to a real enqueueMessages call.
     public static var pluginSendMessageHandler: ((Int64, String) -> Void)?
 
+    /// Called from _ios_bridge.send_reaction(peer_id, msg_id, emoticon) — plugin-initiated reactions.
+    /// Wired by PluginsController.wireClientInfo to updateMessageReactionsInteractively.
+    public static var pluginSendReactionHandler: ((Int64, Int32, String) -> Void)?
+
     /// MessageTextEntity type names to suppress when storing incoming messages.
     /// Plugins insert/remove entries; TelegramCore checks the set at parse time.
     /// Example: "Spoiler" suppresses messageEntitySpoiler entities.

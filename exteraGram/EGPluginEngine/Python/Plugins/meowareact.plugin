@@ -1,43 +1,251 @@
-__id__          = "meowareact"
+__id__          = "meow_react"
 __name__        = "MeowReact"
-__description__ = "Automatically replies with 🐱 Meow! to messages containing 'meow'."
-__author__      = "@exteraPlugins"
-__version__     = "1.0"
+__version__     = "0.2"
+__author__      = "@oodze"
+__description__ = "Автоматические реакции. Косит под юзербота потому что я так хочу."
 __os__          = "ios"
 
+"""
+iOS port of the Android MeowReact plugin.
+
+Commands (prefix .mr):
+  .mr                        — show status / help
+  .mr on / off               — enable / disable reactions in current chat
+  .mr auto <emoji> / off     — auto-react to every message in current chat
+  .mr add <phrase> <emoji>   — add trigger word → emoji mapping
+  .mr del <phrase>           — remove a trigger
+  .mr clear                  — clear all triggers
+  .mr list                   — show all triggers
+
+Architecture:
+  Incoming messages  → messages.receivedMessage event → _check_incoming()
+  Command messages   → messageInterceptHook           → _on_send_message_hook()
+  React              → _ios_bridge.send_reaction()    → updateMessageReactionsInteractively
+"""
+
+import json
+import _ios_bridge
 from hook_utils import add_tl_hook
 from android_utils import log
-import _ios_bridge
 
-_TRIGGERS = {"meow", "мяу", "мяуу"}
-_COOLDOWN: dict[int, float] = {}   # peer_id → last reply timestamp (throttle)
-_COOLDOWN_SECONDS = 30.0
+# ---------------------------------------------------------------------------
+# State (persisted via plugin settings)
+# ---------------------------------------------------------------------------
+_triggers: dict      = {}   # phrase → {"r": emoticon}
+_active_chats: list  = []   # peer_id (int) list where reactions are on
+_auto_chats: dict    = {}   # peer_id (str) → {"r": emoticon}
 
+_PLUGIN_ID   = "meow_react"
+_CMD_PREFIX  = ".mr"
+_IGNORE_PFXS = ("✅", "🚫", "⚠️", "📋", "🗑", "⚙️", "🤖")
+
+_STRINGS = {
+    "enabled":       "✅ Реакции включены в этом чате",
+    "disabled":      "🚫 Реакции отключены в этом чате",
+    "reaction_set":  '✅ Установлена реакция для триггера "{}": {}',
+    "trigger_list":  "📋 Список триггеров:\n\n",
+    "trigger_rm":    '🗑 Триггер "{}" удалён',
+    "all_cleared":   "🗑 Все триггеры успешно очищены",
+    "not_found":     "⚠️ Триггер не найден",
+    "no_args":       "⚠️ Укажите аргументы",
+    "no_triggers":   "⚠️ Нет активных триггеров",
+    "auto_enabled":  "🤖 Авто-реакция в этом чате: {}",
+    "auto_disabled": "🤖 Авто-реакция выключена",
+    "settings":      (
+        "⚙️ MeowReact v0.2\n\n"
+        "📊 Активных чатов: {active}\n"
+        "🤖 Авто-чатов: {auto}\n"
+        "🎯 Триггеров: {triggers}\n\n"
+        "Команды:\n"
+        ".mr on/off\n"
+        ".mr auto <смайл> / off\n"
+        ".mr add <фраза> <смайл>\n"
+        ".mr del <фраза>\n"
+        ".mr clear\n"
+        ".mr list"
+    ),
+}
+
+# ---------------------------------------------------------------------------
+# Plugin lifecycle
+# ---------------------------------------------------------------------------
 
 def on_load(plugin):
-    add_tl_hook("messages.receivedMessage", _on_received)
-    log("MeowReact loaded — listening for meow messages")
+    _load_settings()
+    add_tl_hook("messages.receivedMessage", _check_incoming)
+    add_tl_hook("messages.interceptMessage", _on_send_message_hook)
+    log("MeowReact loaded")
 
 
 def on_unload(plugin):
     log("MeowReact unloaded")
 
+# ---------------------------------------------------------------------------
+# Incoming message handler
+# ---------------------------------------------------------------------------
 
-def _on_received(msg: dict) -> None:
-    text: str = msg.get("text", "")
+def _check_incoming(msg: dict) -> None:
+    text: str  = msg.get("text", "")
     peer_id: int = msg.get("peer_id", 0)
-    if not peer_id or not text:
+    msg_id: int  = msg.get("message_id", 0)
+    if not peer_id or not text or not msg_id:
         return
-    if not any(t in text.lower() for t in _TRIGGERS):
+    if any(text.startswith(p) for p in _IGNORE_PFXS):
         return
 
-    # Simple per-peer cooldown so the bot doesn't spam on repeated messages
-    import time
-    now = time.monotonic()
-    last = _COOLDOWN.get(peer_id, 0.0)
-    if now - last < _COOLDOWN_SECONDS:
-        return
-    _COOLDOWN[peer_id] = now
+    key = str(peer_id)
 
-    log(f"MeowReact: meow detected in peer {peer_id} — replying")
-    _ios_bridge.send_message(peer_id, "🐱 Meow!")
+    # Auto-react mode takes priority over trigger matching
+    auto = _auto_chats.get(key)
+    if auto:
+        _send_react(peer_id, msg_id, auto["r"])
+        return
+
+    # Trigger matching — only in enabled chats
+    if peer_id not in _active_chats:
+        return
+
+    low = text.lower()
+    matches: list[tuple[int, str]] = []
+    for phrase, info in _triggers.items():
+        pos = low.find(phrase)
+        if pos != -1:
+            matches.append((pos, info["r"]))
+
+    if not matches:
+        return
+
+    matches.sort(key=lambda x: x[0])
+    # Send only the first matching reaction (no Premium multi-react for now)
+    _send_react(peer_id, msg_id, matches[0][1])
+
+# ---------------------------------------------------------------------------
+# Outgoing message hook (command processing)
+# ---------------------------------------------------------------------------
+
+def _on_send_message_hook(params: dict) -> dict:
+    """Called synchronously before outgoing message is sent.
+    Return params with params['cancel'] = True to suppress the send.
+    """
+    text: str   = params.get("text", "")
+    peer_id: int = params.get("peer_id", 0)
+    if not text.startswith(_CMD_PREFIX):
+        return params
+
+    parts = text.split(None, 2)
+    key   = str(peer_id)
+
+    if len(parts) < 2:
+        # ".mr" alone → show settings
+        info = _STRINGS["settings"].format(
+            active=len(_active_chats),
+            auto=len(_auto_chats),
+            triggers=len(_triggers),
+        )
+        _reply(peer_id, info)
+        params["cancel"] = True
+        return params
+
+    action = parts[1].lower()
+
+    if action == "on":
+        if peer_id not in _active_chats:
+            _active_chats.append(peer_id)
+            _save_settings()
+        _reply(peer_id, _STRINGS["enabled"])
+
+    elif action == "off":
+        if peer_id in _active_chats:
+            _active_chats.remove(peer_id)
+            _save_settings()
+        _reply(peer_id, _STRINGS["disabled"])
+
+    elif action == "clear":
+        _triggers.clear()
+        _save_settings()
+        _reply(peer_id, _STRINGS["all_cleared"])
+
+    elif action == "auto":
+        if len(parts) < 3:
+            _reply(peer_id, _STRINGS["no_args"])
+        elif parts[2].strip().lower() == "off":
+            _auto_chats.pop(key, None)
+            _save_settings()
+            _reply(peer_id, _STRINGS["auto_disabled"])
+        else:
+            emoticon = parts[2].strip()
+            _auto_chats[key] = {"r": emoticon}
+            _save_settings()
+            _reply(peer_id, _STRINGS["auto_enabled"].format(emoticon))
+
+    elif action in ("del", "rem"):
+        if len(parts) < 3:
+            params["cancel"] = True
+            return params
+        phrase = parts[2].lower().strip()
+        if phrase in _triggers:
+            del _triggers[phrase]
+            _save_settings()
+            _reply(peer_id, _STRINGS["trigger_rm"].format(phrase))
+        else:
+            _reply(peer_id, _STRINGS["not_found"])
+
+    elif action in ("add", "set"):
+        if len(parts) < 3:
+            _reply(peer_id, _STRINGS["no_args"])
+        else:
+            content = parts[2]
+            sp = content.rfind(" ")
+            if sp == -1:
+                _reply(peer_id, _STRINGS["no_args"])
+            else:
+                phrase   = content[:sp].strip().lower()
+                emoticon = content[sp + 1:].strip()
+                _triggers[phrase] = {"r": emoticon}
+                _save_settings()
+                _reply(peer_id, _STRINGS["reaction_set"].format(phrase, emoticon))
+
+    elif action == "list":
+        if not _triggers:
+            _reply(peer_id, _STRINGS["no_triggers"])
+        else:
+            lines = _STRINGS["trigger_list"]
+            for phrase, info in _triggers.items():
+                lines += f"• {phrase} → {info['r']}\n"
+            _reply(peer_id, lines.rstrip())
+
+    params["cancel"] = True
+    return params
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _send_react(peer_id: int, msg_id: int, emoticon: str) -> None:
+    try:
+        _ios_bridge.send_reaction(peer_id, msg_id, emoticon)
+    except Exception as e:
+        log(f"MeowReact.send_reaction error: {e}")
+
+
+def _reply(peer_id: int, text: str) -> None:
+    try:
+        _ios_bridge.send_message(peer_id, text)
+    except Exception as e:
+        log(f"MeowReact._reply error: {e}")
+
+
+def _load_settings() -> None:
+    global _triggers, _active_chats, _auto_chats
+    try:
+        _triggers    = json.loads(_ios_bridge.get_plugin_setting(_PLUGIN_ID, "triggers",    "{}"))
+        _active_chats = json.loads(_ios_bridge.get_plugin_setting(_PLUGIN_ID, "active_chats", "[]"))
+        _auto_chats   = json.loads(_ios_bridge.get_plugin_setting(_PLUGIN_ID, "auto_chats",   "{}"))
+    except Exception:
+        _triggers, _active_chats, _auto_chats = {}, [], {}
+
+
+def _save_settings() -> None:
+    _ios_bridge.set_plugin_setting(_PLUGIN_ID, "triggers",     json.dumps(_triggers))
+    _ios_bridge.set_plugin_setting(_PLUGIN_ID, "active_chats", json.dumps(_active_chats))
+    _ios_bridge.set_plugin_setting(_PLUGIN_ID, "auto_chats",   json.dumps(_auto_chats))
