@@ -815,7 +815,7 @@ static PyObject *py_add_view_label(PyObject *self_py, PyObject *args) {
     int tag = 0;
     const char *text_c = "";
     double font_size = 11.0, r = 0.5, g = 0.5, b = 0.5, a = 1.0;
-    if (!PyArg_ParseTuple(args, "Kisdddd", &ptr, &tag, &text_c, &font_size, &r, &g, &b, &a))
+    if (!PyArg_ParseTuple(args, "Kisddddd", &ptr, &tag, &text_c, &font_size, &r, &g, &b, &a))
         return NULL;
     if (!ptr) Py_RETURN_NONE;
     NSString *nsText   = [NSString stringWithUTF8String:text_c];
