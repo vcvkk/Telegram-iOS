@@ -331,7 +331,8 @@ public enum ResolvedUrl {
     case unknownDeepLink(path: String)
     case oauth(url: String)
     case createBot(parentBot: PeerId, username: String?, title: String?)
-    
+    case textStyle(style: TelegramComposeAIMessageMode.CloudStyle.Custom, initialPreview: AIMessageStylePreview?)
+
     public enum ResolvedCollectible {
         case gift(StarGift.UniqueGift)
         case invalidSlug
@@ -1324,6 +1325,8 @@ public final class TextProcessingScreenSendContextActions {
 public enum TextProcessingScreenMode {
     case edit(saveRestoreStateId: EnginePeer.Id?, completion: (TextWithEntities) -> Void, send: ((TextWithEntities) -> Void)?, sendContextActions: TextProcessingScreenSendContextActions?)
     case translate(fromLanguage: String?)
+    // MARK: exteraGram
+    case preview(style: TelegramComposeAIMessageMode.CloudStyle.Custom, authorPeer: EnginePeer?, initialPreview: AIMessageStylePreview?, isAlreadyAdded: Bool, added: () -> Void)
 }
 
 public protocol SharedAccountContext: AnyObject {
