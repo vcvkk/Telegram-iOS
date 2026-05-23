@@ -39,6 +39,10 @@ extension TelegramMediaPollOption {
     var apiOption: Api.PollAnswer {
         return .pollAnswer(.init(flags: 0, text: .textWithEntities(.init(text: self.text, entities: apiEntitiesFromMessageTextEntities(self.entities, associatedPeers: SimpleDictionary()))), option: Buffer(data: self.opaqueIdentifier), media: nil, addedBy: nil, date: nil))
     }
+
+    func apiOption(isPremium: Bool) -> Api.PollAnswer {
+        return self.apiOption
+    }
 }
 
 extension TelegramMediaPollOptionVoters {
