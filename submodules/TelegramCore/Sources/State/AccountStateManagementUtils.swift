@@ -1141,7 +1141,19 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: 
                         }
                     }
                     updatedState.addMessages([message], location: .UpperHistoryBlock)
-                    
+
+                    // Plugin hook — fire-and-forget so the update thread is never blocked.
+                    if message.flags.contains(.Incoming) {
+                        var hookParams: [String: Any] = [
+                            "peer_id": message.id.peerId.toInt64(),
+                            "text":    message.text,
+                        ]
+                        if case let .Id(msgId) = message.id {
+                            hookParams["message_id"] = Int(msgId.id)
+                        }
+                        EGPluginHooks.fireAsync("messages.receivedMessage", params: hookParams)
+                    }
+
                     if let reportDeliveryAttribute = message.attributes.first(where: { $0 is ReportDeliveryMessageAttribute }) as? ReportDeliveryMessageAttribute, case let .Id(id) = message.id, reportDeliveryAttribute.untilDate > currentTime {
                         updatedState.addReportMessageDelivery(messageIds: [id])
                     }

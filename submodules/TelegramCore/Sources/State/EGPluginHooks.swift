@@ -63,3 +63,19 @@ public enum EGPluginHooks {
         eventBusHookAsync?(event, params)
     }
 }
+
+// MARK: - Event bus event catalogue (for plugin documentation)
+// Plugins subscribe via add_tl_hook(event_name, callback).
+//
+// "messages.receivedMessage"   — incoming message stored (after decrypt)
+//   params: peer_id: Int64, text: String, message_id: Int (if available)
+//   source: AccountStateManagementUtils.swift / .updateNewMessage
+//
+// "messages.readHistory"       — read pointer advanced
+//   params: peer_id: Int64, max_id: Int
+//
+// "messages.pinMessage"        — message pinned/unpinned
+//   params: peer_id: Int64, message_id: Int, pinned: Bool
+//
+// "messages.forwardMessages"   — messages forwarded
+//   params: peer_id: Int64, count: Int

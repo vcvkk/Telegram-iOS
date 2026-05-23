@@ -1,0 +1,43 @@
+__id__          = "meowareact"
+__name__        = "MeowReact"
+__description__ = "Automatically replies with 🐱 Meow! to messages containing 'meow'."
+__author__      = "@exteraPlugins"
+__version__     = "1.0"
+__os__          = "ios"
+
+from hook_utils import add_tl_hook
+from android_utils import log
+import _ios_bridge
+
+_TRIGGERS = {"meow", "мяу", "мяуу"}
+_COOLDOWN: dict[int, float] = {}   # peer_id → last reply timestamp (throttle)
+_COOLDOWN_SECONDS = 30.0
+
+
+def on_load(plugin):
+    add_tl_hook("messages.receivedMessage", _on_received)
+    log("MeowReact loaded — listening for meow messages")
+
+
+def on_unload(plugin):
+    log("MeowReact unloaded")
+
+
+def _on_received(msg: dict) -> None:
+    text: str = msg.get("text", "")
+    peer_id: int = msg.get("peer_id", 0)
+    if not peer_id or not text:
+        return
+    if not any(t in text.lower() for t in _TRIGGERS):
+        return
+
+    # Simple per-peer cooldown so the bot doesn't spam on repeated messages
+    import time
+    now = time.monotonic()
+    last = _COOLDOWN.get(peer_id, 0.0)
+    if now - last < _COOLDOWN_SECONDS:
+        return
+    _COOLDOWN[peer_id] = now
+
+    log(f"MeowReact: meow detected in peer {peer_id} — replying")
+    _ios_bridge.send_message(peer_id, "🐱 Meow!")
