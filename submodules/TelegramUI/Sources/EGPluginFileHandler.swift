@@ -947,7 +947,7 @@ func presentEGPluginMetadataIfAvailable(
                 animateInAsReplacement: false,
                 action: { _ in return false }
             )
-            navigationController?.topViewController?.present(overlay, in: .window(.root))
+            (navigationController?.topViewController as? ViewController)?.present(overlay, in: .window(.root))
         }
         navigationController?.pushViewController(vc)
     })
