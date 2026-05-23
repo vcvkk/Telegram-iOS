@@ -425,7 +425,7 @@ public final class ChatTextInputTextCustomEmojiAttribute: NSObject, Codable {
     }
     
     public enum Custom: Codable {
-        case topic(id: Int64, info: EngineMessageHistoryThread.Info)
+        case topic(id: Int64, info: TelegramCore.EngineMessageHistoryThread.Info)
         case nameColors([UInt32])
         case stars(tinted: Bool)
         case ton(tinted: Bool)
