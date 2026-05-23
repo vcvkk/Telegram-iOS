@@ -186,6 +186,8 @@ public final class PluginsController {
         defaults.set(true, forKey: launchMarkerKey)
         // --------------------------------------------------------------------------
 
+        // Re-sync bundled plugins when the app binary has been updated.
+        syncBundledPlugins()
         // Repair any filePaths that are empty (plugins installed before filePath field was added)
         repairMissingFilePaths()
         let refs = plugins.filter { $0.isEnabled }.map { (id: $0.id, filePath: $0.filePath) }
@@ -217,6 +219,34 @@ public final class PluginsController {
             }
         }
         if updated { plugins = list }
+    }
+
+    /// Overwrite installed bundled plugins with the current bundle copy whenever the
+    /// app binary version changes.  This keeps bundled plugins in sync with source
+    /// updates without requiring the user to manually reinstall them.
+    /// Only updates plugins that are already in the installed list — does not
+    /// auto-install new bundled plugins (user opt-in is preserved).
+    private func syncBundledPlugins() {
+        let bundleVersion = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "1"
+        let syncKey = "eg_bundled_sync_version"
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: syncKey) != bundleVersion else { return }
+
+        let installedIds = Set(plugins.map { $0.id })
+        let fm = FileManager.default
+        let destDir = EGPluginsDirectory.plugins.url
+        let bundleURLs = Bundle.main.urls(forResourcesWithExtension: "plugin",
+                                          subdirectory: "Python/Plugins") ?? []
+        for src in bundleURLs {
+            let id = src.deletingPathExtension().lastPathComponent
+            guard installedIds.contains(id) else { continue }
+            let dest = destDir.appendingPathComponent("\(id).plugin")
+            try? fm.removeItem(at: dest)
+            try? fm.copyItem(at: src, to: dest)
+        }
+        defaults.set(bundleVersion, forKey: syncKey)
+        EGLogger.shared.log("PluginsController",
+            "Synced bundled plugins to bundle version \(bundleVersion)")
     }
 
     public func stopEngine(completion: (() -> Void)? = nil) {
