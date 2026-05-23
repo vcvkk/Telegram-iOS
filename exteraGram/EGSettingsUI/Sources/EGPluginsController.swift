@@ -6,6 +6,7 @@ import SwiftUI
 import LegacyUI
 import EGSwiftUI
 import EGStrings
+import EGLogging
 import EGPluginEngine
 import AccountContext
 import Display
