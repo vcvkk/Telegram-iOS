@@ -33,7 +33,7 @@ public struct StandaloneSendMessagesError {
     public var peerId: PeerId
     public var reason: PendingMessageFailureReason?
     
-    init(
+    public init(
         peerId: PeerId,
         reason: PendingMessageFailureReason?
     ) {
@@ -217,8 +217,55 @@ public func standaloneSendEnqueueMessages(
             }
         }
         if allDone {
+            if peerId.namespace == Namespaces.Peer.SecretChat {
+                return postbox.transaction { transaction -> Signal<Never, StandaloneSendMessagesError> in
+                    var state = transaction.getPeerChatState(peerId) as? SecretChatState
+
+                    for (content, media, attributes) in allResults {
+                        var text: String = ""
+                        switch content.content {
+                        case let .text(textValue):
+                            text = textValue
+                        case let .media(_, textValue):
+                            text = textValue
+                        default:
+                            break
+                        }
+
+                        if let currentState = state, let updatedState = enqueueSecretChatUploadedMessageContent(
+                            transaction: transaction,
+                            peerId: peerId,
+                            state: currentState,
+                            content: content,
+                            text: text,
+                            attributes: attributes,
+                            media: media
+                        ) {
+                            state = updatedState
+                        } else {
+                            return .fail(StandaloneSendMessagesError(peerId: peerId, reason: .none))
+                        }
+                    }
+
+                    return managedSecretChatOutgoingOperations(
+                        auxiliaryMethods: auxiliaryMethods,
+                        postbox: postbox,
+                        network: network,
+                        accountPeerId: accountPeerId,
+                        mode: .standaloneComplete(peerId: peerId)
+                    )
+                    |> castError(StandaloneSendMessagesError.self)
+                    |> ignoreValues
+                }
+                |> castError(StandaloneSendMessagesError.self)
+                |> switchToLatest
+                |> map { _ -> StandaloneSendMessageStatus in
+                }
+                |> then(.single(.done))
+            }
+
             var sendSignals: [Signal<Never, StandaloneSendMessagesError>] = []
-            
+
             for (content, media, attributes) in allResults {
                 var text: String = ""
                 switch content.content {
@@ -229,13 +276,12 @@ public func standaloneSendEnqueueMessages(
                 default:
                     break
                 }
-                
+
                 sendSignals.append(sendUploadedMessageContent(
-                    auxiliaryMethods: auxiliaryMethods,
                     postbox: postbox,
                     network: network,
                     stateManager: stateManager,
-                    accountPeerId: stateManager.accountPeerId,
+                    accountPeerId: accountPeerId,
                     peerId: peerId,
                     content: content,
                     text: text,
@@ -256,8 +302,52 @@ public func standaloneSendEnqueueMessages(
     }
 }
 
+private func enqueueSecretChatUploadedMessageContent(
+    transaction: Transaction,
+    peerId: PeerId,
+    state: SecretChatState,
+    content: PendingMessageUploadedContentAndReuploadInfo,
+    text: String,
+    attributes: [MessageAttribute],
+    media: [Media]
+) -> SecretChatState? {
+    var secretFile: SecretChatOutgoingFile?
+    switch content.content {
+    case let .secretMedia(file, size, key):
+        if let fileReference = SecretChatOutgoingFileReference(file) {
+            secretFile = SecretChatOutgoingFile(reference: fileReference, size: size, key: key)
+        }
+    default:
+        break
+    }
+
+    let layer: SecretChatLayer
+    switch state.embeddedState {
+    case .terminated, .handshake:
+        return nil
+    case .basicLayer:
+        layer = .layer8
+    case let .sequenceBasedLayer(sequenceState):
+        layer = sequenceState.layerNegotiationState.activeLayer.secretChatLayer
+    }
+
+    let messageContents = StandaloneSecretMessageContents(
+        id: Int64.random(in: Int64.min ... Int64.max),
+        text: text,
+        attributes: attributes,
+        media: media.first,
+        file: secretFile
+    )
+
+    let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: peerId, operation: .sendStandaloneMessage(layer: layer, contents: messageContents), state: state)
+    if updatedState != state {
+        transaction.setPeerChatState(peerId, state: updatedState)
+    }
+
+    return updatedState
+}
+
 private func sendUploadedMessageContent(
-    auxiliaryMethods: AccountAuxiliaryMethods,
     postbox: Postbox,
     network: Network,
     stateManager: AccountStateManager,
@@ -310,15 +400,7 @@ private func sendUploadedMessageContent(
                     transaction.setPeerChatState(peerId, state: updatedState)
                 }
                 
-                return managedSecretChatOutgoingOperations(
-                    auxiliaryMethods: auxiliaryMethods,
-                    postbox: postbox,
-                    network: network,
-                    accountPeerId: accountPeerId,
-                    mode: .standaloneComplete(peerId: peerId)
-                )
-                |> castError(StandaloneSendMessagesError.self)
-                |> ignoreValues
+                return .fail(StandaloneSendMessagesError(peerId: peerId, reason: .none))
             } else {
                 return .fail(StandaloneSendMessagesError(peerId: peerId, reason: .none))
             }
