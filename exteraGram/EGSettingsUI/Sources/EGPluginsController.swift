@@ -153,14 +153,44 @@ public final class PluginsController {
 
     // MARK: - Lifecycle
 
+    // UserDefaults key for the unclean-shutdown marker.
+    // Set immediately before engine.start(); cleared after all plugins load
+    // and on every explicit stopEngine(). If the app is killed or crashes
+    // while plugins are running, the marker survives and is detected on the
+    // next launch, triggering auto safe mode.
+    private let launchMarkerKey = "eg_plugins_launching"
+
     public func startEngine(completion: (() -> Void)? = nil) {
         guard isEngineEnabled, !isSafeModeEnabled else {
             completion?(); return
         }
+
+        // Unclean-shutdown detection -----------------------------------------------
+        // If the marker is still set from a previous session, either the app was
+        // force-killed while plugins were loading/running, or Python crashed.
+        let defaults = UserDefaults.standard
+        if defaults.bool(forKey: launchMarkerKey) {
+            EGLogger.shared.log("PluginsController",
+                "Unclean shutdown detected — auto-entering safe mode")
+            isSafeModeEnabled = true
+            // Give the run loop a moment so the caller's view hierarchy is stable
+            // before the notification fires and triggers an alert.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                NotificationCenter.default.post(
+                    name: .egPluginsSafeModeAutoEnabled, object: nil)
+            }
+            completion?()
+            return
+        }
+        defaults.set(true, forKey: launchMarkerKey)
+        // --------------------------------------------------------------------------
+
         // Repair any filePaths that are empty (plugins installed before filePath field was added)
         repairMissingFilePaths()
         let refs = plugins.filter { $0.isEnabled }.map { (id: $0.id, filePath: $0.filePath) }
         engine.start(plugins: refs) {
+            // All plugins loaded cleanly — erase the crash marker.
+            UserDefaults.standard.removeObject(forKey: self.launchMarkerKey)
             DispatchQueue.main.async {
                 self.refreshPluginStates()
                 NotificationCenter.default.post(name: .egPluginsChanged, object: nil)
@@ -189,6 +219,9 @@ public final class PluginsController {
     }
 
     public func stopEngine(completion: (() -> Void)? = nil) {
+        // Clean shutdown — erase the crash marker so the next startEngine
+        // doesn't misdetect this as an unclean shutdown.
+        UserDefaults.standard.removeObject(forKey: launchMarkerKey)
         let ids = plugins.map { $0.id }
         engine.stop(pluginIds: ids) {
             DispatchQueue.main.async { completion?() }
@@ -387,6 +420,31 @@ public final class PluginsController {
             guard let pluginId = note.userInfo?["pluginId"] as? String else { return }
             self?.onShowPluginSettings?(pluginId)
         }
+
+        NotificationCenter.default.addObserver(
+            forName: .egPluginsSafeModeAutoEnabled,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.showSafeModeAlert()
+        }
+    }
+
+    private func showSafeModeAlert() {
+        guard let vc = Self.topViewController() else { return }
+        let alert = UIAlertController(
+            title: "Plugin Engine — Safe Mode",
+            message: "The app was closed unexpectedly while plugins were running. "
+                   + "Safe mode has been automatically enabled to prevent further instability.\n\n"
+                   + "Disable a plugin you suspect caused the crash, then re-enable the engine "
+                   + "from Settings → Plugins.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        alert.addAction(UIAlertAction(title: "Disable Safe Mode", style: .destructive) { [weak self] _ in
+            self?.isSafeModeEnabled = false
+            NotificationCenter.default.post(name: .egPluginsChanged, object: nil)
+        })
+        vc.present(alert, animated: true)
     }
 
     // MARK: - Bulletin / toast presentation
@@ -472,6 +530,9 @@ public final class PluginsController {
 
 extension Notification.Name {
     public static let egPluginsChanged = Notification.Name("app.exteragram.ios.pluginsChanged")
+    /// Posted on main queue ~0.8s after launch when an unclean shutdown is detected.
+    /// Observer should show the user an alert explaining safe mode was auto-enabled.
+    public static let egPluginsSafeModeAutoEnabled = Notification.Name("app.exteragram.ios.pluginsSafeModeAutoEnabled")
 }
 
 // MARK: - Search/Nav State Bridge
