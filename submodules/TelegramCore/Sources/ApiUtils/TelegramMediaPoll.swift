@@ -36,8 +36,8 @@ extension TelegramMediaPollOption {
         }
     }
 
-    func apiOption(isPremium: Bool = true) -> Api.PollAnswer {
-        return .pollAnswer(.init(flags: 0, text: .textWithEntities(.init(text: self.text, entities: apiEntitiesFromMessageTextEntities(self.entities, associatedPeers: SimpleDictionary(), isPremium: isPremium))), option: Buffer(data: self.opaqueIdentifier), media: nil, addedBy: nil, date: nil))
+    var apiOption: Api.PollAnswer {
+        return .pollAnswer(.init(flags: 0, text: .textWithEntities(.init(text: self.text, entities: apiEntitiesFromMessageTextEntities(self.entities, associatedPeers: SimpleDictionary()))), option: Buffer(data: self.opaqueIdentifier), media: nil, addedBy: nil, date: nil))
     }
 }
 
@@ -71,10 +71,12 @@ extension TelegramMediaPollResults {
                 if (flags & (1 << 0)) == 0 {//isMin
                     hasUnseenVotes = (flags & (1 << 6)) != 0
                 }
+            
+                let canViewStats = (flags & (1 << 7)) != 0
 
                 self.init(voters: results.flatMap({ $0.map(TelegramMediaPollOptionVoters.init(apiVoters:)) }), totalVoters: totalVoters, recentVoters: recentVoters.flatMap { recentVoters in
                     return recentVoters.map { $0.peerId }
-                    } ?? [], solution: parsedSolution, hasUnseenVotes: hasUnseenVotes)
+                } ?? [], solution: parsedSolution, hasUnseenVotes: hasUnseenVotes, canViewStats: canViewStats)
         }
     }
 }
