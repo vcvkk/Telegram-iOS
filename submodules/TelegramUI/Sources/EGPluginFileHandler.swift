@@ -18,6 +18,7 @@ import ButtonComponent
 import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import StickerResources
+import UndoUI
 import EGSettingsUI
 
 // MARK: - Metadata Model
@@ -455,17 +456,21 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
     let metadata: EGPluginFileMetadata
     let filePath: String
     let accountContext: AccountContext
+    let isUpdate: Bool
     let dismiss: () -> Void
     let share: () -> Void
     let openUsername: (String) -> Void
+    let onInstalled: ((EGPlugin) -> Void)?
 
-    init(metadata: EGPluginFileMetadata, filePath: String, accountContext: AccountContext, dismiss: @escaping () -> Void, share: @escaping () -> Void, openUsername: @escaping (String) -> Void) {
+    init(metadata: EGPluginFileMetadata, filePath: String, accountContext: AccountContext, dismiss: @escaping () -> Void, share: @escaping () -> Void, openUsername: @escaping (String) -> Void, onInstalled: ((EGPlugin) -> Void)? = nil) {
         self.metadata = metadata
         self.filePath = filePath
         self.accountContext = accountContext
+        self.isUpdate = PluginsController.shared.plugins.contains { $0.id == metadata.id }
         self.dismiss = dismiss
         self.share = share
         self.openUsername = openUsername
+        self.onInstalled = onInstalled
     }
 
     static func ==(lhs: EGPluginInstallSheetContent, rhs: EGPluginInstallSheetContent) -> Bool {
@@ -475,18 +480,28 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
     final class State: ComponentState {
         var isInstalling = false
         var isEnabled: Bool = true
+        var installError: String?
 
-        func install(metadata: EGPluginFileMetadata, filePath: String, isEnabled: Bool, dismiss: @escaping () -> Void) {
+        func install(metadata: EGPluginFileMetadata, filePath: String, isEnabled: Bool, isUpdate: Bool, onInstalled: ((EGPlugin) -> Void)?, dismiss: @escaping () -> Void) {
             guard !isInstalling else { return }
             isInstalling = true
+            installError = nil
             updated(transition: .immediate)
             let fp = filePath
             let en = isEnabled
             DispatchQueue.global(qos: .userInitiated).async {
-                // Use PluginsController.install so engine.loadPlugin (on_load) is called.
-                _ = try? PluginsController.shared.install(filePath: fp, isEnabled: en)
-                DispatchQueue.main.async {
-                    dismiss()
+                do {
+                    let plugin = try PluginsController.shared.install(filePath: fp, isEnabled: en)
+                    DispatchQueue.main.async {
+                        onInstalled?(plugin)
+                        dismiss()
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self.isInstalling = false
+                        self.installError = error.localizedDescription
+                        self.updated(transition: .immediate)
+                    }
                 }
             }
         }
@@ -501,6 +516,7 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
         let iconView     = Child(EGPluginIconComponent.self)
         let titleText    = Child(BalancedTextComponent.self)
         let descText     = Child(BalancedTextComponent.self)
+        let errorText    = Child(BalancedTextComponent.self)
         let toggleRow    = Child(EGToggleRowComponent.self)
         let sourcePill   = Child(EGSourcePillComponent.self)
         let installBtn   = Child(ButtonComponent.self)
@@ -629,7 +645,12 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
                 sideInset: 16.0
             )
 
-            let btnLabel = state.isInstalling ? "Installing…" : "Install Plugin"
+            let btnLabel: String
+            if state.isInstalling {
+                btnLabel = component.isUpdate ? "Updating…" : "Installing…"
+            } else {
+                btnLabel = component.isUpdate ? "Update Plugin" : "Install Plugin"
+            }
             let installContent: [AnyComponentWithIdentity<Empty>] = [
                 AnyComponentWithIdentity(id: 0, component: AnyComponent(ButtonTextContentComponent(
                     text: btnLabel,
@@ -659,6 +680,8 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
                             metadata: component.metadata,
                             filePath: component.filePath,
                             isEnabled: state.isEnabled,
+                            isUpdate: component.isUpdate,
+                            onInstalled: component.onInstalled,
                             dismiss: component.dismiss
                         )
                     }
@@ -667,7 +690,29 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
                 transition: .immediate
             )
             context.add(btn.position(CGPoint(x: width / 2, y: y + btn.size.height / 2)))
-            y += btn.size.height + 16.0
+            y += btn.size.height + 8.0
+
+            // ── Inline install error (below button, red, 13pt) ───────────
+            if let errMsg = state.installError {
+                let errView = errorText.update(
+                    component: BalancedTextComponent(
+                        text: .plain(NSAttributedString(
+                            string: errMsg,
+                            font: Font.regular(13.0),
+                            textColor: UIColor.systemRed
+                        )),
+                        horizontalAlignment: .center,
+                        maximumNumberOfLines: 0,
+                        lineSpacing: 0.1
+                    ),
+                    availableSize: CGSize(width: width - hPad * 2, height: 200),
+                    transition: .immediate
+                )
+                context.add(errView.position(CGPoint(x: width / 2, y: y + errView.size.height / 2)))
+                y += errView.size.height + 8.0
+            } else {
+                y += 8.0
+            }
 
             // ── "Enable after installation" toggle (below install button) ──
             let tog = toggleRow.update(
@@ -695,12 +740,14 @@ private final class EGPluginInstallSheetComponent: CombinedComponent {
     let filePath: String
     let accountContext: AccountContext
     let originalFileName: String?
+    let onInstalled: ((EGPlugin) -> Void)?
 
-    init(metadata: EGPluginFileMetadata, filePath: String, accountContext: AccountContext, originalFileName: String?) {
+    init(metadata: EGPluginFileMetadata, filePath: String, accountContext: AccountContext, originalFileName: String?, onInstalled: ((EGPlugin) -> Void)? = nil) {
         self.metadata = metadata
         self.filePath = filePath
         self.accountContext = accountContext
         self.originalFileName = originalFileName
+        self.onInstalled = onInstalled
     }
 
     static func ==(lhs: EGPluginInstallSheetComponent, rhs: EGPluginInstallSheetComponent) -> Bool {
@@ -769,7 +816,8 @@ private final class EGPluginInstallSheetComponent: CombinedComponent {
                         accountContext: context.component.accountContext,
                         dismiss: { dismiss(true) },
                         share: share,
-                        openUsername: openUsername
+                        openUsername: openUsername,
+                        onInstalled: context.component.onInstalled
                     )),
                     style: .glass,
                     backgroundColor: .color(env.theme.actionSheet.opaqueItemBackgroundColor),
@@ -830,19 +878,27 @@ private final class EGPluginInstallSheetComponent: CombinedComponent {
 // MARK: - View Controller
 
 final class EGPluginInstallScreen: ViewControllerComponentContainer {
+    var onInstalled: ((EGPlugin) -> Void)?
+
     init(metadata: EGPluginFileMetadata, filePath: String, context: AccountContext, originalFileName: String? = nil) {
+        // Holder lets the closure forward to `onInstalled` set after super.init
+        // without creating a strong reference cycle.
+        final class Holder { weak var screen: EGPluginInstallScreen? }
+        let holder = Holder()
         super.init(
             context: context,
             component: EGPluginInstallSheetComponent(
                 metadata: metadata,
                 filePath: filePath,
                 accountContext: context,
-                originalFileName: originalFileName
+                originalFileName: originalFileName,
+                onInstalled: { plugin in holder.screen?.onInstalled?(plugin) }
             ),
             navigationBarAppearance: .none,
             statusBarStyle: .ignore,
             theme: .default
         )
+        holder.screen = self
         self.navigationPresentation = .flatModal
         self.automaticallyControlPresentationContextLayout = false
     }
@@ -877,7 +933,22 @@ func presentEGPluginMetadataIfAvailable(
               let text = try? String(contentsOfFile: data.path, encoding: .utf8) else { return }
         let metadata = EGPluginFileMetadata.parse(from: text)
         guard !metadata.isEmpty else { return }
+        let isUpdate = PluginsController.shared.plugins.contains { $0.id == metadata.id }
         let vc = EGPluginInstallScreen(metadata: metadata, filePath: data.path, context: context, originalFileName: file.fileName)
+        vc.onInstalled = { plugin in
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let text = isUpdate
+                ? "\"\(plugin.name)\" updated"
+                : "\"\(plugin.name)\" installed"
+            let overlay = UndoOverlayController(
+                presentationData: presentationData,
+                content: .actionSucceeded(title: nil, text: text, cancel: nil, destructive: false),
+                elevatedLayout: false,
+                animateInAsReplacement: false,
+                action: { _ in return false }
+            )
+            navigationController?.topViewController?.present(overlay, in: .window(.root))
+        }
         navigationController?.pushViewController(vc)
     })
 }

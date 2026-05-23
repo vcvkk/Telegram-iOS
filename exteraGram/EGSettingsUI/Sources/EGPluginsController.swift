@@ -16,6 +16,7 @@ import TelegramCore
 import Postbox
 import AnimatedStickerNode
 import TelegramAnimatedStickerNode
+import UndoUI
 
 /// Reference-type holder for the latest connection-state string so the
 /// signal subscriber and the EGPluginClientInfo provider closure share state.
@@ -47,6 +48,7 @@ public struct EGPlugin: Identifiable, Codable {
     public var isExpanded: Bool = false
     public var isError: Bool = false
     public var isNotResponding: Bool = false
+    public var errorMessage: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case id, name, subtitle, version, iconUrl
@@ -115,6 +117,7 @@ public final class PluginsController {
     }
 
     private let engine = EGPluginsEngineImpl()
+    private weak var storedContext: AccountContext?
 
     // MARK: Persisted plugin list
 
@@ -237,6 +240,7 @@ public final class PluginsController {
     /// account id, user id, and live connection state via _ios_bridge.
     /// Safe to call multiple times — the previous subscription is cancelled.
     public func wireClientInfo(context: AccountContext) {
+        storedContext = context
         EGPluginClientInfo.accountIdProvider = { [weak context] in
             context?.account.id.int64 ?? 0
         }
@@ -363,14 +367,16 @@ public final class PluginsController {
         var all = plugins
         var changed = false
         for i in all.indices {
-            let id = all[i].id
+            let id  = all[i].id
             let err = engine.isPluginError(id)
             let nr  = engine.isPluginNotResponding(id)
             let hs  = engine.pluginHasSettings(id)
-            if all[i].isError != err || all[i].isNotResponding != nr || all[i].hasSettings != hs {
+            let em  = err ? engine.pluginErrorMessage(id) : nil
+            if all[i].isError != err || all[i].isNotResponding != nr || all[i].hasSettings != hs || all[i].errorMessage != em {
                 all[i].isError = err
                 all[i].isNotResponding = nr
                 all[i].hasSettings = hs
+                all[i].errorMessage = em
                 changed = true
             }
         }
@@ -411,12 +417,12 @@ public final class PluginsController {
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("EGPluginShowBulletinNotification"),
             object: nil, queue: .main
-        ) { note in
+        ) { [weak self] note in
             let title = note.userInfo?["title"] as? String ?? ""
             let text  = note.userInfo?["text"]  as? String ?? ""
             let icon  = note.userInfo?["icon"]  as? String ?? ""
             EGPluginDebugLog.shared.append(tag: "Bulletin", "observer fired: '\(title)'")
-            Self.showBulletin(title: title, text: text, icon: icon)
+            self?.showBulletin(title: title, text: text, icon: icon)
         }
 
         NotificationCenter.default.addObserver(
@@ -490,26 +496,22 @@ public final class PluginsController {
         return vc
     }
 
-    private static func showBulletin(title: String, text: String, icon: String) {
-        guard let vc = topViewController() else {
-            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: no VC — giving up")
+    private func showBulletin(title: String, text: String, icon: String) {
+        guard let vc = Self.topViewController() as? ViewController,
+              let presentationData = storedContext.map({ $0.sharedContext.currentPresentationData.with { $0 } })
+        else {
+            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: no VC or context — giving up")
             return
         }
-        let alert = UIAlertController(
-            title: title,
-            message: text.isEmpty ? nil : text,
-            preferredStyle: .alert
+        let subtitle = text.isEmpty ? nil : text
+        let overlay = UndoOverlayController(
+            presentationData: presentationData,
+            content: .info(title: title.isEmpty ? nil : title, text: subtitle ?? "", timeout: nil, customUndoText: nil),
+            elevatedLayout: false,
+            animateInAsReplacement: false,
+            action: { _ in return false }
         )
-        if !icon.isEmpty {
-            let config = UIImage.SymbolConfiguration(pointSize: 28, weight: .medium)
-            if let img = UIImage(systemName: icon, withConfiguration: config) {
-                alert.setValue(img, forKey: "image")
-            }
-        }
-        vc.present(alert, animated: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            alert.dismiss(animated: true)
-        }
+        vc.present(overlay, in: .window(.root))
     }
 
     private static func showToast(message: String, duration: Double) {
@@ -851,8 +853,20 @@ private struct PluginRowView: View {
     let onDelete: () -> Void
     let onSettings: () -> Void
 
-    private var subtitleString: String {
-        "v\(plugin.version)" + (plugin.subtitle.isEmpty ? "" : " · \(plugin.subtitle)")
+    @ViewBuilder private var subtitleView: some View {
+        HStack(spacing: 4) {
+            Text("v\(plugin.version)").foregroundColor(.secondary)
+            if !plugin.subtitle.isEmpty {
+                Text("·").foregroundColor(.secondary)
+                if plugin.subtitle.hasPrefix("@") {
+                    Text(plugin.subtitle).foregroundColor(.accentColor)
+                } else {
+                    Text(plugin.subtitle).foregroundColor(.secondary)
+                }
+            }
+        }
+        .font(.subheadline)
+        .lineLimit(1)
     }
 
     var body: some View {
@@ -926,7 +940,7 @@ private struct PluginRowView: View {
                     .padding(.trailing, 16)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(plugin.name).font(.headline).foregroundColor(.primary).lineLimit(1)
-                    Text(subtitleString).font(.subheadline).foregroundColor(.secondary).lineLimit(1)
+                    subtitleView
                 }
             }
         } else {
@@ -936,7 +950,7 @@ private struct PluginRowView: View {
                     .padding(.bottom, 12)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(plugin.name).font(.headline).foregroundColor(.primary).lineLimit(1)
-                    Text(subtitleString).font(.subheadline).foregroundColor(.secondary).lineLimit(1)
+                    subtitleView
                 }
             }
         }
@@ -948,11 +962,16 @@ private struct PluginRowView: View {
                 .font(.subheadline).foregroundColor(.red)
                 .padding(.trailing, 12).padding(.top, 6)
         } else if plugin.isError {
-            Text(i18n("Plugins.State.Error", lang))
-                .font(.subheadline).foregroundColor(.red)
+            Text(plugin.errorMessage ?? i18n("Plugins.State.Error", lang))
+                .font(.system(.subheadline, design: .monospaced))
+                .foregroundColor(.red)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.trailing, 12).padding(.top, 6)
+                .onTapGesture {
+                    UIPasteboard.general.string = plugin.errorMessage ?? i18n("Plugins.State.Error", lang)
+                }
         } else if !plugin.pluginDescription.isEmpty {
-            Text(plugin.pluginDescription)
+            Text(.init(plugin.pluginDescription))
                 .font(.subheadline).foregroundColor(.primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.trailing, 12).padding(.top, 6)

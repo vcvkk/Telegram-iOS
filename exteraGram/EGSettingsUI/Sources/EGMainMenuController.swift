@@ -162,62 +162,11 @@ private struct EGMainMenuView: View {
         }
     }
 
-    // Renders a 29×29 icon with a gradient background (same plusLighter+overlay treatment
-    // as renderSettingsIcon) + white-tinted symbol centered at 16pt.
+    // Renders a settings icon using the canonical renderSettingsIcon pipeline
+    // (30×30, corner radius 8, plusLighter+overlay blend, white symbol mask).
     private func telegramIcon(_ bundleImageName: String, colors: [UIColor] = [UIColor(rgb: 0xFF453A)]) -> some View {
-        let size = CGSize(width: 29, height: 29)
-        let iconPt: CGFloat = 16
-        let bounds = CGRect(origin: .zero, size: size)
-
-        let format = UIGraphicsImageRendererFormat()
-        format.opaque = false
-        let result = UIGraphicsImageRenderer(size: size, format: format).image { ctx in
-            let cgCtx = ctx.cgContext
-
-            // Clip everything to the rounded rect shape
-            cgCtx.addPath(UIBezierPath(roundedRect: bounds, cornerRadius: 7).cgPath)
-            cgCtx.clip()
-
-            // Linear gradient background (top-right → bottom-left, same direction as Telegram)
-            let c0 = colors.first ?? UIColor(rgb: 0xFF453A)
-            let c1 = colors.count >= 2 ? colors[1] : c0
-            var locations: [CGFloat] = [0.0, 1.0]
-            if let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                     colors: [c0.cgColor, c1.cgColor] as CFArray,
-                                     locations: &locations) {
-                cgCtx.drawLinearGradient(grad,
-                                         start: CGPoint(x: size.width, y: size.height),
-                                         end: .zero,
-                                         options: [])
-            }
-
-            // plusLighter sheen overlay (same as renderSettingsIcon)
-            if let img = UIImage(bundleImageName: "Item List/Icons/Gradient"), let cg = img.cgImage {
-                cgCtx.saveGState()
-                cgCtx.setBlendMode(.plusLighter)
-                cgCtx.draw(cg, in: bounds)
-                cgCtx.restoreGState()
-            }
-
-            // overlay backdrop (depth / shadow effect)
-            if let img = UIImage(bundleImageName: "Item List/Icons/Backdrop"), let cg = img.cgImage {
-                cgCtx.saveGState()
-                cgCtx.setBlendMode(.overlay)
-                cgCtx.draw(cg, in: bounds)
-                cgCtx.restoreGState()
-            }
-
-            cgCtx.setBlendMode(.normal)
-
-            // White-tinted icon centered
-            if let tinted = generateTintedImage(image: UIImage(bundleImageName: bundleImageName),
-                                                color: .white) {
-                let x = (size.width - iconPt) / 2
-                let y = (size.height - iconPt) / 2
-                tinted.draw(in: CGRect(x: x, y: y, width: iconPt, height: iconPt))
-            }
-        }
-        return Image(uiImage: result).frame(width: 29, height: 29)
+        Image(uiImage: renderSettingsIcon(name: bundleImageName, backgroundColors: colors) ?? UIImage())
+            .frame(width: 30, height: 30)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
