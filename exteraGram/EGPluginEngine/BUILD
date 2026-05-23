@@ -1,7 +1,7 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
 # ---------------------------------------------------------------------------
-# ObjC/C bridge — Python C extension (_ios_bridge) + ObjC swizzler
+# ObjC/C bridge — Python C extension (_ios_bridge) + view renderer
 #
 # Python.xcframework is provided by @python_apple_support (see MODULE.bazel).
 # Bazel downloads Python-3.14-iOS-support.b9.tar.gz automatically at build time.
@@ -16,12 +16,10 @@ objc_library(
     module_name = "EGPluginEngineBridge",
     srcs = [
         "Sources/ObjC/EGIOSBridge.m",
-        "Sources/ObjC/EGObjCSwizzler.m",
         "Sources/ObjC/EGViewRenderer.m",
     ],
     hdrs = [
         "Sources/ObjC/EGIOSBridge.h",
-        "Sources/ObjC/EGObjCSwizzler.h",
         "Sources/ObjC/EGViewRenderer.h",
     ],
     sdk_frameworks = [

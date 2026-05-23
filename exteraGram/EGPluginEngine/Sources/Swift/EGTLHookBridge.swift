@@ -19,13 +19,29 @@ public final class EGTLHookBridge {
         qos: .userInitiated
     )
 
-    /// Fire all Python hooks registered for `tlType` **synchronously** on the
-    /// calling thread.  Use only when you need the modified params back
-    /// (e.g. messages.sendReaction → big=true).
+    // Separate serial queue for synchronous TL-hook calls (messages.sendReaction etc.).
+    // Kept distinct from hookQueue so a hanging sync hook doesn't starve pending async hooks.
+    private let syncHookQueue = DispatchQueue(
+        label: "app.exteragram.ios.pythonTLHookSync",
+        qos: .userInitiated
+    )
+
+    /// Fire all Python hooks registered for `tlType` **synchronously**.
+    /// Runs Python on `syncHookQueue` and waits up to 2 s; on timeout, the
+    /// original params are returned unchanged (hook result is discarded).
+    /// Use only when you need the modified params back (e.g. messages.sendReaction → big=true).
     public func dispatchTLHook(_ tlType: String, params: inout [String: Any]) {
         guard EGPythonBridge.isInitialized else { return }
         let mutable = NSMutableDictionary(dictionary: params)
-        EGPythonBridge.dispatchTLHook(tlType, params: mutable)
+        let sema = DispatchSemaphore(value: 0)
+        syncHookQueue.async {
+            EGPythonBridge.dispatchTLHook(tlType, params: mutable)
+            sema.signal()
+        }
+        if sema.wait(timeout: .now() + 2.0) == .timedOut {
+            EGLogger.shared.log("TLHook", "\(tlType) hook timed out after 2s — result discarded")
+            return
+        }
         for (key, value) in mutable {
             if let k = key as? String { params[k] = value }
         }

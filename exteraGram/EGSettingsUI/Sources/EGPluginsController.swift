@@ -279,6 +279,14 @@ public final class PluginsController {
         plugins = all
         let file = EGPluginsDirectory.plugins.url.appendingPathComponent("\(pluginId).plugin")
         try? FileManager.default.removeItem(at: file)
+        // Remove plugin data directory
+        try? FileManager.default.removeItem(at: EGPluginsDirectory.data(pluginId).url)
+        // Remove all UserDefaults keys written by this plugin (eg.plugin.<id>.*)
+        let prefix = "eg.plugin.\(pluginId)."
+        let defaults = UserDefaults.standard
+        defaults.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix(prefix) }
+            .forEach { defaults.removeObject(forKey: $0) }
         NotificationCenter.default.post(name: .egPluginsChanged, object: nil)
     }
 
