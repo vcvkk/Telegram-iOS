@@ -104,16 +104,21 @@ typedef struct {
 // Key: "ClassName.methodName" → NSValue wrapping EGMethodHookEntry*
 static NSMutableDictionary<NSString *, NSValue *> *g_method_hooks = nil;
 
-static void eg_call_python_hooks(PyObject *list) {
+// Pass the ObjC instance pointer as a Python integer so callbacks can use
+// add_view_label / class inspection.  ptr == 0 when called without a target.
+static void eg_call_python_hooks(PyObject *list, id target) {
     if (!list) return;
     Py_ssize_t n = PyList_Size(list);
+    if (n == 0) return;
+    PyObject *py_ptr = PyLong_FromVoidPtr(target ? (__bridge void *)target : NULL);
     for (Py_ssize_t i = 0; i < n; i++) {
         PyObject *cb = PyList_GetItem(list, i); // borrowed
         if (cb && PyCallable_Check(cb)) {
-            PyObject *r = PyObject_CallFunctionObjArgs(cb, NULL);
+            PyObject *r = PyObject_CallFunctionObjArgs(cb, py_ptr, NULL);
             if (!r) PyErr_Clear(); else Py_DECREF(r);
         }
     }
+    Py_DECREF(py_ptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -796,6 +801,91 @@ static PyObject *py_show_bulletin(PyObject *self, PyObject *args) {
 }
 
 // ---------------------------------------------------------------------------
+// View label overlay
+// ---------------------------------------------------------------------------
+
+// add_view_label(view_ptr, tag, text, font_size, r, g, b, a) → None
+// Adds or updates a UILabel on the given UIView or ASDisplayNode (by ObjC pointer).
+// tag: integer viewWithTag: key to find/replace existing label.
+// Runs on main thread asynchronously; view_ptr must remain valid until then.
+static PyObject *py_add_view_label(PyObject *self_py, PyObject *args) {
+    unsigned long long ptr = 0;
+    int tag = 0;
+    const char *text_c = "";
+    double font_size = 11.0, r = 0.5, g = 0.5, b = 0.5, a = 1.0;
+    if (!PyArg_ParseTuple(args, "Kisdddd", &ptr, &tag, &text_c, &font_size, &r, &g, &b, &a))
+        return NULL;
+    if (!ptr) Py_RETURN_NONE;
+    NSString *nsText   = [NSString stringWithUTF8String:text_c];
+    CGFloat   fontSize = (CGFloat)font_size;
+    UIColor  *color    = [UIColor colorWithRed:(CGFloat)r green:(CGFloat)g blue:(CGFloat)b alpha:(CGFloat)a];
+    NSInteger nsTag    = (NSInteger)tag;
+    void *raw = (void *)(uintptr_t)ptr;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id obj = (__bridge id)raw;
+        if (!obj) return;
+        UIView *view = nil;
+        if ([obj isKindOfClass:[UIView class]]) {
+            view = (UIView *)obj;
+        } else if ([obj respondsToSelector:@selector(view)]) {
+            // ASDisplayNode — triggers node loading if not yet loaded
+            view = [obj performSelector:@selector(view)];
+        }
+        if (!view) return;
+        UILabel *lbl = (UILabel *)[view viewWithTag:nsTag];
+        if (!lbl) {
+            lbl = [[UILabel alloc] init];
+            lbl.tag = nsTag;
+            lbl.numberOfLines = 1;
+            [view addSubview:lbl];
+        }
+        lbl.text      = nsText;
+        lbl.font      = [UIFont systemFontOfSize:fontSize];
+        lbl.textColor = color;
+        [lbl sizeToFit];
+        // Pin to top-left with 4pt padding
+        CGRect f  = lbl.frame;
+        f.origin  = CGPointMake(4.0, 2.0);
+        lbl.frame = f;
+    });
+    Py_RETURN_NONE;
+}
+
+// get_theme_color(key) → (r, g, b, a)
+// key: "primaryText" | "secondaryText" | "accent" | "background" | "separator"
+// Uses system adaptive colors (iOS 13+) — resolves correctly for light/dark mode.
+static PyObject *py_get_theme_color(PyObject *self_py, PyObject *args) {
+    const char *key_c = "";
+    if (!PyArg_ParseTuple(args, "s", &key_c)) return NULL;
+    NSString *key = [NSString stringWithUTF8String:key_c];
+    UIColor *color;
+    if      ([key isEqualToString:@"primaryText"])    color = UIColor.labelColor;
+    else if ([key isEqualToString:@"secondaryText"])  color = UIColor.secondaryLabelColor;
+    else if ([key isEqualToString:@"accent"])         color = UIColor.systemBlueColor;
+    else if ([key isEqualToString:@"background"])     color = UIColor.systemBackgroundColor;
+    else if ([key isEqualToString:@"separator"])      color = UIColor.separatorColor;
+    else                                              color = UIColor.secondaryLabelColor;
+    // resolvedColorWithTraitCollection: is thread-safe from iOS 13+
+    UITraitCollection *tc = [UITraitCollection currentTraitCollection];
+    UIColor *resolved = [color resolvedColorWithTraitCollection:tc];
+    CGFloat cr = 0, cg = 0, cb = 0, ca = 1;
+    [resolved getRed:&cr green:&cg blue:&cb alpha:&ca];
+    return Py_BuildValue("(dddd)", (double)cr, (double)cg, (double)cb, (double)ca);
+}
+
+// measure_text_width(text, font_size) → float
+// Returns the typographic width of text rendered with system font at the given size.
+static PyObject *py_measure_text_width(PyObject *self_py, PyObject *args) {
+    const char *text_c = "";
+    double font_size = 12.0;
+    if (!PyArg_ParseTuple(args, "sd", &text_c, &font_size)) return NULL;
+    NSString *text = [NSString stringWithUTF8String:text_c];
+    UIFont   *font = [UIFont systemFontOfSize:(CGFloat)font_size];
+    CGFloat   width = [text sizeWithAttributes:@{NSFontAttributeName: font}].width;
+    return PyFloat_FromDouble((double)width);
+}
+
+// ---------------------------------------------------------------------------
 // ObjC method hooks
 // ---------------------------------------------------------------------------
 
@@ -834,7 +924,7 @@ static PyObject *py_add_method_hook(PyObject *self_py, PyObject *args) {
 
     NSValue *existing = g_method_hooks[key];
     if (!existing) {
-        // First hook on this method — install replacement IMP
+        // First hook on this method — install replacement IMP.
         EGMethodHookEntry *entry = (EGMethodHookEntry *)calloc(1, sizeof(EGMethodHookEntry));
         entry->original_imp = method_getImplementation(method);
         entry->before_list  = PyList_New(0);
@@ -847,58 +937,67 @@ static PyObject *py_add_method_hook(PyObject *self_py, PyObject *args) {
         // On ARM64 the calling convention puts self in x0, _cmd in x1, args in x2+.
         // Our block only declares (id, SEL) but extra args remain untouched in x2+,
         // so the original IMP receives them correctly when called via the cast.
+        // Callbacks receive the target object pointer as a PyLong argument.
+        IMP new_imp;
         if (ret == '@') {
             id (^block)(id, SEL) = ^id(id target, SEL cmd) {
                 PyGILState_STATE gs = PyGILState_Ensure();
-                eg_call_python_hooks(entry->before_list);
+                eg_call_python_hooks(entry->before_list, target);
                 PyGILState_Release(gs);
                 typedef id (*F)(id, SEL);
                 id res = ((F)entry->original_imp)(target, cmd);
                 gs = PyGILState_Ensure();
-                eg_call_python_hooks(entry->after_list);
+                eg_call_python_hooks(entry->after_list, target);
                 PyGILState_Release(gs);
                 return res;
             };
-            method_setImplementation(method, imp_implementationWithBlock(block));
+            new_imp = imp_implementationWithBlock(block);
         } else if (ret == 'B' || ret == 'c') {
             BOOL (^block)(id, SEL) = ^BOOL(id target, SEL cmd) {
                 PyGILState_STATE gs = PyGILState_Ensure();
-                eg_call_python_hooks(entry->before_list);
+                eg_call_python_hooks(entry->before_list, target);
                 PyGILState_Release(gs);
                 typedef BOOL (*F)(id, SEL);
                 BOOL res = ((F)entry->original_imp)(target, cmd);
                 gs = PyGILState_Ensure();
-                eg_call_python_hooks(entry->after_list);
+                eg_call_python_hooks(entry->after_list, target);
                 PyGILState_Release(gs);
                 return res;
             };
-            method_setImplementation(method, imp_implementationWithBlock(block));
+            new_imp = imp_implementationWithBlock(block);
         } else if (ret == 'i' || ret == 'l' || ret == 'q' || ret == 'I' || ret == 'L') {
             long long (^block)(id, SEL) = ^long long(id target, SEL cmd) {
                 PyGILState_STATE gs = PyGILState_Ensure();
-                eg_call_python_hooks(entry->before_list);
+                eg_call_python_hooks(entry->before_list, target);
                 PyGILState_Release(gs);
                 typedef long long (*F)(id, SEL);
                 long long res = ((F)entry->original_imp)(target, cmd);
                 gs = PyGILState_Ensure();
-                eg_call_python_hooks(entry->after_list);
+                eg_call_python_hooks(entry->after_list, target);
                 PyGILState_Release(gs);
                 return res;
             };
-            method_setImplementation(method, imp_implementationWithBlock(block));
+            new_imp = imp_implementationWithBlock(block);
         } else {
-            // void or float/struct — treat as void
+            // void or float/struct — treat as void.
             void (^block)(id, SEL) = ^void(id target, SEL cmd) {
                 PyGILState_STATE gs = PyGILState_Ensure();
-                eg_call_python_hooks(entry->before_list);
+                eg_call_python_hooks(entry->before_list, target);
                 PyGILState_Release(gs);
                 typedef void (*F)(id, SEL);
                 ((F)entry->original_imp)(target, cmd);
                 gs = PyGILState_Ensure();
-                eg_call_python_hooks(entry->after_list);
+                eg_call_python_hooks(entry->after_list, target);
                 PyGILState_Release(gs);
             };
-            method_setImplementation(method, imp_implementationWithBlock(block));
+            new_imp = imp_implementationWithBlock(block);
+        }
+
+        // Safe swizzle: if cls doesn't define this method itself (inherits it from a superclass),
+        // class_addMethod adds a class-specific override so only instances of cls are affected.
+        // If cls already defines the method, method_setImplementation replaces it in-place.
+        if (!class_addMethod(cls, sel, new_imp, enc)) {
+            method_setImplementation(method, new_imp);
         }
 
         EGPluginDebugLog_appendCStr("Swizzler",
@@ -1208,7 +1307,10 @@ static PyMethodDef ios_bridge_methods[] = {
     {"get_user_id",          py_get_user_id,          METH_NOARGS,  "get_user_id() -> int"},
     {"get_connection_state", py_get_connection_state, METH_NOARGS,  "get_connection_state() -> str"},
     {"show_bulletin",        py_show_bulletin,        METH_VARARGS, "show_bulletin(title, text='', icon='')"},
-    {"add_method_hook",      py_add_method_hook,      METH_VARARGS, "add_method_hook(class_name, method_name, before=None, after=None)"},
+    {"add_view_label",       py_add_view_label,       METH_VARARGS, "add_view_label(view_ptr, tag, text, font_size, r, g, b, a) — add/update UILabel on UIView or ASDisplayNode"},
+    {"get_theme_color",      py_get_theme_color,      METH_VARARGS, "get_theme_color(key) -> (r,g,b,a) — key: primaryText|secondaryText|accent|background|separator"},
+    {"measure_text_width",   py_measure_text_width,   METH_VARARGS, "measure_text_width(text, font_size) -> float"},
+    {"add_method_hook",      py_add_method_hook,      METH_VARARGS, "add_method_hook(class_name, method_name, before=None, after=None) — callbacks receive (view_ptr: int)"},
     {"plugin_has_settings",  py_plugin_has_settings,  METH_VARARGS, "plugin_has_settings(plugin_id) -> bool"},
     {"get_plugin_settings",  py_get_plugin_settings,  METH_VARARGS, "get_plugin_settings(plugin_id) -> dict|None"},
     {"show_plugin_settings", py_show_plugin_settings, METH_VARARGS, "show_plugin_settings(plugin_id)"},
@@ -1235,7 +1337,8 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     // Bump when new bridge functions are added.
     //   1 — initial release
     //   2 — added get_system_info, get_network_info, send_message
-    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 2);
+    //   3 — add_method_hook callbacks now receive view_ptr; add_view_label, get_theme_color, measure_text_width
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 3);
     return m;
 }
 

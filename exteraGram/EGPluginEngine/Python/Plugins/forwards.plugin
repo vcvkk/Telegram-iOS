@@ -1,0 +1,64 @@
+__id__          = "forwards"
+__name__        = "Forwards"
+__description__ = "Shows a ⤴ badge on forwarded message headers."
+__author__      = "@exteraPlugins"
+__version__     = "1.0"
+__os__          = "ios"
+
+import _ios_bridge
+from android_utils import log
+
+_LABEL_TAG = 0xEEF0  # unique viewWithTag key; must not collide with Telegram's own tags
+
+# Swift class names are exposed to the ObjC runtime without module prefix
+# when the class has no explicit @objc rename and lives in its own module.
+# We try the most likely name first, fall back to module-qualified variants.
+_CANDIDATES = [
+    "ChatMessageForwardInfoNode",
+    "TelegramUI.ChatMessageForwardInfoNode",
+]
+_hooked_class = None
+
+
+def on_load(plugin):
+    global _hooked_class
+    for cls_name in _CANDIDATES:
+        try:
+            _ios_bridge.add_method_hook(
+                cls_name,
+                "didLoad",
+                None,           # no before-hook
+                _after_did_load,
+            )
+            _hooked_class = cls_name
+            log(f"Forwards: hooked {cls_name}.didLoad — badges active")
+            return
+        except (ValueError, RuntimeError) as err:
+            log(f"Forwards: skip {cls_name}: {err}")
+    log("Forwards: ChatMessageForwardInfoNode not found — plugin inactive")
+
+
+def on_unload(plugin):
+    log("Forwards unloaded")
+
+
+def _after_did_load(view_ptr):
+    """Called after ChatMessageForwardInfoNode.didLoad on the UI thread.
+
+    view_ptr is the ObjC pointer of the node instance (a PyLong).
+    add_view_label handles the UIView/ASDisplayNode distinction internally.
+    """
+    if not view_ptr:
+        return
+    try:
+        r, g, b, a = _ios_bridge.get_theme_color("secondaryText")
+        _ios_bridge.add_view_label(
+            view_ptr,
+            _LABEL_TAG,
+            "⤴",          # forwarded indicator glyph
+            10.0,          # font size
+            r, g, b,
+            a * 0.75,      # slightly transparent
+        )
+    except Exception as err:
+        log(f"Forwards._after_did_load: {err}")
