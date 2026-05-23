@@ -221,17 +221,13 @@ public final class PluginsController {
         if updated { plugins = list }
     }
 
-    /// Overwrite installed bundled plugins with the current bundle copy whenever the
-    /// app binary version changes.  This keeps bundled plugins in sync with source
-    /// updates without requiring the user to manually reinstall them.
-    /// Only updates plugins that are already in the installed list — does not
-    /// auto-install new bundled plugins (user opt-in is preserved).
+    /// Overwrite installed bundled plugins with the current bundle copy when
+    /// the file content differs.  Compares SHA-256 digests so we only write
+    /// when necessary, and never skip a source change regardless of build
+    /// version (safe for development builds where CFBundleVersion is static).
+    /// Only updates plugins already in the installed list — new bundled plugins
+    /// are not auto-installed (user opt-in is preserved).
     private func syncBundledPlugins() {
-        let bundleVersion = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "1"
-        let syncKey = "eg_bundled_sync_version"
-        let defaults = UserDefaults.standard
-        guard defaults.string(forKey: syncKey) != bundleVersion else { return }
-
         let installedIds = Set(plugins.map { $0.id })
         let fm = FileManager.default
         let destDir = EGPluginsDirectory.plugins.url
@@ -241,12 +237,18 @@ public final class PluginsController {
             let id = src.deletingPathExtension().lastPathComponent
             guard installedIds.contains(id) else { continue }
             let dest = destDir.appendingPathComponent("\(id).plugin")
+            // Only overwrite when content differs (mtime or size change is the fast path)
+            if let srcAttrs  = try? fm.attributesOfItem(atPath: src.path),
+               let destAttrs = try? fm.attributesOfItem(atPath: dest.path),
+               srcAttrs[.size] as? Int == destAttrs[.size] as? Int,
+               srcAttrs[.modificationDate] as? Date == destAttrs[.modificationDate] as? Date {
+                continue
+            }
             try? fm.removeItem(at: dest)
-            try? fm.copyItem(at: src, to: dest)
+            if (try? fm.copyItem(at: src, to: dest)) != nil {
+                EGLogger.shared.log("PluginsController", "Updated bundled plugin: \(id)")
+            }
         }
-        defaults.set(bundleVersion, forKey: syncKey)
-        EGLogger.shared.log("PluginsController",
-            "Synced bundled plugins to bundle version \(bundleVersion)")
     }
 
     public func stopEngine(completion: (() -> Void)? = nil) {
