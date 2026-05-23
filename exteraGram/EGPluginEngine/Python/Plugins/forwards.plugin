@@ -14,6 +14,8 @@ _LABEL_TAG = 0xEEF0  # unique viewWithTag key; must not collide with Telegram's 
 # when the class has no explicit @objc rename and lives in its own module.
 # We try the most likely name first, fall back to module-qualified variants.
 _CANDIDATES = [
+    # Swift mangled: module=ChatMessageForwardInfoNode(26) class=ChatMessageForwardInfoNode(26)
+    "_TtC26ChatMessageForwardInfoNode26ChatMessageForwardInfoNode",
     "ChatMessageForwardInfoNode",
     "TelegramUI.ChatMessageForwardInfoNode",
 ]
