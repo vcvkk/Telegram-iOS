@@ -42,7 +42,7 @@ swift_library(
         "//submodules/TelegramUI/Components/Chat/ChatInputTextNode",
         "//submodules/AnimatedCountLabelNode",
         "//submodules/TelegramUI/Components/GlassBackgroundComponent",
-        "//submodules/TelegramUI/Components/ChatEntityKeyboardInputNode",
+        "//submodules/TelegramUI/Components/ChatEntityKeyboardInputNode:ChatEntityKeyboardInputNode",
     ],
     visibility = [
         "//visibility:public",

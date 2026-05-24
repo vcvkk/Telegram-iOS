@@ -20,6 +20,7 @@ swift_library(
         "//submodules/AttachmentUI:AttachmentUI",
         "//submodules/MediaPickerUI:MediaPickerUI",
         "//submodules/AttachmentTextInputPanelNode",
+        "//submodules/TelegramUI/Components/LegacyMessageInputPanelInputView:LegacyMessageInputPanelInputView",
     ],
     visibility = [
         "//visibility:public",

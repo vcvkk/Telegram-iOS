@@ -31,7 +31,6 @@ import FeaturedStickersScreen
 import Pasteboard
 import EntityKeyboardGifContent
 import LegacyMessageInputPanelInputView
-import AttachmentTextInputPanelNode
 import GlassBackgroundComponent
 
 private let keyboardCornerRadius: CGFloat = 30.0
@@ -2403,7 +2402,7 @@ private final class ContextControllerContentSourceImpl: ContextControllerContent
     }
 }
 
-public final class EntityInputView: UIInputView, AttachmentTextInputPanelInputView, LegacyMessageInputPanelInputView, UIInputViewAudioFeedback {
+public final class EntityInputView: UIInputView, LegacyMessageInputPanelInputView, UIInputViewAudioFeedback {
     private let context: AccountContext
     
     public var insertText: ((NSAttributedString) -> Void)?

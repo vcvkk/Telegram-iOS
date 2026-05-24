@@ -983,7 +983,7 @@ final class AttachmentPanel: ASDisplayNode, ASScrollViewDelegate, ASGestureRecog
     private var presentationInterfaceState: ChatPresentationInterfaceState
     private var interfaceInteraction: ChatPanelInterfaceInteraction?
     
-    private let makeEntityInputView: () -> AttachmentTextInputPanelInputView?
+    private let makeEntityInputView: () -> LegacyMessageInputPanelInputView?
     
     private let containerNode: ASDisplayNode
     private var backgroundView: GlassBackgroundView?
@@ -1074,7 +1074,7 @@ final class AttachmentPanel: ASDisplayNode, ASScrollViewDelegate, ASGestureRecog
     var onMainButtonPressed: () -> Void = { }
     var onSecondaryButtonPressed: () -> Void = { }
         
-    init(controller: AttachmentController, style: Style, context: AccountContext, chatLocation: ChatLocation?, isScheduledMessages: Bool, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, makeEntityInputView: @escaping () -> AttachmentTextInputPanelInputView?) {
+    init(controller: AttachmentController, style: Style, context: AccountContext, chatLocation: ChatLocation?, isScheduledMessages: Bool, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, makeEntityInputView: @escaping () -> LegacyMessageInputPanelInputView?) {
         self.controller = controller
         self.context = context
         self.panelStyle = style

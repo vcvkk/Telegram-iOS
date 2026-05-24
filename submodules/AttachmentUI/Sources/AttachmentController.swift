@@ -414,7 +414,7 @@ public class AttachmentController: ViewController, MinimizableController {
     private let fromMenu: Bool
     private var hasTextInput: Bool
     private let isFullSize: Bool
-    private let makeEntityInputView: () -> AttachmentTextInputPanelInputView?
+    private let makeEntityInputView: () -> LegacyMessageInputPanelInputView?
     public var animateAppearance: Bool = false
     
     public var willDismiss: () -> Void = {}
@@ -451,7 +451,7 @@ public class AttachmentController: ViewController, MinimizableController {
         fileprivate let dim: ASDisplayNode
         private let shadowNode: ASImageNode
         fileprivate let container: AttachmentContainer
-        private let makeEntityInputView: () -> AttachmentTextInputPanelInputView?
+        private let makeEntityInputView: () -> LegacyMessageInputPanelInputView?
         let panel: AttachmentPanel
         
         fileprivate var currentType: AttachmentButtonType?
@@ -561,7 +561,7 @@ public class AttachmentController: ViewController, MinimizableController {
         
         private var isMinimizing = false
         
-        init(controller: AttachmentController, makeEntityInputView: @escaping () -> AttachmentTextInputPanelInputView?) {
+        init(controller: AttachmentController, makeEntityInputView: @escaping () -> LegacyMessageInputPanelInputView?) {
             self.controller = controller
             self.makeEntityInputView = makeEntityInputView
             
@@ -1530,7 +1530,7 @@ public class AttachmentController: ViewController, MinimizableController {
         fromMenu: Bool = false,
         hasTextInput: Bool = true,
         isFullSize: Bool = false,
-        makeEntityInputView: @escaping () -> AttachmentTextInputPanelInputView? = { return nil })
+        makeEntityInputView: @escaping () -> LegacyMessageInputPanelInputView? = { return nil })
     {
         self.context = context
         self.updatedPresentationData = updatedPresentationData

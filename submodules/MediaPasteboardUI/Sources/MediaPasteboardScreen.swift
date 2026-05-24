@@ -8,7 +8,7 @@ import AttachmentUI
 import MediaPickerUI
 import AccountContext
 import LegacyComponents
-import AttachmentTextInputPanelNode
+import LegacyMessageInputPanelInputView
 
 public func mediaPasteboardScreen(
     context: AccountContext,
@@ -17,7 +17,7 @@ public func mediaPasteboardScreen(
     subjects: [MediaPickerScreenImpl.Subject.Media],
     presentMediaPicker: @escaping (_ subject: MediaPickerScreenImpl.Subject, _ saveEditedPhotos: Bool, _ bannedSendPhotos: (Int32, Bool)?, _ bannedSendVideos: (Int32, Bool)?, _ present: @escaping (MediaPickerScreenImpl, AttachmentMediaPickerContext?) -> Void) -> Void,
     getSourceRect: (() -> CGRect?)? = nil,
-    makeEntityInputView: @escaping () -> AttachmentTextInputPanelInputView? = { return nil }
+    makeEntityInputView: @escaping () -> LegacyMessageInputPanelInputView? = { return nil }
 ) -> ViewController {
     let controller = AttachmentController(context: context, updatedPresentationData: updatedPresentationData, style: .glass, chatLocation: .peer(id: peer.id), buttons: [.standalone], initialButton: .standalone, makeEntityInputView: makeEntityInputView)
     controller.requestController = { _, present in
