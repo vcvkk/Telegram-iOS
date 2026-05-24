@@ -35,13 +35,13 @@ import ShimmerEffect
 public enum ChatListItemContent {
     public final class ThreadInfo: Equatable {
         public let id: Int64
-        public let info: EngineMessageHistoryThread.Info
+        public let info: TelegramCore.EngineMessageHistoryThread.Info
         public let isOwnedByMe: Bool
         public let isClosed: Bool
         public let isHidden: Bool
         public let threadPeer: EnginePeer?
         
-        public init(id: Int64, info: EngineMessageHistoryThread.Info, isOwnedByMe: Bool, isClosed: Bool, isHidden: Bool, threadPeer: EnginePeer?) {
+        public init(id: Int64, info: TelegramCore.EngineMessageHistoryThread.Info, isOwnedByMe: Bool, isClosed: Bool, isHidden: Bool, threadPeer: EnginePeer?) {
             self.id = id
             self.info = info
             self.isOwnedByMe = isOwnedByMe

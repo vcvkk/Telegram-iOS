@@ -962,7 +962,7 @@ public class ForumCreateTopicScreen: ViewControllerComponentContainer {
     
     public enum Mode: Equatable {
         case create
-        case edit(threadId: Int64, threadInfo: EngineMessageHistoryThread.Info, isHidden: Bool)
+        case edit(threadId: Int64, threadInfo: TelegramCore.EngineMessageHistoryThread.Info, isHidden: Bool)
     }
     
     private let context: AccountContext

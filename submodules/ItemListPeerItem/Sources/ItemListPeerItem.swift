@@ -446,7 +446,7 @@ public final class ItemListPeerItem: ListViewItem, ItemListItem {
     let nameDisplayOrder: PresentationPersonNameOrder
     let context: Context
     let peer: EnginePeer
-    let threadInfo: EngineMessageHistoryThread.Info?
+    let threadInfo: TelegramCore.EngineMessageHistoryThread.Info?
     let height: ItemListPeerItemHeight
     let aliasHandling: ItemListPeerItemAliasHandling
     let customAvatarIcon: UIImage?
@@ -491,7 +491,7 @@ public final class ItemListPeerItem: ListViewItem, ItemListItem {
         nameDisplayOrder: PresentationPersonNameOrder,
         context: AccountContext,
         peer: EnginePeer,
-        threadInfo: EngineMessageHistoryThread.Info? = nil,
+        threadInfo: TelegramCore.EngineMessageHistoryThread.Info? = nil,
         height: ItemListPeerItemHeight = .peerList,
         aliasHandling: ItemListPeerItemAliasHandling = .standard,
         customAvatarIcon: UIImage? = nil,
@@ -581,7 +581,7 @@ public final class ItemListPeerItem: ListViewItem, ItemListItem {
         nameDisplayOrder: PresentationPersonNameOrder,
         context: Context,
         peer: EnginePeer,
-        threadInfo: EngineMessageHistoryThread.Info? = nil,
+        threadInfo: TelegramCore.EngineMessageHistoryThread.Info? = nil,
         height: ItemListPeerItemHeight = .peerList,
         aliasHandling: ItemListPeerItemAliasHandling = .standard,
         customAvatarIcon: UIImage? = nil,

@@ -212,14 +212,14 @@ final class PeerInfoAvatarTransformContainerNode: ASDisplayNode {
     private struct Params {
         let peer: Peer?
         let threadId: Int64?
-        let threadInfo: EngineMessageHistoryThread.Info?
+        let threadInfo: TelegramCore.EngineMessageHistoryThread.Info?
         let item: PeerInfoAvatarListItem?
         let theme: PresentationTheme
         let avatarSize: CGFloat
         let isExpanded: Bool
         let isSettings: Bool
 
-        init(peer: Peer?, threadId: Int64?, threadInfo: EngineMessageHistoryThread.Info?, item: PeerInfoAvatarListItem?, theme: PresentationTheme, avatarSize: CGFloat, isExpanded: Bool, isSettings: Bool) {
+        init(peer: Peer?, threadId: Int64?, threadInfo: TelegramCore.EngineMessageHistoryThread.Info?, item: PeerInfoAvatarListItem?, theme: PresentationTheme, avatarSize: CGFloat, isExpanded: Bool, isSettings: Bool) {
             self.peer = peer
             self.threadId = threadId
             self.threadInfo = threadInfo
@@ -251,7 +251,7 @@ final class PeerInfoAvatarTransformContainerNode: ASDisplayNode {
         )
     }
 
-    func update(peer: Peer?, threadId: Int64?, threadInfo: EngineMessageHistoryThread.Info?, item: PeerInfoAvatarListItem?, theme: PresentationTheme, avatarSize: CGFloat, isExpanded: Bool, isSettings: Bool) {
+    func update(peer: Peer?, threadId: Int64?, threadInfo: TelegramCore.EngineMessageHistoryThread.Info?, item: PeerInfoAvatarListItem?, theme: PresentationTheme, avatarSize: CGFloat, isExpanded: Bool, isSettings: Bool) {
         self.params = Params(peer: peer, threadId: threadId, threadInfo: threadInfo, item: item, theme: theme, avatarSize: avatarSize, isExpanded: isExpanded, isSettings: isSettings)
 
         if let peer = peer {

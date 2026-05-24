@@ -332,7 +332,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
     weak var copyProtectionTooltipController: TooltipController?
     weak var emojiStatusSelectionController: ViewController?
     
-    var forumTopicNotificationExceptions: [EngineMessageHistoryThread.NotificationException] = []
+    var forumTopicNotificationExceptions: [TelegramCore.EngineMessageHistoryThread.NotificationException] = []
     var forumTopicNotificationExceptionsDisposable: Disposable?
     
     var translationState: ChatTranslationState?

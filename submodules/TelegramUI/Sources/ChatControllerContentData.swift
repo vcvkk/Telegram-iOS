@@ -85,7 +85,7 @@ extension ChatControllerImpl {
         
         struct State {
             var peerView: PeerView?
-            var threadInfo: EngineMessageHistoryThread.Info?
+            var threadInfo: TelegramCore.EngineMessageHistoryThread.Info?
             var infoAvatar: InfoAvatar?
             var navigationUserInfo: PeerInfoNavigationSourceTag?
             var chatTitleContent: ChatTitleContent?
@@ -658,11 +658,11 @@ extension ChatControllerImpl {
                     strongSelf.onUpdated?(previousState)
                 })
                 
-                let threadInfo: Signal<EngineMessageHistoryThread.Info?, NoError>
+                let threadInfo: Signal<TelegramCore.EngineMessageHistoryThread.Info?, NoError>
                 if let threadId = chatLocation.threadId {
                     let viewKey: PostboxViewKey = .messageHistoryThreadInfo(peerId: peerId, threadId: threadId)
                     threadInfo = context.account.postbox.combinedView(keys: [viewKey])
-                    |> map { views -> EngineMessageHistoryThread.Info? in
+                    |> map { views -> TelegramCore.EngineMessageHistoryThread.Info? in
                         guard let view = views.views[viewKey] as? MessageHistoryThreadInfoView else {
                             return nil
                         }
