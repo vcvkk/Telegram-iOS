@@ -320,7 +320,7 @@ final class ShareSearchContainerNode: ASDisplayNode, ShareContentContainerNode {
                     var result = Set<EnginePeer.Id>()
                     
                     for peer in foundPeers.foundLocalPeers {
-                        if case let .user(user) = peer.peer, user.flags.contains(.requirePremium) {
+                        if let rawPeer = peer.peer, case let .user(user) = EnginePeer(rawPeer), user.flags.contains(.requirePremium) {
                             result.insert(user.id)
                         }
                     }
@@ -465,8 +465,8 @@ final class ShareSearchContainerNode: ASDisplayNode, ShareContentContainerNode {
             }
             var index = 0
             for (peer, requiresPremiumForMessaging) in recentPeerList {
-                if let mainPeer = peer.peers[peer.peerId], canSendMessagesToPeer(mainPeer._asPeer()) {
-                    recentItemList.append(.peer(index: index, theme: theme, peer: mainPeer, associatedPeer: mainPeer._asPeer().associatedPeerId.flatMap { peer.peers[$0] }, presence: nil, requiresPremiumForMessaging: requiresPremiumForMessaging, requiresStars: nil, strings: strings))
+                if let mainPeer = peer.peers[peer.peerId], canSendMessagesToPeer(EnginePeer(mainPeer)) {
+                    recentItemList.append(.peer(index: index, theme: theme, peer: EnginePeer(mainPeer), associatedPeer: mainPeer.associatedPeerId.flatMap { peer.peers[$0].map(EnginePeer.init) }, presence: nil, requiresPremiumForMessaging: requiresPremiumForMessaging, requiresStars: nil, strings: strings))
                     index += 1
                 }
             }
