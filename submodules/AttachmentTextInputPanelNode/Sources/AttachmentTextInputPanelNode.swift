@@ -2431,57 +2431,42 @@ extension AttachmentTextInputPanelNode {
         let toolbarView = ChatToolbarView(
             onQuote: { [weak self] in
                 guard let strongSelf = self else { return }
-                strongSelf.interfaceInteraction?.sgSelectLastWordIfIdle()
                 strongSelf.formatAttributesQuote(strongSelf)
             },
             onSpoiler: { [weak self] in
                 guard let strongSelf = self else { return }
-                strongSelf.interfaceInteraction?.sgSelectLastWordIfIdle()
                 strongSelf.formatAttributesSpoiler(strongSelf)
             },
             onBold: { [weak self] in
                 guard let strongSelf = self else { return }
-                strongSelf.interfaceInteraction?.sgSelectLastWordIfIdle()
                 strongSelf.formatAttributesBold(strongSelf)
             },
             onItalic: { [weak self] in
                 guard let strongSelf = self else { return }
-                strongSelf.interfaceInteraction?.sgSelectLastWordIfIdle()
                 strongSelf.formatAttributesItalic(strongSelf)
-            },
-            onDate: { [weak self] in
-                guard let strongSelf = self else { return }
-                strongSelf.interfaceInteraction?.sgSelectLastWordIfIdle()
-                strongSelf.interfaceInteraction?.openDateEditing()
             },
             onMonospace: { [weak self] in
                 guard let strongSelf = self else { return }
-                strongSelf.interfaceInteraction?.sgSelectLastWordIfIdle()
                 strongSelf.formatAttributesMonospace(strongSelf)
             },
             onLink: { [weak self] in
                 guard let strongSelf = self else { return }
-                strongSelf.interfaceInteraction?.sgSelectLastWordIfIdle()
                 strongSelf.formatAttributesLink(self!)
             },
-            onStrikethrough: { [weak self]
-                in guard let strongSelf = self else { return }
-                strongSelf.interfaceInteraction?.sgSelectLastWordIfIdle()
+            onStrikethrough: { [weak self] in
+                guard let strongSelf = self else { return }
                 strongSelf.formatAttributesStrikethrough(strongSelf)
             },
             onUnderline: { [weak self] in
                 guard let strongSelf = self else { return }
-                strongSelf.interfaceInteraction?.sgSelectLastWordIfIdle()
                 strongSelf.formatAttributesUnderline(strongSelf)
             },
             onCode: { [weak self] in
                 guard let strongSelf = self else { return }
-                strongSelf.interfaceInteraction?.sgSelectLastWordIfIdle()
                 strongSelf.formatAttributesCodeBlock(strongSelf)
             },
             onNewLine: { [weak self] in
-                guard let strongSelf = self else { return }
-                strongSelf.interfaceInteraction?.sgSetNewLine()
+                let _ = self
             },
             // TODO(swiftgram): Binding
             showNewLine: .constant(true), //.constant(self.sendWithReturnKey)
@@ -2493,7 +2478,7 @@ extension AttachmentTextInputPanelNode {
             }
         )
         let toolbarHostingController = UIHostingController(rootView: toolbarView)
-        toolbarHostingController.view.backgroundColor = .clear
+        toolbarHostingController.view.backgroundColor = UIColor.clear
         let toolbarNode = ASDisplayNode { toolbarHostingController.view }
         self.toolbarNode = toolbarNode
         // assigning toolbarHostingController bugs responsivness and overrides layout

@@ -174,6 +174,7 @@ public class EGSimpleSettings {
         case warnOnStoriesOpen
         case showProfileId
         case sendWithReturnKey
+        case inputToolbar
     }
 
     public enum DownloadSpeedBoostValues: String, CaseIterable {
@@ -551,6 +552,9 @@ public class EGSimpleSettings {
 
     @UserDefault(key: Keys.sendWithReturnKey.rawValue)
     public var sendWithReturnKey: Bool
+
+    @UserDefault(key: Keys.inputToolbar.rawValue)
+    public var inputToolbar: Bool
 
     @UserDefault(key: Keys.pinnedMessageNotifications.rawValue, userDefaults: UserDefaults(suiteName: APP_GROUP_IDENTIFIER) ?? .standard)
     public var pinnedMessageNotifications: String
