@@ -695,7 +695,7 @@ private final class AdminUserActionsSheetComponent: Component {
                     isExpanded = self.isOptionDeleteAllExpanded
                     
                     if component.peers.count == 1 {
-                        title = environment.strings.Chat_AdminActionSheet_DeleteAllSingle(EnginePeer(component.peers[0].peer).compactDisplayTitle).string
+                        title = environment.strings.Chat_AdminActionSheet_DeleteAllSingle(component.peers[0].peer.compactDisplayTitle).string
                     } else {
                         title = environment.strings.Chat_AdminActionSheet_DeleteAllMultiple
                     }
@@ -707,8 +707,8 @@ private final class AdminUserActionsSheetComponent: Component {
                     let banTitle: String
                     let restrictTitle: String
                     if component.peers.count == 1 {
-                        banTitle = environment.strings.Chat_AdminActionSheet_BanSingle(EnginePeer(component.peers[0].peer).compactDisplayTitle).string
-                        restrictTitle = environment.strings.Chat_AdminActionSheet_RestrictSingle(EnginePeer(component.peers[0].peer).compactDisplayTitle).string
+                        banTitle = environment.strings.Chat_AdminActionSheet_BanSingle(component.peers[0].peer.compactDisplayTitle).string
+                        restrictTitle = environment.strings.Chat_AdminActionSheet_RestrictSingle(component.peers[0].peer.compactDisplayTitle).string
                     } else {
                         banTitle = environment.strings.Chat_AdminActionSheet_BanMultiple
                         restrictTitle = environment.strings.Chat_AdminActionSheet_RestrictMultiple
@@ -864,8 +864,8 @@ private final class AdminUserActionsSheetComponent: Component {
                         strings: environment.strings,
                         baseFontSize: presentationData.listsFontSize.baseDisplaySize,
                         sideInset: 0.0,
-                        title: EnginePeer(peer.peer).displayTitle(strings: environment.strings, displayOrder: .firstLast),
-                        peer: EnginePeer(peer.peer),
+                        title: peer.peer.displayTitle(strings: environment.strings, displayOrder: .firstLast),
+                        peer: peer.peer,
                         selectionState: .editing(isSelected: selectedPeers.contains(peer.peer.id)),
                         action: { [weak self] peer in
                             guard let self else {
@@ -912,7 +912,7 @@ private final class AdminUserActionsSheetComponent: Component {
             switch component.mode {
             case .monoforum:
                 if let peer = component.peers.first {
-                    titleString = environment.strings.Monoforum_DeleteTopic_Title(EnginePeer(peer.peer).compactDisplayTitle).string
+                    titleString = environment.strings.Monoforum_DeleteTopic_Title(peer.peer.compactDisplayTitle).string
                 } else {
                     titleString = environment.strings.Common_Delete
                 }

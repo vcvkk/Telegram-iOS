@@ -209,7 +209,7 @@ private final class ChannelMembersSearchEntry: Comparable, Identifiable {
                 displayOrder: nameDisplayOrder,
                 context: context,
                 peerMode: .peer,
-                peer: .peer(peer: EnginePeer(participant.peer), chatPeer: EnginePeer(participant.peer)),
+                peer: .peer(peer: participant.peer, chatPeer: participant.peer),
                 status: status,
                 rightLabelText: label.flatMap { .init(text: $0, color: labelColor, hasBackground: labelBackground) },
                 enabled: enabled,
@@ -220,7 +220,7 @@ private final class ChannelMembersSearchEntry: Comparable, Identifiable {
                 index: nil,
                 header: self.section.chatListHeaderType.flatMap({ ChatListSearchItemHeader(type: $0, theme: presentationData.theme, strings: presentationData.strings, actionTitle: nil, action: nil) }),
                 action: { _ in
-                    interaction.peerSelected(EnginePeer(participant.peer), participant)
+                    interaction.peerSelected(participant.peer, participant)
                 },
                 setPeerIdWithRevealedOptions: { peerId, fromPeerId in
                     interaction.setPeerIdWithRevealedOptions(RevealedPeerId(peerId: participant.peer.id, section: self.section), fromPeerId.flatMap({ RevealedPeerId(peerId: $0, section: self.section) }))
