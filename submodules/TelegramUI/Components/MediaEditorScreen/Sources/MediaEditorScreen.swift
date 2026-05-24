@@ -8095,9 +8095,9 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
                     return .single((.progress(progress * 0.5), nil))
                 case let .complete(resource):
                     if let resource = resource as? CloudDocumentMediaResource {
-                        return .single((.progress(1.0), nil)) |> then(.single((.complete(resource, mimeType), nil)))
+                        return .single((.progress(1.0), nil)) |> then(.single((.complete(EngineMediaResource(resource), mimeType), nil)))
                     } else {
-                        return context.engine.stickers.uploadSticker(peer: peer._asPeer(), resource: resource, thumbnail: file.previewRepresentations.first?.resource, alt: "", dimensions: dimensions, duration: duration, mimeType: mimeType)
+                        return context.engine.stickers.uploadSticker(peer: peer, resource: EngineMediaResource(resource), thumbnail: file.previewRepresentations.first.map { EngineMediaResource($0.resource) }, alt: "", dimensions: dimensions, duration: duration, mimeType: mimeType)
                         |> mapToSignal { status -> Signal<(UploadStickerStatus, (StickerPackReference, String)?), UploadStickerError> in
                             switch status {
                             case let .progress(progress):
