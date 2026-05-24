@@ -2651,7 +2651,7 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
     }
     
     private func enqueueChatContextResult(view: StoryItemSetContainerComponent.View, peer: EnginePeer, replyMessageId: EngineMessage.Id?, storyId: StoryId?, results: ChatContextResultCollection, result: ChatContextResult, hideVia: Bool = false, closeMediaInput: Bool = false, silentPosting: Bool = false, resetTextInputState: Bool = true) {
-        if !canSendMessagesToPeer(peer._asPeer()) {
+        if !canSendMessagesToPeer(peer) {
             return
         }
         

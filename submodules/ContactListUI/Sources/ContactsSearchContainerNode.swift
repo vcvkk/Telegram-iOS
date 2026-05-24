@@ -485,7 +485,7 @@ public final class ContactsSearchContainerNode: SearchDisplayControllerContentNo
                         var enabled = true
                         var requiresPremiumForMessaging = false
                         if onlyWriteable {
-                            enabled = canSendMessagesToPeer(peer._asPeer())
+                            enabled = canSendMessagesToPeer(peer)
                             if let value = peerRequiresPremiumForMessaging[peer.id], value {
                                 requiresPremiumForMessaging = true
                                 enabled = false

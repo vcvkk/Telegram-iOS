@@ -329,7 +329,7 @@ public func archivedStickerPacksController(context: AccountContext, mode: Archiv
                     return .complete()
                 } else {
                     let parsedInfo = info._parse()
-                    return context.engine.stickers.addStickerPackInteractively(info: parsedInfo, items: items)
+                    return context.engine.stickers.addStickerPackInteractively(info: parsedInfo, items: items) |> map { _ -> Void in }
                     |> ignoreValues
                     |> mapToSignal { _ -> Signal<(StickerPackCollectionInfo, [StickerPackItem]), NoError> in
                     }
@@ -496,7 +496,7 @@ public func archivedStickerPacksController(context: AccountContext, mode: Archiv
                                             return .complete()
                                         } else {
                                             let parsedInfo = info._parse()
-                                            return context.engine.stickers.addStickerPackInteractively(info: parsedInfo, items: items)
+                                            return context.engine.stickers.addStickerPackInteractively(info: parsedInfo, items: items) |> map { _ -> Void in }
                                             |> ignoreValues
                                             |> mapToSignal { _ -> Signal<(StickerPackCollectionInfo, [StickerPackItem]), NoError> in
                                             }
