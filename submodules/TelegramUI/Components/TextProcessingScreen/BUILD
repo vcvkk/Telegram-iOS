@@ -48,6 +48,7 @@ swift_library(
         "//submodules/TextSelectionNode",
         "//submodules/Pasteboard",
         "//submodules/Speak",
+        "//submodules/ContextUI",
     ],
     visibility = [
         "//visibility:public",
