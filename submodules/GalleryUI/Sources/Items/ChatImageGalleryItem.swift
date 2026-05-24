@@ -770,7 +770,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                     items.append(.action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_ContextMenuCopy, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.actionSheet.primaryTextColor) }, action: { [weak self] action in
                         action.dismissWithResult(.default)
 
-                        let _ = (SaveToCameraRoll.copyToPasteboard(context: context, userLocation: .peer(message.id.peerId), mediaReference: media)
+                        let _ = (SaveToCameraRoll.copyToPasteboard(context: context, postbox: context.account.postbox, userLocation: .peer(message.id.peerId), mediaReference: media)
                         |> deliverOnMainQueue).start(completed: { [weak self] in
                             guard let strongSelf = self else {
                                 return
