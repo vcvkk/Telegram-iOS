@@ -100,6 +100,7 @@ public final class ListMultilineTextFieldItemComponent: Component {
     public let rightAccessory: RightAccessory?
     public let emptyLineHandling: EmptyLineHandling
     public let formatMenuAvailability: TextFieldComponent.FormatMenuAvailability
+    public let placeholderDefinesMinHeight: Bool
     public let updated: ((String) -> Void)?
     public let returnKeyAction: (() -> Void)?
     public let backspaceKeyAction: (() -> Void)?
@@ -128,6 +129,7 @@ public final class ListMultilineTextFieldItemComponent: Component {
         rightAccessory: RightAccessory? = nil,
         emptyLineHandling: EmptyLineHandling = .allowed,
         formatMenuAvailability: TextFieldComponent.FormatMenuAvailability = .none,
+        placeholderDefinesMinHeight: Bool = false,
         updated: ((String) -> Void)? = nil,
         returnKeyAction: (() -> Void)? = nil,
         backspaceKeyAction: (() -> Void)? = nil,
@@ -155,6 +157,7 @@ public final class ListMultilineTextFieldItemComponent: Component {
         self.rightAccessory = rightAccessory
         self.emptyLineHandling = emptyLineHandling
         self.formatMenuAvailability = formatMenuAvailability
+        self.placeholderDefinesMinHeight = placeholderDefinesMinHeight
         self.updated = updated
         self.returnKeyAction = returnKeyAction
         self.backspaceKeyAction = backspaceKeyAction
@@ -217,6 +220,9 @@ public final class ListMultilineTextFieldItemComponent: Component {
             return false
         }
         if lhs.formatMenuAvailability != rhs.formatMenuAvailability {
+            return false
+        }
+        if lhs.placeholderDefinesMinHeight != rhs.placeholderDefinesMinHeight {
             return false
         }
         if (lhs.updated == nil) != (rhs.updated == nil) {
@@ -469,9 +475,22 @@ public final class ListMultilineTextFieldItemComponent: Component {
                 containerSize: CGSize(width: availableSize.width - textFieldRightInset, height: availableSize.height)
             )
             
-            let size = CGSize(width: availableSize.width, height: textFieldSize.height - 1.0)
+            let placeholderSize = self.placeholder.update(
+                transition: .immediate,
+                component: AnyComponent(MultilineTextComponent(
+                    text: .plain(NSAttributedString(string: component.placeholder.isEmpty ? " " : component.placeholder, font: Font.regular(17.0), textColor: component.theme.list.itemPlaceholderTextColor)),
+                    maximumNumberOfLines: component.placeholderDefinesMinHeight ? 0 : 1
+                )),
+                environment: {},
+                containerSize: CGSize(width: availableSize.width - leftInset - rightInset, height: 100.0)
+            )
+
+            var size = CGSize(width: availableSize.width, height: textFieldSize.height - 1.0)
+            if component.placeholderDefinesMinHeight {
+                size.height = max(size.height, placeholderSize.height + verticalInset * 2.0 - 1.0)
+            }
             let textFieldFrame = CGRect(origin: CGPoint(), size: textFieldSize)
-            
+
             if let textFieldView = self.textField.view {
                 if textFieldView.superview == nil {
                     self.addSubview(textFieldView)
@@ -479,15 +498,6 @@ public final class ListMultilineTextFieldItemComponent: Component {
                 }
                 transition.setFrame(view: textFieldView, frame: textFieldFrame)
             }
-            
-            let placeholderSize = self.placeholder.update(
-                transition: .immediate,
-                component: AnyComponent(MultilineTextComponent(
-                    text: .plain(NSAttributedString(string: component.placeholder.isEmpty ? " " : component.placeholder, font: Font.regular(17.0), textColor: component.theme.list.itemPlaceholderTextColor))
-                )),
-                environment: {},
-                containerSize: CGSize(width: availableSize.width - leftInset - rightInset, height: 100.0)
-            )
             let placeholderFrame = CGRect(origin: CGPoint(x: leftInset, y: verticalInset), size: placeholderSize)
             if let placeholderView = self.placeholder.view {
                 if placeholderView.superview == nil {

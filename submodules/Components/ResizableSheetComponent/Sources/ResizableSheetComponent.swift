@@ -222,7 +222,11 @@ public final class ResizableSheetComponent<ChildEnvironmentType: Sendable & Equa
         private let topEdgeEffectView: EdgeEffectView
         private let bottomEdgeEffectView: EdgeEffectView
         private let contentView: ComponentView<ChildEnvironmentType>
-        
+
+        public var contentViewValue: UIView? {
+            return self.contentView.view
+        }
+
         private var titleItemView: ComponentView<Empty>?
         private var leftItemView: ComponentView<Empty>?
         private var rightItemView: ComponentView<Empty>?

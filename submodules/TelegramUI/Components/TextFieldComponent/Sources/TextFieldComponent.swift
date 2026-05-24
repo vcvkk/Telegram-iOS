@@ -355,7 +355,11 @@ public final class TextFieldComponent: Component {
             let selectionRange: Range<Int> = self.textView.selectedRange.location ..< (self.textView.selectedRange.location + self.textView.selectedRange.length)
             return InputState(inputText: stateAttributedStringForText(self.textView.attributedText ?? NSAttributedString()), selectionRange: selectionRange)
         }
-        
+
+        public var inputTextView: UITextView {
+            return self.textView
+        }
+
         // MARK: exteraGram
         var egToolbarActionObserver: NSObjectProtocol? = nil
         
