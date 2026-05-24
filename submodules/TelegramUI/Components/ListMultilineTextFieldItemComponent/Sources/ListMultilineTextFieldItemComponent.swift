@@ -89,6 +89,7 @@ public final class ListMultilineTextFieldItemComponent: Component {
     public let initialText: String
     public let resetText: ResetText?
     public let placeholder: String
+    public let placeholderDefinesMinHeight: Bool
     public let autocapitalizationType: UITextAutocapitalizationType
     public let autocorrectionType: UITextAutocorrectionType
     public let keyboardType: UIKeyboardType
@@ -100,7 +101,6 @@ public final class ListMultilineTextFieldItemComponent: Component {
     public let rightAccessory: RightAccessory?
     public let emptyLineHandling: EmptyLineHandling
     public let formatMenuAvailability: TextFieldComponent.FormatMenuAvailability
-    public let placeholderDefinesMinHeight: Bool
     public let updated: ((String) -> Void)?
     public let returnKeyAction: (() -> Void)?
     public let backspaceKeyAction: (() -> Void)?
@@ -118,6 +118,7 @@ public final class ListMultilineTextFieldItemComponent: Component {
         initialText: String,
         resetText: ResetText? = nil,
         placeholder: String,
+        placeholderDefinesMinHeight: Bool = false,
         autocapitalizationType: UITextAutocapitalizationType = .sentences,
         autocorrectionType: UITextAutocorrectionType = .default,
         keyboardType: UIKeyboardType = .default,
@@ -129,7 +130,6 @@ public final class ListMultilineTextFieldItemComponent: Component {
         rightAccessory: RightAccessory? = nil,
         emptyLineHandling: EmptyLineHandling = .allowed,
         formatMenuAvailability: TextFieldComponent.FormatMenuAvailability = .none,
-        placeholderDefinesMinHeight: Bool = false,
         updated: ((String) -> Void)? = nil,
         returnKeyAction: (() -> Void)? = nil,
         backspaceKeyAction: (() -> Void)? = nil,
@@ -146,6 +146,7 @@ public final class ListMultilineTextFieldItemComponent: Component {
         self.initialText = initialText
         self.resetText = resetText
         self.placeholder = placeholder
+        self.placeholderDefinesMinHeight = placeholderDefinesMinHeight
         self.autocapitalizationType = autocapitalizationType
         self.autocorrectionType = autocorrectionType
         self.keyboardType = keyboardType
@@ -157,7 +158,6 @@ public final class ListMultilineTextFieldItemComponent: Component {
         self.rightAccessory = rightAccessory
         self.emptyLineHandling = emptyLineHandling
         self.formatMenuAvailability = formatMenuAvailability
-        self.placeholderDefinesMinHeight = placeholderDefinesMinHeight
         self.updated = updated
         self.returnKeyAction = returnKeyAction
         self.backspaceKeyAction = backspaceKeyAction
