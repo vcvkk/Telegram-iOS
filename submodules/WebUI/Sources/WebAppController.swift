@@ -4125,15 +4125,15 @@ public final class WebAppController: ViewController, AttachmentContainable {
     override final public func viewWillDisappear(_ animated: Bool) {
         if !self.viewWillDisappearCalled {
             self.viewWillDisappearCalled = true
-            self.updateSGWebSettingsIfNeeded()
+            self.updateEGWebSettingsIfNeeded()
         }
         super.viewWillDisappear(animated)
     }
     
-    private func updateSGWebSettingsIfNeeded() {
+    private func updateEGWebSettingsIfNeeded() {
         if let url = self.url, let parsedUrl = URL(string: url), parsedUrl.host?.lowercased() == EG_API_WEBAPP_URL_PARSED.host?.lowercased() {
             EGLogger.shared.log("WebApp", "Closed webapp")
-            updateSGWebSettingsInteractivelly(context: self.context)
+            updateEGWebSettingsInteractivelly(context: self.context)
         }
     }
     

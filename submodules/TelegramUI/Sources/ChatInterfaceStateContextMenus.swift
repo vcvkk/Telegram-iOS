@@ -2232,18 +2232,18 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 }
             }
             
-            var popSGItems: (() -> Void)? = nil
+            var popEGItems: (() -> Void)? = nil
             egActions.insert(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Common_Back, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Back"), color: theme.actionSheet.primaryTextColor)
             }, iconPosition: .left, action: { _, _ in
-                popSGItems?()
+                popEGItems?()
             })), at: 0)
             egActions.insert(.separator, at: 1)
             
             let exteragramSubMenu: ContextMenuItem = .action(ContextMenuActionItem(text: "exteraGram", icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "exteraGramContextMenu"), color: theme.actionSheet.primaryTextColor)
             }, action: { c, f in
-                popSGItems = { [weak c] in
+                popEGItems = { [weak c] in
                     c?.popItems()
                 }
                 c?.pushItems(items: .single(ContextController.Items(content: .list(egActions))))

@@ -10,7 +10,7 @@ import AccountContext
 import EGSimpleSettings
 import TelegramCore
 
-public func updateSGWebSettingsInteractivelly(context: AccountContext) {
+public func updateEGWebSettingsInteractivelly(context: AccountContext) {
     let _ = getEGApiToken(context: context).startStandalone(next: { token in
         let _ = getEGSettings(token: token).startStandalone(next: { webSettings in
             EGLogger.shared.log("EGAPI", "New EGWebSettings for id \(context.account.peerId.id._internalGetInt64Value()): \(webSettings) ")
@@ -53,7 +53,7 @@ public func updateSGWebSettingsInteractivelly(context: AccountContext) {
 }
 
 
-public func postSGWebSettingsInteractivelly(context: AccountContext, data: [String: Any]) {
+public func postEGWebSettingsInteractivelly(context: AccountContext, data: [String: Any]) {
     let _ = getEGApiToken(context: context).startStandalone(next: { token in
         let _ = postSGSettings(token: token, data: data).startStandalone(error: { e in
             if case let .generic(errorMessage) = e, let errorMessage = errorMessage {

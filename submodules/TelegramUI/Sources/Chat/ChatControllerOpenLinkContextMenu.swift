@@ -101,14 +101,14 @@ extension ChatControllerImpl {
                 guard let self else {
                     return
                 }
-                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingSGBehaviour: false), in: .window(.root))
+                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: false), in: .window(.root))
             }))
             items.append(ActionSheetButtonItem(title: self.presentationData.strings.Conversation_ContextMenuShare, color: .accent, action: { [weak actionSheet, weak self] in
                 actionSheet?.dismissAnimated()
                 guard let self else {
                     return
                 }
-                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingSGBehaviour: true), in: .current)
+                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: true), in: .current)
             }))
             //
             if canAddToReadingList {
@@ -211,7 +211,7 @@ extension ChatControllerImpl {
                     return
                 }
 
-                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingSGBehaviour: false), in: .window(.root))
+                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: false), in: .window(.root))
             }))
         )
         items.append(
@@ -222,7 +222,7 @@ extension ChatControllerImpl {
                     return
                 }
 
-                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingSGBehaviour: true), in: .current)
+                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: true), in: .current)
             }))
         )
         //

@@ -1511,8 +1511,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     self.resetIntentsIfNeeded(context: context.context)
                     
                     // MARK: exteraGram
-                    updateSGWebSettingsInteractivelly(context: context.context)
-                    updateSGGHSettingsInteractivelly(context: context.context)
+                    updateEGWebSettingsInteractivelly(context: context.context)
+                    updateEGGHSettingsInteractivelly(context: context.context)
                     let _ = (context.context.sharedContext.presentationData.start(next: { presentationData in
                         EGLocalizationManager.shared.downloadLocale(presentationData.strings.baseLanguageCode)
                     }))
@@ -2171,8 +2171,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 for (_, context, _) in activeAccounts.accounts {
                     // MARK: exteraGram
                     if !egTasksLaunched {
-                        updateSGWebSettingsInteractivelly(context: context)
-                        updateSGGHSettingsInteractivelly(context: context)
+                        updateEGWebSettingsInteractivelly(context: context)
+                        updateEGGHSettingsInteractivelly(context: context)
                         egTasksLaunched = true
                     }
                     (context.downloadedMediaStoreManager as? DownloadedMediaStoreManagerImpl)?.runTasks()
@@ -3543,7 +3543,7 @@ extension AppDelegate {
                     EGLogger.shared.log("EGIAP", "Got context for EGIAPHelperPurchaseNotification")
                     let _ = Task {
                         await veryStrongSelf.sendReceiptForVerification(primaryContext: context.context)
-                        await veryStrongSelf.fetchSGStatus(primaryContext: context.context)
+                        await veryStrongSelf.fetchEGStatus(primaryContext: context.context)
                         
                         EGLogger.shared.log("EGIAP", "Finishing transactions \(transactions.map({ $0.transactionIdentifier ?? "nil" }).joined(separator: ", "))")
                         let defaultPaymentQueue = SKPaymentQueue.default()
@@ -3600,7 +3600,7 @@ extension AppDelegate {
 
         if let deviceToken, let apiToken {
             do {
-                let _ = try await postSGReceipt(token: apiToken,
+                let _ = try await postEGReceipt(token: apiToken,
                                                 deviceToken: deviceToken,
                                                 encodedReceiptData: encodedReceiptData).awaitable()
             } catch let error as SignalCompleted {
@@ -3611,7 +3611,7 @@ extension AppDelegate {
         }
     }
     
-    func fetchSGStatus(primaryContext: AccountContext) async {
+    func fetchEGStatus(primaryContext: AccountContext) async {
         // TODO(exteragram): Stuck on getting shouldKeepConnection
         // Perhaps, we can drop on some timeout?
 //        let currentShouldKeepConnection = await (primaryContext.account.network.shouldKeepConnection.get() |> take(1) |> deliverOnMainQueue).awaitable()

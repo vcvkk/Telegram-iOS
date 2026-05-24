@@ -197,7 +197,7 @@ public func getEGProfiles(token: String) -> Signal<[EGProfileDTO], EGAPIError> {
 }
 
 
-public func postSGReceipt(token: String, deviceToken: String, encodedReceiptData: Data) -> Signal<Void, EGAPIError> {
+public func postEGReceipt(token: String, deviceToken: String, encodedReceiptData: Data) -> Signal<Void, EGAPIError> {
     return Signal { subscriber in
 
         let url = URL(string: buildApiUrl("validate"))!

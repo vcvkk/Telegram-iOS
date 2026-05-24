@@ -76,7 +76,7 @@ public final class ChatListNodeInteraction {
     }
     
     let activateSearch: () -> Void
-    let openSGAnnouncement: (String, String, Bool, Bool) -> Void
+    let openEGAnnouncement: (String, String, Bool, Bool) -> Void
     let peerSelected: (EnginePeer, EnginePeer?, Int64?, ChatListNodeEntryPromoInfo?, Bool) -> Void
     let disabledPeerSelected: (EnginePeer, Int64?, ChatListDisabledPeerReason) -> Void
     let togglePeerSelected: (EnginePeer, Int64?) -> Void
@@ -138,7 +138,7 @@ public final class ChatListNodeInteraction {
         animationRenderer: MultiAnimationRenderer,
         activateSearch: @escaping () -> Void,
         // MARK: exteraGram
-        openSGAnnouncement: @escaping (String, String, Bool, Bool) -> Void = { _, _, _, _ in },
+        openEGAnnouncement: @escaping (String, String, Bool, Bool) -> Void = { _, _, _, _ in },
         peerSelected: @escaping (EnginePeer, EnginePeer?, Int64?, ChatListNodeEntryPromoInfo?, Bool) -> Void,
         disabledPeerSelected: @escaping (EnginePeer, Int64?, ChatListDisabledPeerReason) -> Void,
         togglePeerSelected: @escaping (EnginePeer, Int64?) -> Void,
@@ -184,7 +184,7 @@ public final class ChatListNodeInteraction {
         openUrl: @escaping (String) -> Void
     ) {
         self.activateSearch = activateSearch
-        self.openSGAnnouncement = openSGAnnouncement
+        self.openEGAnnouncement = openEGAnnouncement
         self.peerSelected = peerSelected
         self.disabledPeerSelected = disabledPeerSelected
         self.togglePeerSelected = togglePeerSelected
@@ -1406,7 +1406,7 @@ public final class ChatListNode: ListViewImpl {
             if let strongSelf = self, let activateSearch = strongSelf.activateSearch {
                 activateSearch()
             }
-        }, openSGAnnouncement: { [weak self] announcementId, url, needAuth, permanent in
+        }, openEGAnnouncement: { [weak self] announcementId, url, needAuth, permanent in
             if let strongSelf = self {
                 if needAuth {
                     let _ = (getEGSettingsURL(context: strongSelf.context, url: url)
@@ -1425,8 +1425,8 @@ public final class ChatListNode: ListViewImpl {
                 if !permanent {
                     Queue.mainQueue().after(0.6) { [weak self] in
                         if let strongSelf = self {
-                            dismissSGProvidedSuggestion(suggestionId: announcementId)
-                            postSGWebSettingsInteractivelly(context: strongSelf.context, data: ["skip_announcement_id": announcementId])
+                            dismissEGProvidedSuggestion(suggestionId: announcementId)
+                            postEGWebSettingsInteractivelly(context: strongSelf.context, data: ["skip_announcement_id": announcementId])
                         }
                     }
                 }

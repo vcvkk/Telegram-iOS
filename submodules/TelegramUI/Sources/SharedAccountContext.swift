@@ -303,9 +303,9 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     private var experimentalUISettingsDisposable: Disposable?
 
     // MARK: exteraGram
-    private var immediateSGStatusValue = Atomic<EGStatus>(value: EGStatus.default)
-    public var immediateSGStatus: EGStatus {
-        return self.immediateSGStatusValue.with { $0 }
+    private var immediateEGStatusValue = Atomic<EGStatus>(value: EGStatus.default)
+    public var immediateEGStatus: EGStatus {
+        return self.immediateEGStatusValue.with { $0 }
     }
     public var EGIAP: EGIAPManager?
 
@@ -4569,12 +4569,12 @@ extension SharedAccountContextImpl {
         }
     }
     
-    public func makeSGProController(context: AccountContext) -> ViewController {
+    public func makeEGProController(context: AccountContext) -> ViewController {
         let controller = egProController(context: context)
         return controller
     }
 
-    public func makeSGPayWallController(context: AccountContext) -> ViewController? {
+    public func makeEGPayWallController(context: AccountContext) -> ViewController? {
         guard #available(iOS 13.0, *) else {
             return nil
         }
@@ -4588,7 +4588,7 @@ extension SharedAccountContextImpl {
             return egStatus.status
         }
 
-        let proController = self.makeSGProController(context: context)
+        let proController = self.makeEGProController(context: context)
         let presentationData = self.currentPresentationData.with { $0 }
         var payWallController: ViewController? = nil
         let openUrl: ((String, Bool) -> Void) = { [weak self, weak context] url, forceExternal in
@@ -4605,7 +4605,7 @@ extension SharedAccountContextImpl {
         return payWallController
     }
     
-    public func makeSGUpdateIOSController() -> ViewController {
+    public func makeEGUpdateIOSController() -> ViewController {
         let presentationData = self.currentPresentationData.with { $0 }
         let controller = textAlertController(sharedContext: self, title: nil, text: "Common.UpdateOS".i18n(presentationData.strings.baseLanguageCode), actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {
         })])

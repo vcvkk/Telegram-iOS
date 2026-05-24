@@ -1428,7 +1428,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                         }
                         switch notice {
                         case let .egUrl(id, _, _, url, needAuth, permanent):
-                            self.effectiveContainerNode.currentItemNode.interaction?.openSGAnnouncement(id, url, needAuth, permanent)
+                            self.effectiveContainerNode.currentItemNode.interaction?.openEGAnnouncement(id, url, needAuth, permanent)
                         case .clearStorage:
                             self.effectiveContainerNode.currentItemNode.interaction?.openStorageManagement()
                         case .setupPassword:

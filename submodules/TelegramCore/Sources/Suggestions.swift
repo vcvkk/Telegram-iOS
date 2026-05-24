@@ -237,7 +237,7 @@ private var dismissedSGSuggestions: Set<String> = Set() {
 }
 
 
-public func dismissSGProvidedSuggestion(suggestionId: String) {
+public func dismissEGProvidedSuggestion(suggestionId: String) {
     dismissedSGSuggestions.insert(suggestionId)
     EGSimpleSettings.shared.dismissedSGSuggestions.append(suggestionId)
 }

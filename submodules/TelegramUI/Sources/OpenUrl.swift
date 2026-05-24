@@ -326,7 +326,7 @@ private func handleInternetUrl(
                             if parsedUrl.host?.lowercased() == EG_API_WEBAPP_URL_PARSED.host?.lowercased() {
                                 controller.onDidFinish = {
                                     EGLogger.shared.log("SafariController", "Closed webapp")
-                                    updateSGWebSettingsInteractivelly(context: context)
+                                    updateEGWebSettingsInteractivelly(context: context)
                                 }
                             }
                             //

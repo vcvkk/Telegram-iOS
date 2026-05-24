@@ -65,7 +65,7 @@ private enum DebugControllerSection: Int32 {
 
 private enum DebugControllerEntry: ItemListNodeEntry {
     case EGDebug(PresentationTheme)
-    case sendSGLogs(PresentationTheme)
+    case sendEGLogs(PresentationTheme)
     case testStickerImport(PresentationTheme)
     case sendLogs(PresentationTheme)
     case sendOneLog(PresentationTheme)
@@ -134,7 +134,7 @@ private enum DebugControllerEntry: ItemListNodeEntry {
     
     var section: ItemListSectionId {
         switch self {
-        case .sendSGLogs, .EGDebug:
+        case .sendEGLogs, .EGDebug:
             return DebugControllerSection.exteragram.rawValue
         case .testStickerImport:
             return DebugControllerSection.sticker.rawValue
@@ -166,7 +166,7 @@ private enum DebugControllerEntry: ItemListNodeEntry {
         // MARK: exteraGram
         case .EGDebug:
             return -110
-        case .sendSGLogs:
+        case .sendEGLogs:
             return -100
         case .testStickerImport:
             return 0
@@ -415,12 +415,12 @@ private enum DebugControllerEntry: ItemListNodeEntry {
                 })
             })
         // MARK: exteraGram
-        case .sendOneLog, .sendSGLogs:
+        case .sendOneLog, .sendEGLogs:
             var title = "Send Latest Logs (Up to 4 MB)"
             var logCollectionSignal: Signal<[(String, String)], NoError> = Logger.shared.collectLogs()
             var fileName = "Log-iOS-Short.txt"
             var appName = "Telegram"
-            if case .sendSGLogs(_) = self {
+            if case .sendEGLogs(_) = self {
                 title = "Send exteraGram Logs"
                 logCollectionSignal = EGLogger.shared.collectLogs()
                 fileName = "Log-iOS-exteraGram.txt"
@@ -1566,7 +1566,7 @@ private func debugControllerEntries(context: AccountContext?, sharedContext: Sha
     
     // MARK: exteraGram
     entries.append(.EGDebug(presentationData.theme))
-    entries.append(.sendSGLogs(presentationData.theme))
+    entries.append(.sendEGLogs(presentationData.theme))
     
 //    entries.append(.testStickerImport(presentationData.theme))
     entries.append(.sendLogs(presentationData.theme))
