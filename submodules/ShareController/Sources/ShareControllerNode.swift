@@ -1704,7 +1704,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
             |> mapToSignal { peers -> Signal<([RecentlySearchedPeer], [EnginePeer.Id: Bool]), NoError> in
                 var possiblePremiumRequiredPeers = Set<EnginePeer.Id>()
                 for peer in peers {
-                    if let user = peer.peer.peer as? TelegramUser, user.flags.contains(.requirePremium) {
+                    if case let .user(user)? = peer.peer.peer, user.flags.contains(.requirePremium) {
                         possiblePremiumRequiredPeers.insert(user.id)
                     }
                 }

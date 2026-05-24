@@ -1021,23 +1021,25 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
                     }
                 }
                 if filter.contains(.onlyPrivateChats) {
-                    if !(peer.peer is TelegramUser || peer.peer is TelegramSecretChat) {
-                        enabled = false
-                    }
-                }
-                if filter.contains(.onlyGroups) {
-                    if let _ = peer.peer as? TelegramGroup {
-                    } else if let peer = peer.peer as? TelegramChannel, case .group = peer.info {
+                    if case .user = peer.peer {
+                    } else if case .secretChat = peer.peer {
                     } else {
                         enabled = false
                     }
                 }
-                
+                if filter.contains(.onlyGroups) {
+                    if case .group = peer.peer {
+                    } else if case let .channel(channel) = peer.peer, case .group = channel.info {
+                    } else {
+                        enabled = false
+                    }
+                }
+
                 var suffixString = ""
                 if let subscribers = peer.subscribers, subscribers != 0 {
-                    if peer.peer is TelegramUser {
+                    if case .user = peer.peer {
                         suffixString = ", \(strings.Conversation_StatusBotSubscribers(subscribers))"
-                    } else if let channel = peer.peer as? TelegramChannel, case .broadcast = channel.info {
+                    } else if case let .channel(channel) = peer.peer, case .broadcast = channel.info {
                         suffixString = ", \(strings.Conversation_StatusSubscribers(subscribers))"
                     } else {
                         suffixString = ", \(strings.Conversation_StatusMembers(subscribers))"
