@@ -513,7 +513,7 @@ class ChannelMembersSearchControllerNode: ASDisplayNode {
                             case .excludeNonMembers:
                                 break
                             case .excludeBots:
-                                if let user = participant.peer as? TelegramUser, user.botInfo != nil {
+                                if case let .user(user) = participant.peer, user.botInfo != nil {
                                     continue contactsLoop
                                 }
                             }
@@ -555,7 +555,7 @@ class ChannelMembersSearchControllerNode: ASDisplayNode {
                                 case .excludeNonMembers:
                                     break
                                 case .excludeBots:
-                                    if let user = participant.peer as? TelegramUser, user.botInfo != nil {
+                                    if case let .user(user) = participant.peer, user.botInfo != nil {
                                         continue participantsLoop
                                     }
                                 }
@@ -568,7 +568,7 @@ class ChannelMembersSearchControllerNode: ASDisplayNode {
                             if participant.peer.id == context.account.peerId {
                                 continue
                             }
-                            if let user = participant.peer as? TelegramUser, user.botInfo != nil || user.flags.contains(.isSupport) {
+                            if case let .user(user) = participant.peer, user.botInfo != nil || user.flags.contains(.isSupport) {
                                 continue
                             }
                             for filter in filters {
@@ -584,7 +584,7 @@ class ChannelMembersSearchControllerNode: ASDisplayNode {
                                 case .excludeNonMembers:
                                     break
                                 case .excludeBots:
-                                    if let user = participant.peer as? TelegramUser, user.botInfo != nil {
+                                    if case let .user(user) = participant.peer, user.botInfo != nil {
                                         continue participantsLoop
                                     }
                                 }

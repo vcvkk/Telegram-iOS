@@ -742,7 +742,7 @@ public final class ChannelMembersSearchContainerNode: SearchDisplayControllerCon
                             continue
                         }
                         
-                        if excludeBots, let user = participant.peer as? TelegramUser, user.botInfo != nil {
+                        if excludeBots, case let .user(user) = participant.peer, user.botInfo != nil {
                             continue
                         }
                         
@@ -874,7 +874,7 @@ public final class ChannelMembersSearchContainerNode: SearchDisplayControllerCon
                     }
                     
                     for participant in foundMembers {
-                        if excludeBots, let user = participant.peer as? TelegramUser, user.botInfo != nil {
+                        if excludeBots, case let .user(user) = participant.peer, user.botInfo != nil {
                             continue
                         }
                         
@@ -1042,7 +1042,7 @@ public final class ChannelMembersSearchContainerNode: SearchDisplayControllerCon
                     var index = 0
                     
                     for participant in foundGroupMembers {
-                        if excludeBots, let user = participant.peer as? TelegramUser, user.botInfo != nil {
+                        if excludeBots, case let .user(user) = participant.peer, user.botInfo != nil {
                             continue
                         }
                         
@@ -1126,7 +1126,7 @@ public final class ChannelMembersSearchContainerNode: SearchDisplayControllerCon
                     }
                     
                     for participant in foundMembers {
-                        if excludeBots, let user = participant.peer as? TelegramUser, user.botInfo != nil {
+                        if excludeBots, case let .user(user) = participant.peer, user.botInfo != nil {
                             continue
                         }
                         

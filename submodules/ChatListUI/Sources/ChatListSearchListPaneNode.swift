@@ -3711,7 +3711,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                     }
                 case let .globalPeer(foundPeer, _, _, _, _, _, _, _, _, _, _):
                     storyStatsIds.append(foundPeer.peer.id)
-                    if let user = foundPeer.peer as? TelegramUser, user.flags.contains(.requirePremium) {
+                    if case let .user(user) = foundPeer.peer, user.flags.contains(.requirePremium) {
                         requiresPremiumForMessagingPeerIds.append(foundPeer.peer.id)
                     }
                 case let .message(_, peer, _, _, _, _, _, _, _, _, _, _, _, _, _):

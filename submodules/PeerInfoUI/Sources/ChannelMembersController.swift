@@ -293,7 +293,7 @@ private enum ChannelMembersEntry: ItemListNodeEntry {
                 return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
             case let .peerItem(_, _, strings, dateTimeFormat, nameDisplayOrder, participant, editing, enabled, _, isGroup):
                 let text: ItemListPeerItemText
-                if let user = participant.peer as? TelegramUser, let _ = user.botInfo {
+                if case let .user(user) = participant.peer, let _ = user.botInfo {
                     text = .text(strings.Bot_GenericBotStatus, .secondary)
                 } else {
                     text = .presence
