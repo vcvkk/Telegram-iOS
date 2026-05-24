@@ -1344,7 +1344,7 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                                     if installed {
                                         return .complete()
                                     } else {
-                                        return context.engine.stickers.addStickerPackInteractively(info: info._parse(), items: items)
+                                        return context.engine.stickers.addStickerPackInteractively(info: info._parse(), items: items) |> ignoreValues()
                                     }
                                 case .fetching:
                                     break
