@@ -203,10 +203,9 @@ extension ChatControllerImpl {
                         ), rank: nil, subscriptionUntilDate: nil)
                     }
                     
-                    let peer = author
                     renderedParticipants.append(RenderedChannelParticipant(
                         participant: participant,
-                        peer: peer
+                        peer: EnginePeer(author)
                     ))
                     switch participant {
                     case .creator:
@@ -330,7 +329,7 @@ extension ChatControllerImpl {
                     chatPeer: chatPeer,
                     peers: [RenderedChannelParticipant(
                         participant: participant,
-                        peer: authorPeer._asPeer()
+                        peer: authorPeer
                     )],
                     mode: .chat(
                         messageCount: messageIds.count,
@@ -724,7 +723,7 @@ extension ChatControllerImpl {
                 chatPeer: chatPeer,
                 peers: [RenderedChannelParticipant(
                     participant: participant,
-                    peer: authorPeer._asPeer()
+                    peer: authorPeer
                 )],
                 mode: .monoforum(completion: { [weak self] result in
                     guard let self else {
