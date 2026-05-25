@@ -2400,7 +2400,7 @@ final class StorageUsageScreenComponent: Component {
                 |> map { messages -> RenderResult in
                     let result = RenderResult()
                     
-                    result.messages = messages
+                    result.messages = messages.mapValues { $0._asMessage() }
                     
                     var mergedMedia: [MessageId: Int64] = [:]
                     if let categoryStats = contextStats.categories[.photos] {
