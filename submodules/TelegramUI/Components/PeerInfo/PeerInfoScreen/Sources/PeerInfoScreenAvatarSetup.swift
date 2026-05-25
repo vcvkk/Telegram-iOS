@@ -249,7 +249,7 @@ public extension PeerInfoScreenImpl {
         let signal: Signal<UpdatePeerPhotoStatus, UploadPeerPhotoError>
         
         signal = context.engine.peers.updatePeerPhoto(peerId: peer.id, photo: context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(resource)), mapResourceToAvatarSizes: { resource, representations in
-            return mapResourceToAvatarSizes(postbox: postbox, resource: resource, representations: representations)
+            return mapResourceToAvatarSizes(postbox: postbox, resource: resource._asResource(), representations: representations)
         })
         
         var dismissStatus: (() -> Void)?
@@ -410,7 +410,7 @@ public extension PeerInfoScreenImpl {
         updateAvatarDisposable.set((videoResource
         |> mapToSignal { videoResource -> Signal<UpdatePeerPhotoStatus, UploadPeerPhotoError> in
             return context.engine.peers.updatePeerPhoto(peerId: peerId, photo: context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(photoResource)), video: videoResource.flatMap { context.engine.peers.uploadedPeerVideo(resource: EngineMediaResource($0)) |> map(Optional.init) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
-                return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
+                return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource._asResource(), representations: representations)
             })
         }
         |> deliverOnMainQueue).startStandalone(next: { result in
@@ -703,7 +703,7 @@ extension PeerInfoScreenImpl {
             let signal: Signal<UpdatePeerPhotoStatus, UploadPeerPhotoError>
             if case .custom = mode {
                 signal = strongSelf.context.engine.contacts.updateContactPhoto(peerId: strongSelf.peerId, resource: nil, videoResource: nil, videoStartTimestamp: nil, markup: nil, mode: .custom, mapResourceToAvatarSizes: { resource, representations in
-                    return mapResourceToAvatarSizes(postbox: postbox, resource: resource, representations: representations)
+                    return mapResourceToAvatarSizes(postbox: postbox, resource: resource._asResource(), representations: representations)
                 })
             } else if case .fallback = mode {
                 signal = strongSelf.context.engine.accountData.removeFallbackPhoto(reference: nil)
@@ -713,7 +713,7 @@ extension PeerInfoScreenImpl {
                 }
             } else {
                 signal = strongSelf.context.engine.peers.updatePeerPhoto(peerId: strongSelf.peerId, photo: nil, mapResourceToAvatarSizes: { resource, representations in
-                    return mapResourceToAvatarSizes(postbox: postbox, resource: resource, representations: representations)
+                    return mapResourceToAvatarSizes(postbox: postbox, resource: resource._asResource(), representations: representations)
                 })
             }
             strongSelf.controllerNode.updateAvatarDisposable.set((signal
@@ -798,25 +798,25 @@ extension PeerInfoScreenImpl {
         let signal: Signal<UpdatePeerPhotoStatus, UploadPeerPhotoError>
         if self.isSettings || self.isMyProfile {
             if case .fallback = mode {
-                signal = self.context.engine.accountData.updateFallbackPhoto(resource: resource, videoResource: nil, videoStartTimestamp: nil, markup: nil, mapResourceToAvatarSizes: { resource, representations in
-                    return mapResourceToAvatarSizes(postbox: postbox, resource: resource, representations: representations)
+                signal = self.context.engine.accountData.updateFallbackPhoto(resource: EngineMediaResource(resource), videoResource: nil, videoStartTimestamp: nil, markup: nil, mapResourceToAvatarSizes: { resource, representations in
+                    return mapResourceToAvatarSizes(postbox: postbox, resource: resource._asResource(), representations: representations)
                 })
             } else {
-                signal = self.context.engine.accountData.updateAccountPhoto(resource: resource, videoResource: nil, videoStartTimestamp: nil, markup: nil, mapResourceToAvatarSizes: { resource, representations in
-                    return mapResourceToAvatarSizes(postbox: postbox, resource: resource, representations: representations)
+                signal = self.context.engine.accountData.updateAccountPhoto(resource: EngineMediaResource(resource), videoResource: nil, videoStartTimestamp: nil, markup: nil, mapResourceToAvatarSizes: { resource, representations in
+                    return mapResourceToAvatarSizes(postbox: postbox, resource: resource._asResource(), representations: representations)
                 })
             }
         } else if case .custom = mode {
-            signal = self.context.engine.contacts.updateContactPhoto(peerId: self.peerId, resource: resource, videoResource: nil, videoStartTimestamp: nil, markup: nil, mode: .custom, mapResourceToAvatarSizes: { resource, representations in
-                return mapResourceToAvatarSizes(postbox: postbox, resource: resource, representations: representations)
+            signal = self.context.engine.contacts.updateContactPhoto(peerId: self.peerId, resource: EngineMediaResource(resource), videoResource: nil, videoStartTimestamp: nil, markup: nil, mode: .custom, mapResourceToAvatarSizes: { resource, representations in
+                return mapResourceToAvatarSizes(postbox: postbox, resource: resource._asResource(), representations: representations)
             })
         } else if case .suggest = mode {
-            signal = self.context.engine.contacts.updateContactPhoto(peerId: self.peerId, resource: resource, videoResource: nil, videoStartTimestamp: nil, markup: nil, mode: .suggest, mapResourceToAvatarSizes: { resource, representations in
-                return mapResourceToAvatarSizes(postbox: postbox, resource: resource, representations: representations)
+            signal = self.context.engine.contacts.updateContactPhoto(peerId: self.peerId, resource: EngineMediaResource(resource), videoResource: nil, videoStartTimestamp: nil, markup: nil, mode: .suggest, mapResourceToAvatarSizes: { resource, representations in
+                return mapResourceToAvatarSizes(postbox: postbox, resource: resource._asResource(), representations: representations)
             })
         } else {
             signal = self.context.engine.peers.updatePeerPhoto(peerId: self.peerId, photo: self.context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(resource)), mapResourceToAvatarSizes: { resource, representations in
-                return mapResourceToAvatarSizes(postbox: postbox, resource: resource, representations: representations)
+                return mapResourceToAvatarSizes(postbox: postbox, resource: resource._asResource(), representations: representations)
             })
         }
         
@@ -1020,25 +1020,25 @@ extension PeerInfoScreenImpl {
         |> mapToSignal { videoResource -> Signal<UpdatePeerPhotoStatus, UploadPeerPhotoError> in
             if isSettings || isMyProfile {
                 if case .fallback = mode {
-                    return context.engine.accountData.updateFallbackPhoto(resource: photoResource, videoResource: videoResource, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
-                        return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
+                    return context.engine.accountData.updateFallbackPhoto(resource: EngineMediaResource(photoResource), videoResource: videoResource.map { EngineMediaResource($0) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
+                        return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource._asResource(), representations: representations)
                     })
                 } else {
-                    return context.engine.accountData.updateAccountPhoto(resource: photoResource, videoResource: videoResource, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
-                        return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
+                    return context.engine.accountData.updateAccountPhoto(resource: EngineMediaResource(photoResource), videoResource: videoResource.map { EngineMediaResource($0) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
+                        return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource._asResource(), representations: representations)
                     })
                 }
             } else if case .custom = mode {
-                return context.engine.contacts.updateContactPhoto(peerId: peerId, resource: photoResource, videoResource: videoResource, videoStartTimestamp: videoStartTimestamp, markup: markup, mode: .custom, mapResourceToAvatarSizes: { resource, representations in
-                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
+                return context.engine.contacts.updateContactPhoto(peerId: peerId, resource: EngineMediaResource(photoResource), videoResource: videoResource.map { EngineMediaResource($0) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mode: .custom, mapResourceToAvatarSizes: { resource, representations in
+                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource._asResource(), representations: representations)
                 })
             } else if case .suggest = mode {
-                return context.engine.contacts.updateContactPhoto(peerId: peerId, resource: photoResource, videoResource: videoResource, videoStartTimestamp: videoStartTimestamp, markup: markup, mode: .suggest, mapResourceToAvatarSizes: { resource, representations in
-                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
+                return context.engine.contacts.updateContactPhoto(peerId: peerId, resource: EngineMediaResource(photoResource), videoResource: videoResource.map { EngineMediaResource($0) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mode: .suggest, mapResourceToAvatarSizes: { resource, representations in
+                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource._asResource(), representations: representations)
                 })
             } else {
                 return context.engine.peers.updatePeerPhoto(peerId: peerId, photo: context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(photoResource)), video: videoResource.flatMap { context.engine.peers.uploadedPeerVideo(resource: EngineMediaResource($0)) |> map(Optional.init) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
-                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
+                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource._asResource(), representations: representations)
                 })
             }
         }
@@ -1234,25 +1234,25 @@ extension PeerInfoScreenImpl {
         |> mapToSignal { videoResource -> Signal<UpdatePeerPhotoStatus, UploadPeerPhotoError> in
             if isSettings || isMyProfile {
                 if case .fallback = mode {
-                    return context.engine.accountData.updateFallbackPhoto(resource: photoResource, videoResource: videoResource, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
-                        return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
+                    return context.engine.accountData.updateFallbackPhoto(resource: EngineMediaResource(photoResource), videoResource: videoResource.map { EngineMediaResource($0) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
+                        return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource._asResource(), representations: representations)
                     })
                 } else {
-                    return context.engine.accountData.updateAccountPhoto(resource: photoResource, videoResource: videoResource, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
-                        return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
+                    return context.engine.accountData.updateAccountPhoto(resource: EngineMediaResource(photoResource), videoResource: videoResource.map { EngineMediaResource($0) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
+                        return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource._asResource(), representations: representations)
                     })
                 }
             } else if case .custom = mode {
-                return context.engine.contacts.updateContactPhoto(peerId: peerId, resource: photoResource, videoResource: videoResource, videoStartTimestamp: videoStartTimestamp, markup: markup, mode: .custom, mapResourceToAvatarSizes: { resource, representations in
-                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
+                return context.engine.contacts.updateContactPhoto(peerId: peerId, resource: EngineMediaResource(photoResource), videoResource: videoResource.map { EngineMediaResource($0) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mode: .custom, mapResourceToAvatarSizes: { resource, representations in
+                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource._asResource(), representations: representations)
                 })
             } else if case .suggest = mode {
-                return context.engine.contacts.updateContactPhoto(peerId: peerId, resource: photoResource, videoResource: videoResource, videoStartTimestamp: videoStartTimestamp, markup: markup, mode: .suggest, mapResourceToAvatarSizes: { resource, representations in
-                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
+                return context.engine.contacts.updateContactPhoto(peerId: peerId, resource: EngineMediaResource(photoResource), videoResource: videoResource.map { EngineMediaResource($0) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mode: .suggest, mapResourceToAvatarSizes: { resource, representations in
+                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource._asResource(), representations: representations)
                 })
             } else {
                 return context.engine.peers.updatePeerPhoto(peerId: peerId, photo: context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(photoResource)), video: videoResource.flatMap { context.engine.peers.uploadedPeerVideo(resource: EngineMediaResource($0)) |> map(Optional.init) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
-                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
+                    return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource._asResource(), representations: representations)
                 })
             }
         }
