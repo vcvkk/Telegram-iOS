@@ -750,7 +750,7 @@ private func parsePageBlocks(_ input: [Any], _ url: String, _ media: inout [Medi
             case "h3", "h4", "h5", "h6":
                 result.append(.subheader(trim(parseRichText(item, &media))))
             case "pre":
-                result.append(.preformatted(.fixed(trim(parseRichText(item, &media)))))
+                result.append(.preformatted(text: .fixed(trim(parseRichText(item, &media))), language: nil))
             case "blockquote":
                 result.append(.blockQuote(text: .italic(trim(parseRichText(item, &media))), caption: .empty))
             case "img":

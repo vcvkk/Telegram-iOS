@@ -645,6 +645,8 @@ func attributedStringForRichText(_ text: RichText, styleStack: InstantPageTextSt
             let result = attributedStringForRichText(text, styleStack: styleStack, url: url)
             styleStack.pop()
             return result
+        case let .formula(latex):
+            return NSAttributedString(string: latex, attributes: styleStack.textAttributes())
     }
 }
 

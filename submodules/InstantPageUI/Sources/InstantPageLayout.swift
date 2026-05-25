@@ -173,7 +173,7 @@ public func layoutInstantPageBlock(webpage: TelegramMediaWebpage, userLocation: 
             setupStyleStack(styleStack, theme: theme, category: .paragraph, link: false)
             let (_, items, contentSize) = layoutTextItemWithString(attributedStringForRichText(text, styleStack: styleStack), boundingWidth: boundingWidth - horizontalInset * 2.0, horizontalInset: horizontalInset, offset: CGPoint(x: horizontalInset, y: 0.0), media: media, webpage: webpage)
             return InstantPageLayout(origin: CGPoint(), contentSize: contentSize, items: items)
-        case let .preformatted(text):
+        case let .preformatted(text: text, language: _):
             let styleStack = InstantPageTextStyleStack()
             setupStyleStack(styleStack, theme: theme, category: .paragraph, link: false)
             let backgroundInset: CGFloat = 14.0
