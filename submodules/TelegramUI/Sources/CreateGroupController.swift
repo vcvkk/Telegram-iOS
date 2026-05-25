@@ -805,7 +805,7 @@ public func createGroupControllerImpl(context: AccountContext, peerIds: [PeerId]
                         }
                         if let _ = updatingAvatar {
                             return context.engine.peers.updatePeerPhoto(peerId: result.peerId, photo: uploadedAvatar.get(), video: uploadedVideoAvatar?.0.get(), videoStartTimestamp: uploadedVideoAvatar?.1, mapResourceToAvatarSizes: { resource, representations in
-                                return mapResourceToAvatarSizes(postbox: context.account.postbox, resource: resource, representations: representations)
+                                return mapResourceToAvatarSizes(postbox: context.account.postbox, resource: resource._asResource(), representations: representations)
                             })
                             |> ignoreValues
                             |> `catch` { _ -> Signal<Never, CreateGroupError> in

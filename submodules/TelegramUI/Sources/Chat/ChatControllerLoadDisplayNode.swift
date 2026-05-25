@@ -762,7 +762,7 @@ extension ChatControllerImpl {
         
         let currentAccountPeer = self.context.account.postbox.loadedPeerWithId(self.context.account.peerId)
         |> map { peer in
-            return SendAsPeer(peer: peer, subscribers: nil, isPremiumRequired: false)
+            return SendAsPeer(peer: EnginePeer(peer), subscribers: nil, isPremiumRequired: false)
         }
         
         if let peerId = self.chatLocation.peerId, [Namespaces.Peer.CloudChannel, Namespaces.Peer.CloudGroup].contains(peerId.namespace) {
@@ -795,7 +795,7 @@ extension ChatControllerImpl {
                             }
                         }
                         if !hasAnonymousPeer {
-                            allPeers?.insert(SendAsPeer(peer: channel, subscribers: 0, isPremiumRequired: false), at: 0)
+                            allPeers?.insert(SendAsPeer(peer: EnginePeer(channel), subscribers: 0, isPremiumRequired: false), at: 0)
                         }
                     } else if let channel = peerViewMainPeer(peerView) as? TelegramChannel, case let .broadcast(info) = channel.info, (info.flags.contains(.messagesShouldHaveSignatures) || info.flags.contains(.messagesShouldHaveProfiles)) {
                         allPeers = peers
@@ -813,7 +813,7 @@ extension ChatControllerImpl {
                             allPeers?.insert(currentAccountPeer, at: 0)
                         }
                         if !hasAnonymousPeer {
-                            allPeers?.insert(SendAsPeer(peer: channel, subscribers: 0, isPremiumRequired: false), at: 0)
+                            allPeers?.insert(SendAsPeer(peer: EnginePeer(channel), subscribers: 0, isPremiumRequired: false), at: 0)
                         }
                     } else {
                         allPeers = peers.filter { $0.peer.id != peerViewMainPeer(peerView)?.id }

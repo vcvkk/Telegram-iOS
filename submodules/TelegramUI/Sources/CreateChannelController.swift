@@ -439,7 +439,7 @@ public func createChannelController(context: AccountContext, mode: CreateChannel
                     }
                     if let _ = updatingAvatar {
                         let _ = context.engine.peers.updatePeerPhoto(peerId: peerId, photo: uploadedAvatar.get(), video: uploadedVideoAvatar?.0.get(), videoStartTimestamp: uploadedVideoAvatar?.1, mapResourceToAvatarSizes: { resource, representations in
-                            return mapResourceToAvatarSizes(postbox: context.account.postbox, resource: resource, representations: representations)
+                            return mapResourceToAvatarSizes(postbox: context.account.postbox, resource: resource._asResource(), representations: representations)
                         }).start()
                     }
                     

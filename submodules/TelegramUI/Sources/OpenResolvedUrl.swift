@@ -1971,5 +1971,7 @@ func openResolvedUrlImpl(
                 }
                 navigationController?.pushViewController(controller)
             }
+        case .textStyle:
+            break
     }
 }
