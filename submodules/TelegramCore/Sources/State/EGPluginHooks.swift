@@ -2,6 +2,23 @@
 
 import Foundation
 
+// MARK: - Plugin menu item registration
+
+/// A UI entry point registered by a plugin via _ios_bridge.register_plugin_entry().
+public struct EGPluginMenuItem {
+    public let pluginId: String
+    public let entryType: String   // "chatlist" | "context_menu" | "profile"
+    public let itemId: String
+    public let title: String
+
+    public init(pluginId: String, entryType: String, itemId: String, title: String) {
+        self.pluginId  = pluginId
+        self.entryType = entryType
+        self.itemId    = itemId
+        self.title     = title
+    }
+}
+
 /// Closure-based hook registry. TelegramCore calls these at dispatch points.
 /// EGPluginEngine registers closures here at engine startup.
 /// No dependency on EGPluginEngine — TelegramCore stays self-contained.
@@ -66,6 +83,16 @@ public enum EGPluginHooks {
     public static func fireAsync(_ event: String, params: [String: Any] = [:]) {
         eventBusHookAsync?(event, params)
     }
+
+    // MARK: - Plugin menu item registry
+
+    /// All UI entry points registered by loaded plugins via register_plugin_entry().
+    /// Written on main thread; read on main thread from UI code.
+    public nonisolated(unsafe) static var registeredMenuItems: [EGPluginMenuItem] = []
+
+    /// Called when a plugin's registered menu item is tapped in the iOS UI.
+    /// Fires "plugin.menu_item_tapped" into Python via EGTLHookBridge.
+    public static var pluginMenuItemTappedHandler: ((String, String, String) -> Void)?
 }
 
 // MARK: - Event bus event catalogue (for plugin documentation)

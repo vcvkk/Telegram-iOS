@@ -3,6 +3,7 @@
 #import "EGIOSBridge.h"
 #import "EGViewRenderer.h"
 #import <UIKit/UIKit.h>
+#import <AVFoundation/AVFoundation.h>
 #import <netinet/in.h>
 #import <arpa/inet.h>
 #import <ifaddrs.h>
@@ -83,6 +84,20 @@ static void (^g_suppressAttributeTypeHandler)(NSString *, BOOL) = nil;
 static void (^g_sendMessageHandler)(long long, NSString *) = nil;
 // Wired by PluginsController.wireClientInfo: lets plugins send Telegram reactions
 static void (^g_sendReactionHandler)(long long, int32_t, NSString *) = nil;
+// Wired by EGPluginsEngineImpl: register a plugin menu entry in the iOS UI
+static void (^g_registerMenuItemHandler)(NSString *, NSString *, NSString *, NSString *) = nil;
+
+// ---------------------------------------------------------------------------
+// Overlay system storage (BRIDGE_VERSION 4)
+// ---------------------------------------------------------------------------
+// overlay_id → UIView added to key window
+static NSMutableDictionary<NSNumber *, UIView *>         *g_overlays      = nil;
+// overlay_id → array of EGGestureTarget (keeps them alive while overlay lives)
+static NSMutableDictionary<NSNumber *, NSMutableArray *> *g_overlayTargets = nil;
+// audio_id → AVAudioPlayer
+static NSMutableDictionary<NSNumber *, AVAudioPlayer *>  *g_audioPlayers  = nil;
+static int32_t g_nextOverlayId = 1;
+static int32_t g_nextAudioId   = 1;
 
 // UIKit values that must be read on main thread — cached at engine startup via prepareUIKitCaches.
 // Once written, only ever read (no synchronisation needed for reads after the barrier).
@@ -376,6 +391,71 @@ static NSMutableDictionary<NSString *, UIViewController *> *g_dialogs = nil;
     }];
 }
 @end
+
+// ---------------------------------------------------------------------------
+// Gesture target: bridges UIGestureRecognizer → Python callable (BRIDGE_VERSION 4)
+// ---------------------------------------------------------------------------
+
+@interface EGGestureTarget : NSObject
+- (instancetype)initWithCallback:(PyObject *)cb longPress:(BOOL)lp;
+- (void)handleGesture:(UIGestureRecognizer *)gr;
+@end
+
+@implementation EGGestureTarget {
+    PyObject *_callback;
+    BOOL      _isLongPress;
+}
+- (instancetype)initWithCallback:(PyObject *)cb longPress:(BOOL)lp {
+    if (!(self = [super init])) return nil;
+    Py_INCREF(cb);
+    _callback   = cb;
+    _isLongPress = lp;
+    return self;
+}
+- (void)dealloc {
+    if (_callback) {
+        PyGILState_STATE gs = PyGILState_Ensure();
+        Py_DECREF(_callback);
+        PyGILState_Release(gs);
+    }
+}
+- (void)handleGesture:(UIGestureRecognizer *)gr {
+    if (!_callback) return;
+    if (_isLongPress) {
+        BOOL began = (gr.state == UIGestureRecognizerStateBegan);
+        BOOL ended = (gr.state == UIGestureRecognizerStateEnded ||
+                      gr.state == UIGestureRecognizerStateCancelled);
+        if (!began && !ended) return;
+        PyGILState_STATE gs = PyGILState_Ensure();
+        PyObject *r = PyObject_CallFunctionObjArgs(_callback, began ? Py_True : Py_False, NULL);
+        if (!r) { PyErr_Print(); PyErr_Clear(); } else Py_DECREF(r);
+        PyGILState_Release(gs);
+    } else {
+        PyGILState_STATE gs = PyGILState_Ensure();
+        PyObject *r = PyObject_CallFunctionObjArgs(_callback, NULL);
+        if (!r) { PyErr_Print(); PyErr_Clear(); } else Py_DECREF(r);
+        PyGILState_Release(gs);
+    }
+}
+@end
+
+static UIWindow *eg_key_window_for_overlay(void) {
+    UIWindow *w = nil;
+    for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+        if ([scene isKindOfClass:[UIWindowScene class]] &&
+            scene.activationState == UISceneActivationStateForegroundActive) {
+            for (UIWindow *win in ((UIWindowScene *)scene).windows) {
+                if (win.isKeyWindow) { w = win; break; }
+            }
+        }
+        if (w) break;
+    }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    if (!w) w = [UIApplication sharedApplication].keyWindow;
+#pragma clang diagnostic pop
+    return w;
+}
 
 // show_dialog(spec) -> handle: present a Python widget tree as a modal sheet.
 static PyObject *py_show_dialog(PyObject *self, PyObject *args) {
@@ -1302,6 +1382,236 @@ static PyObject *py_get_network_type(PyObject *self, PyObject *args) {
     return PyUnicode_FromString(isWWAN ? "cellular" : "wifi");
 }
 
+// ---------------------------------------------------------------------------
+// Overlay / gesture / projectile / audio / plugin-entry (BRIDGE_VERSION 4)
+// ---------------------------------------------------------------------------
+
+// create_overlay(alpha=0.0) → int overlay_id
+// Creates a transparent interactive UIView on top of the key window.
+static PyObject *py_create_overlay(PyObject *self, PyObject *args) {
+    double alpha = 0.0;
+    if (!PyArg_ParseTuple(args, "|d", &alpha)) return NULL;
+
+    __block int32_t oid = -1;
+    void (^blk)(void) = ^{
+        if (!g_overlays) {
+            g_overlays       = [NSMutableDictionary new];
+            g_overlayTargets = [NSMutableDictionary new];
+        }
+        UIWindow *win = eg_key_window_for_overlay();
+        CGRect bounds = win ? win.bounds : [UIScreen mainScreen].bounds;
+        UIView *overlay = [[UIView alloc] initWithFrame:bounds];
+        overlay.backgroundColor = [UIColor colorWithWhite:0 alpha:(CGFloat)alpha];
+        overlay.userInteractionEnabled = YES;
+        overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        if (win) {
+            [win addSubview:overlay];
+            [win bringSubviewToFront:overlay];
+        }
+        oid = g_nextOverlayId++;
+        g_overlays[@(oid)]       = overlay;
+        g_overlayTargets[@(oid)] = [NSMutableArray new];
+    };
+    if ([NSThread isMainThread]) blk();
+    else dispatch_sync(dispatch_get_main_queue(), blk);
+    return PyLong_FromLong(oid);
+}
+
+// dismiss_overlay(overlay_id) → None
+static PyObject *py_dismiss_overlay(PyObject *self, PyObject *args) {
+    int oid = 0;
+    if (!PyArg_ParseTuple(args, "i", &oid)) return NULL;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIView *overlay = g_overlays[@(oid)];
+        if (overlay) {
+            [UIView animateWithDuration:0.2 animations:^{ overlay.alpha = 0; }
+                            completion:^(BOOL _) { [overlay removeFromSuperview]; }];
+            [g_overlays removeObjectForKey:@(oid)];
+        }
+        [g_overlayTargets removeObjectForKey:@(oid)];
+    });
+    Py_RETURN_NONE;
+}
+
+// add_tap_gesture(overlay_id, tap_count, callback) → None
+static PyObject *py_add_tap_gesture(PyObject *self, PyObject *args) {
+    int oid = 0, tapCount = 1;
+    PyObject *cb = Py_None;
+    if (!PyArg_ParseTuple(args, "iiO", &oid, &tapCount, &cb)) return NULL;
+    if (!PyCallable_Check(cb)) {
+        PyErr_SetString(PyExc_TypeError, "callback must be callable"); return NULL;
+    }
+    EGGestureTarget *target = [[EGGestureTarget alloc] initWithCallback:cb longPress:NO];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIView *overlay = g_overlays[@(oid)];
+        if (!overlay) return;
+        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
+            initWithTarget:target action:@selector(handleGesture:)];
+        tap.numberOfTapsRequired = (NSUInteger)MAX(1, tapCount);
+        [overlay addGestureRecognizer:tap];
+        [g_overlayTargets[@(oid)] addObject:target];
+        // Make lower-count taps require higher-count taps to fail (so double-tap takes priority)
+        for (UIGestureRecognizer *gr in overlay.gestureRecognizers) {
+            if (gr == tap || ![gr isKindOfClass:[UITapGestureRecognizer class]]) continue;
+            UITapGestureRecognizer *other = (UITapGestureRecognizer *)gr;
+            if (other.numberOfTapsRequired > tap.numberOfTapsRequired)
+                [tap requireGestureRecognizerToFail:other];
+            else if (tap.numberOfTapsRequired > other.numberOfTapsRequired)
+                [other requireGestureRecognizerToFail:tap];
+        }
+    });
+    Py_RETURN_NONE;
+}
+
+// add_longpress_gesture(overlay_id, callback, min_duration=0.4) → None
+// callback(started: bool) — True on began, False on ended/cancelled
+static PyObject *py_add_longpress_gesture(PyObject *self, PyObject *args) {
+    int oid = 0;
+    PyObject *cb = Py_None;
+    double minDur = 0.4;
+    if (!PyArg_ParseTuple(args, "iO|d", &oid, &cb, &minDur)) return NULL;
+    if (!PyCallable_Check(cb)) {
+        PyErr_SetString(PyExc_TypeError, "callback must be callable"); return NULL;
+    }
+    EGGestureTarget *target = [[EGGestureTarget alloc] initWithCallback:cb longPress:YES];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIView *overlay = g_overlays[@(oid)];
+        if (!overlay) return;
+        UILongPressGestureRecognizer *lp = [[UILongPressGestureRecognizer alloc]
+            initWithTarget:target action:@selector(handleGesture:)];
+        lp.minimumPressDuration = (NSTimeInterval)minDur;
+        [overlay addGestureRecognizer:lp];
+        [g_overlayTargets[@(oid)] addObject:target];
+    });
+    Py_RETURN_NONE;
+}
+
+// show_projectile(overlay_id, emoji, x, y, size, vx, vy, duration=1.4) → None
+// Launches an emoji label from (x,y) with velocity (vx,vy) along a parabolic arc.
+static PyObject *py_show_projectile(PyObject *self, PyObject *args) {
+    int oid = 0;
+    const char *emoji_c = "●";
+    double x0=0, y0=0, size=50, vx=0, vy=-500, dur=1.4;
+    if (!PyArg_ParseTuple(args, "isddddd|d", &oid, &emoji_c, &x0, &y0, &size, &vx, &vy, &dur))
+        return NULL;
+
+    NSString *emoji    = [NSString stringWithUTF8String:emoji_c];
+    CGFloat   cx       = (CGFloat)x0, cy = (CGFloat)y0, sz = (CGFloat)size;
+    CGFloat   cvx      = (CGFloat)vx, cvy = (CGFloat)vy;
+    CFTimeInterval dur2 = (CFTimeInterval)dur;
+    CGFloat   gravity  = 520.0f; // pt/s²
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIView *overlay = g_overlays[@(oid)];
+        if (!overlay) return;
+
+        UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(cx - sz/2, cy - sz/2, sz, sz)];
+        lbl.text              = emoji;
+        lbl.font              = [UIFont systemFontOfSize:sz * 0.85f];
+        lbl.textAlignment     = NSTextAlignmentCenter;
+        lbl.userInteractionEnabled = NO;
+        [overlay addSubview:lbl];
+
+        // Build parabolic position key-values (layer position = view center)
+        NSInteger steps = 32;
+        NSMutableArray<NSValue *> *positions = [NSMutableArray arrayWithCapacity:(NSUInteger)(steps+1)];
+        NSMutableArray<NSNumber *> *angles   = [NSMutableArray arrayWithCapacity:(NSUInteger)(steps+1)];
+        for (NSInteger i = 0; i <= steps; i++) {
+            double t = dur2 * i / steps;
+            CGFloat px = cx + cvx * (CGFloat)t;
+            CGFloat py = cy + cvy * (CGFloat)t + 0.5f * gravity * (CGFloat)(t * t);
+            [positions addObject:[NSValue valueWithCGPoint:CGPointMake(px, py)]];
+            [angles    addObject:@(M_PI * 3.0 * (cvx >= 0 ? 1.0 : -1.0) * i / steps)];
+        }
+
+        CAKeyframeAnimation *posAnim = [CAKeyframeAnimation animationWithKeyPath:@"position"];
+        posAnim.values          = positions;
+        posAnim.calculationMode = kCAAnimationLinear;
+        posAnim.duration        = dur2;
+
+        CAKeyframeAnimation *rotAnim = [CAKeyframeAnimation animationWithKeyPath:@"transform.rotation.z"];
+        rotAnim.values   = angles;
+        rotAnim.duration = dur2;
+
+        CAAnimationGroup *group = [CAAnimationGroup animation];
+        group.animations          = @[posAnim, rotAnim];
+        group.duration            = dur2;
+        group.fillMode            = kCAFillModeForwards;
+        group.removedOnCompletion = NO;
+
+        [lbl.layer addAnimation:group forKey:@"eg_proj"];
+
+        // Fade out before animation ends, then remove
+        CGFloat fadeDelay = (CGFloat)MAX(0.0, dur - 0.2);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(fadeDelay * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [UIView animateWithDuration:0.2 animations:^{ lbl.alpha = 0; }
+                            completion:^(BOOL _) {
+                [lbl.layer removeAnimationForKey:@"eg_proj"];
+                [lbl removeFromSuperview];
+            }];
+        });
+    });
+    Py_RETURN_NONE;
+}
+
+// load_audio(path) → int audio_id  (−1 on error)
+static PyObject *py_load_audio(PyObject *self, PyObject *args) {
+    const char *path_c = "";
+    if (!PyArg_ParseTuple(args, "s", &path_c)) return NULL;
+    NSString *path = [NSString stringWithUTF8String:path_c];
+
+    __block int32_t aid = -1;
+    void (^blk)(void) = ^{
+        if (!g_audioPlayers) g_audioPlayers = [NSMutableDictionary new];
+        NSURL *url = [NSURL fileURLWithPath:path];
+        NSError *err = nil;
+        AVAudioPlayer *player = [[AVAudioPlayer alloc] initWithContentsOfURL:url error:&err];
+        if (!player || err) return;
+        [player prepareToPlay];
+        aid = g_nextAudioId++;
+        g_audioPlayers[@(aid)] = player;
+    };
+    if ([NSThread isMainThread]) blk();
+    else dispatch_sync(dispatch_get_main_queue(), blk);
+    return PyLong_FromLong(aid);
+}
+
+// play_audio(audio_id, volume=1.0, rate=1.0) → None
+static PyObject *py_play_audio(PyObject *self, PyObject *args) {
+    int aid = 0;
+    double volume = 1.0, rate = 1.0;
+    if (!PyArg_ParseTuple(args, "i|dd", &aid, &volume, &rate)) return NULL;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        AVAudioPlayer *p = g_audioPlayers[@(aid)];
+        if (!p) return;
+        p.volume      = (float)volume;
+        p.enableRate  = YES;
+        p.rate        = (float)rate;
+        [p stop];
+        p.currentTime = 0;
+        [p play];
+    });
+    Py_RETURN_NONE;
+}
+
+// register_plugin_entry(plugin_id, entry_type, item_id, title) → None
+// entry_type: "chatlist" | "context_menu" | "profile"
+static PyObject *py_register_plugin_entry(PyObject *self, PyObject *args) {
+    const char *pid_c=NULL, *etype_c=NULL, *iid_c=NULL, *title_c=NULL;
+    if (!PyArg_ParseTuple(args, "ssss", &pid_c, &etype_c, &iid_c, &title_c)) return NULL;
+    NSString *pluginId  = [NSString stringWithUTF8String:pid_c];
+    NSString *entryType = [NSString stringWithUTF8String:etype_c];
+    NSString *itemId    = [NSString stringWithUTF8String:iid_c];
+    NSString *title     = [NSString stringWithUTF8String:title_c];
+    if (g_registerMenuItemHandler) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            g_registerMenuItemHandler(pluginId, entryType, itemId, title);
+        });
+    }
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef ios_bridge_methods[] = {
     {"log_text",           py_log_text,           METH_VARARGS, "log_text(msg, tag='Plugin')"},
     {"add_tl_hook",        py_add_tl_hook,        METH_VARARGS, "add_tl_hook(tl_type, callback)"},
@@ -1343,6 +1653,15 @@ static PyMethodDef ios_bridge_methods[] = {
     {"get_system_info",         py_get_system_info,         METH_NOARGS,  "get_system_info() -> dict with all hw/os/network info"},
     {"get_network_type",        py_get_network_type,        METH_NOARGS,  "get_network_type() -> 'wifi' | 'cellular' | 'none'"},
     {"get_network_info",        py_get_network_info,        METH_NOARGS,  "get_network_info() -> {'ip': str, 'type': str}"},
+    // BRIDGE_VERSION 4 — overlay / gesture / projectile / audio / plugin entry
+    {"create_overlay",          py_create_overlay,          METH_VARARGS, "create_overlay(alpha=0.0) -> overlay_id — transparent interactive UIView over key window"},
+    {"dismiss_overlay",         py_dismiss_overlay,         METH_VARARGS, "dismiss_overlay(overlay_id) — remove overlay with fade"},
+    {"add_tap_gesture",         py_add_tap_gesture,         METH_VARARGS, "add_tap_gesture(overlay_id, tap_count, callback) — tap_count=1 or 2"},
+    {"add_longpress_gesture",   py_add_longpress_gesture,   METH_VARARGS, "add_longpress_gesture(overlay_id, callback, min_duration=0.4) — callback(started: bool)"},
+    {"show_projectile",         py_show_projectile,         METH_VARARGS, "show_projectile(overlay_id, emoji, x, y, size, vx, vy, duration=1.4)"},
+    {"load_audio",              py_load_audio,              METH_VARARGS, "load_audio(path) -> audio_id or -1"},
+    {"play_audio",              py_play_audio,              METH_VARARGS, "play_audio(audio_id, volume=1.0, rate=1.0)"},
+    {"register_plugin_entry",   py_register_plugin_entry,   METH_VARARGS, "register_plugin_entry(plugin_id, entry_type, item_id, title)"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -1360,7 +1679,9 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     //   1 — initial release
     //   2 — added get_system_info, get_network_info, send_message
     //   3 — add_method_hook callbacks now receive view_ptr; add_view_label, get_theme_color, measure_text_width
-    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 3);
+    //   4 — create_overlay, dismiss_overlay, add_tap_gesture, add_longpress_gesture,
+    //         show_projectile, load_audio, play_audio, register_plugin_entry
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 4);
     return m;
 }
 
@@ -1468,6 +1789,9 @@ static id py_to_ns(PyObject *obj) {
 
 + (void (^)(long long, int32_t, NSString *))sendReactionHandler { return g_sendReactionHandler; }
 + (void)setSendReactionHandler:(void (^)(long long, int32_t, NSString *))b { g_sendReactionHandler = [b copy]; }
+
++ (void (^)(NSString *, NSString *, NSString *, NSString *))registerMenuItemHandler { return g_registerMenuItemHandler; }
++ (void)setRegisterMenuItemHandler:(void (^)(NSString *, NSString *, NSString *, NSString *))b { g_registerMenuItemHandler = [b copy]; }
 
 + (void)prepareUIKitCaches {
     // Must be called on the main thread once before plugins query system info.

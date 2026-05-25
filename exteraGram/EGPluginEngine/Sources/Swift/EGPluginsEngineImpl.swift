@@ -88,6 +88,16 @@ public final class EGPluginsEngineImpl {
             EGPythonBridge.sendReactionHandler = { peerId, msgId, emoticon in
                 EGPluginHooks.pluginSendReactionHandler?(peerId, msgId, emoticon)
             }
+            // Wire register_plugin_entry() → EGPluginHooks.registeredMenuItems
+            EGPythonBridge.registerMenuItemHandler = { pluginId, entryType, itemId, title in
+                let item = EGPluginMenuItem(pluginId: pluginId, entryType: entryType,
+                                           itemId: itemId, title: title)
+                if !EGPluginHooks.registeredMenuItems.contains(where: {
+                    $0.pluginId == pluginId && $0.itemId == itemId
+                }) {
+                    EGPluginHooks.registeredMenuItems.append(item)
+                }
+            }
             EGLogger.shared.log("PluginEngine", "Starting \(plugins.count) plugin(s)…")
             for plugin in plugins {
                 // loadPlugin also calls EGPluginRuntime.initialize() — dispatch_once makes it safe.
@@ -113,6 +123,8 @@ public final class EGPluginsEngineImpl {
             EGPluginHooks.messageInterceptHook = nil
             EGPythonBridge.sendMessageHandler = nil
             EGPythonBridge.sendReactionHandler = nil
+            EGPythonBridge.registerMenuItemHandler = nil
+            EGPluginHooks.registeredMenuItems.removeAll()
             for id in pluginIds {
                 if EGPythonBridge.isInitialized {
                     EGPythonBridge.unloadPlugin(id)

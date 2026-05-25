@@ -23,6 +23,7 @@ objc_library(
         "Sources/ObjC/EGViewRenderer.h",
     ],
     sdk_frameworks = [
+        "AVFoundation",
         "Foundation",
         "SystemConfiguration",
         "UIKit",

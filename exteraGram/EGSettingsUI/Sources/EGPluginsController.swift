@@ -292,6 +292,14 @@ public final class PluginsController {
                 add: true
             ).startStandalone()
         }
+
+        // Wire plugin menu item tap → Python event bus
+        EGPluginHooks.pluginMenuItemTappedHandler = { pluginId, entryType, itemId in
+            EGTLHookBridge.shared.dispatchTLHookAsync(
+                "plugin.menu_item_tapped",
+                snapshot: ["plugin_id": pluginId, "entry_type": entryType, "item_id": itemId]
+            )
+        }
     }
 
     private static func stateString(_ status: ConnectionStatus) -> String {
@@ -852,6 +860,7 @@ private struct PluginRowView: View {
     let onShare: () -> Void
     let onDelete: () -> Void
     let onSettings: () -> Void
+    let onLaunch: (() -> Void)?
 
     @ViewBuilder private var subtitleView: some View {
         HStack(spacing: 4) {
@@ -998,6 +1007,9 @@ private struct PluginRowView: View {
             if plugin.hasSettings && plugin.isEnabled && !plugin.isError && !plugin.isNotResponding {
                 cellButton(image: "msg_settings") { onSettings() }
             }
+            if let launch = onLaunch, plugin.isEnabled && !plugin.isError && !plugin.isNotResponding {
+                cellButton(image: "msg_plugins") { launch() }
+            }
             Spacer()
         }
     }
@@ -1106,7 +1118,10 @@ private struct EGPluginsView: View {
                                     context: context
                                 )
                                 nav.pushViewController(settingsVC, animated: true)
-                            }
+                            },
+                            onLaunch: EGPluginHooks.registeredMenuItems.contains(where: { $0.pluginId == plugin.id }) ? {
+                                EGPluginHooks.pluginMenuItemTappedHandler?(plugin.id, "chatlist", "open")
+                            } : nil
                         )
                     }
                 }
