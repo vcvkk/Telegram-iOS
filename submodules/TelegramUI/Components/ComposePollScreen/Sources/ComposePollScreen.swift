@@ -624,7 +624,8 @@ final class ComposePollScreenComponent: Component {
                             media: mappedSolution.2?.media
                         )
                     },
-                    hasUnseenVotes: false
+                    hasUnseenVotes: false,
+                    canViewStats: false
                 ),
                 deadlineTimeout: deadlineTimeout,
                 deadlineDate: deadlineDate,
