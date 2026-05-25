@@ -146,7 +146,7 @@ extension PeerInfoScreenNode {
         let dismissOnSelection = contextController == nil
         let currentAccountPeer = self.context.account.postbox.loadedPeerWithId(context.account.peerId)
         |> map { peer in
-            return [FoundPeer(peer: peer, subscribers: nil)]
+            return [FoundPeer(peer: EnginePeer(peer), subscribers: nil)]
         }
         let _ = (combineLatest(queue: Queue.mainQueue(), currentAccountPeer, self.displayAsPeersPromise.get() |> take(1))
         |> map { currentAccountPeer, availablePeers -> [FoundPeer] in
@@ -165,10 +165,10 @@ extension PeerInfoScreenNode {
                 
                 var isGroup = false
                 for peer in peers {
-                    if peer.peer is TelegramGroup {
+                    if case .legacyGroup = peer.peer {
                         isGroup = true
                         break
-                    } else if let peer = peer.peer as? TelegramChannel, case .group = peer.info {
+                    } else if case let .channel(channel) = peer.peer, case .group = channel.info {
                         isGroup = true
                         break
                     }
@@ -183,7 +183,7 @@ extension PeerInfoScreenNode {
                     if peer.peer.id.namespace == Namespaces.Peer.CloudUser {
                         subtitle = strongSelf.presentationData.strings.VoiceChat_PersonalAccount
                     } else if let subscribers = peer.subscribers {
-                        if let peer = peer.peer as? TelegramChannel, case .broadcast = peer.info {
+                        if case let .channel(channel) = peer.peer, case .broadcast = channel.info {
                             subtitle = strongSelf.presentationData.strings.Conversation_StatusSubscribers(subscribers)
                         } else {
                             subtitle = strongSelf.presentationData.strings.Conversation_StatusMembers(subscribers)
@@ -191,8 +191,8 @@ extension PeerInfoScreenNode {
                     }
 
                     let avatarSize = CGSize(width: 28.0, height: 28.0)
-                    let avatarSignal = peerAvatarCompleteImage(account: strongSelf.context.account, peer: EnginePeer(peer.peer), size: avatarSize)
-                    items.append(.action(ContextMenuActionItem(text: EnginePeer(peer.peer).displayTitle(strings: strongSelf.presentationData.strings, displayOrder: strongSelf.presentationData.nameDisplayOrder), textLayout: subtitle.flatMap { .secondLineWithValue($0) } ?? .singleLine, icon: { _ in nil }, iconSource: ContextMenuActionItemIconSource(size: avatarSize, signal: avatarSignal), action: { _, f in
+                    let avatarSignal = peerAvatarCompleteImage(account: strongSelf.context.account, peer: peer.peer, size: avatarSize)
+                    items.append(.action(ContextMenuActionItem(text: peer.peer.displayTitle(strings: strongSelf.presentationData.strings, displayOrder: strongSelf.presentationData.nameDisplayOrder), textLayout: subtitle.flatMap { .secondLineWithValue($0) } ?? .singleLine, icon: { _ in nil }, iconSource: ContextMenuActionItemIconSource(size: avatarSize, signal: avatarSignal), action: { _, f in
                         if dismissOnSelection {
                             f(.dismissWithoutContent)
                         }
@@ -248,7 +248,7 @@ extension PeerInfoScreenNode {
         let defaultJoinAsPeerId = defaultJoinAsPeerId ?? self.context.account.peerId
         let currentAccountPeer = self.context.account.postbox.loadedPeerWithId(self.context.account.peerId)
         |> map { peer in
-            return [FoundPeer(peer: peer, subscribers: nil)]
+            return [FoundPeer(peer: EnginePeer(peer), subscribers: nil)]
         }
         let _ = (combineLatest(queue: Queue.mainQueue(), currentAccountPeer, self.displayAsPeersPromise.get() |> take(1))
         |> map { currentAccountPeer, availablePeers -> [FoundPeer] in
@@ -271,7 +271,7 @@ extension PeerInfoScreenNode {
                 }
                 if let peer = selectedPeer {
                     let avatarSize = CGSize(width: 28.0, height: 28.0)
-                    items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.VoiceChat_DisplayAs, textLayout: .secondLineWithValue(EnginePeer(peer.peer).displayTitle(strings: strongSelf.presentationData.strings, displayOrder: strongSelf.presentationData.nameDisplayOrder)), icon: { _ in nil }, iconSource: ContextMenuActionItemIconSource(size: avatarSize, signal: peerAvatarCompleteImage(account: strongSelf.context.account, peer: EnginePeer(peer.peer), size: avatarSize)), action: { c, f in
+                    items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.VoiceChat_DisplayAs, textLayout: .secondLineWithValue(peer.peer.displayTitle(strings: strongSelf.presentationData.strings, displayOrder: strongSelf.presentationData.nameDisplayOrder)), icon: { _ in nil }, iconSource: ContextMenuActionItemIconSource(size: avatarSize, signal: peerAvatarCompleteImage(account: strongSelf.context.account, peer: peer.peer, size: avatarSize)), action: { c, f in
                         guard let strongSelf = self else {
                             return
                         }

@@ -3188,7 +3188,7 @@ final class StorageUsageScreenComponent: Component {
                             continue
                         }
                         
-                        result.append((peer: FoundPeer(peer: peer, subscribers: subscriberCount), value: value))
+                        result.append((peer: FoundPeer(peer: EnginePeer(peer), subscribers: subscriberCount), value: value))
                     }
                     
                     return result.sorted(by: { lhs, rhs in

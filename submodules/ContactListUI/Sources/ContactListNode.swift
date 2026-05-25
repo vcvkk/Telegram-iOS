@@ -1484,7 +1484,7 @@ public final class ContactListNode: ASDisplayNode {
                                         matches = isPeerEnabled(EnginePeer(mainPeer))
                                     }
                                     if matches {
-                                        resultPeers.append(FoundPeer(peer: mainPeer, subscribers: nil))
+                                        resultPeers.append(FoundPeer(peer: EnginePeer(mainPeer), subscribers: nil))
                                     }
                                 }
                             }
@@ -1500,7 +1500,7 @@ public final class ContactListNode: ASDisplayNode {
                                     if let maybePresence = presenceMap[peer.peer.id], let presence = maybePresence {
                                         resultPresences[peer.peer.id] = presence
                                     }
-                                    if let _ = peer.peer as? TelegramChannel {
+                                    if case .channel = peer.peer {
                                         var subscribers: Int32?
                                         if let maybeMemberCount = participantCountMap[peer.peer.id], let memberCount = maybeMemberCount {
                                             subscribers = Int32(memberCount)
@@ -1516,7 +1516,7 @@ public final class ContactListNode: ASDisplayNode {
                     } else {
                         foundLocalContacts = context.engine.contacts.searchContacts(query: query.lowercased())
                         |> map { peers, presences -> ([FoundPeer], [EnginePeer.Id: EnginePeer.Presence]) in
-                            return (peers.map({ FoundPeer(peer: $0._asPeer(), subscribers: nil) }), presences)
+                            return (peers.map({ FoundPeer(peer: $0, subscribers: nil) }), presences)
                         }
                     }
                     var foundRemoteContacts: Signal<([FoundPeer], [FoundPeer]), NoError> = .single(([], []))

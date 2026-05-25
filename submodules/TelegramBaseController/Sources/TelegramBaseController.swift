@@ -198,7 +198,7 @@ open class TelegramBaseController: ViewController, KeyShortcutResponder {
         self.context.joinGroupCall(peerId: peerId, invite: invite, requestJoinAsPeerId: { completion in
             let currentAccountPeer = context.account.postbox.loadedPeerWithId(context.account.peerId)
             |> map { peer in
-                return [FoundPeer(peer: peer, subscribers: nil)]
+                return [FoundPeer(peer: EnginePeer(peer), subscribers: nil)]
             }
             
             let _ = (combineLatest(
@@ -233,7 +233,7 @@ open class TelegramBaseController: ViewController, KeyShortcutResponder {
                         var items: [ActionSheetItem] = []
                         var isGroup = false
                         for peer in peers {
-                            if case .group = peer.peer {
+                            if case .legacyGroup = peer.peer {
                                 isGroup = true
                                 break
                             } else if case let .channel(channel) = peer.peer, case .group = channel.info {

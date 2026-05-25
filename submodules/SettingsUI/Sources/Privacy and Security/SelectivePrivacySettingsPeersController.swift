@@ -234,11 +234,11 @@ private enum SelectivePrivacyPeersEntry: ItemListNodeEntry {
             })
         case let .peerItem(_, dateTimeFormat, nameDisplayOrder, peer, editing, enabled):
             var text: ItemListPeerItemText = .none
-            if let group = peer.peer as? TelegramGroup {
+            if case let .legacyGroup(group) = peer.peer {
                 text = .text(presentationData.strings.Conversation_StatusMembers(Int32(group.participantCount)), .secondary)
-            } else if let channel = peer.peer as? TelegramChannel {
-                if let participantCount = peer.participantCount {
-                    text = .text(presentationData.strings.Conversation_StatusMembers(Int32(participantCount)), .secondary)
+            } else if case let .channel(channel) = peer.peer {
+                if let subscribers = peer.subscribers {
+                    text = .text(presentationData.strings.Conversation_StatusMembers(Int32(subscribers)), .secondary)
                 } else {
                     switch channel.info {
                         case .group:
@@ -248,8 +248,8 @@ private enum SelectivePrivacyPeersEntry: ItemListNodeEntry {
                     }
                 }
             }
-            return ItemListPeerItem(presentationData: presentationData, systemStyle: .glass, dateTimeFormat: dateTimeFormat, nameDisplayOrder: nameDisplayOrder, context: arguments.context, peer: EnginePeer(peer.peer), presence: nil, text: text, label: .none, editing: editing, switchValue: nil, enabled: enabled, selectable: true, sectionId: self.section, action: {
-                arguments.openPeer(EnginePeer(peer.peer))
+            return ItemListPeerItem(presentationData: presentationData, systemStyle: .glass, dateTimeFormat: dateTimeFormat, nameDisplayOrder: nameDisplayOrder, context: arguments.context, peer: peer.peer, presence: nil, text: text, label: .none, editing: editing, switchValue: nil, enabled: enabled, selectable: true, sectionId: self.section, action: {
+                arguments.openPeer(peer.peer)
             }, setPeerIdWithRevealedOptions: { previousId, id in
                 arguments.setPeerIdWithRevealedOptions(previousId, id)
             }, removePeer: { peerId in

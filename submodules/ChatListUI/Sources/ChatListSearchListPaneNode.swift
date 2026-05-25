@@ -1074,13 +1074,13 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
                     isSavedMessages = true
                 }
                 
-                return ContactsPeerItem(presentationData: ItemListPresentationData(presentationData), sortOrder: nameSortOrder, displayOrder: nameDisplayOrder, context: context, peerMode: .generalSearch(isSavedMessages: isSavedMessages), peer: .peer(peer: EnginePeer(peer.peer), chatPeer: EnginePeer(peer.peer)), status: .addressName(suffixString), badge: badge, requiresPremiumForMessaging: requiresPremiumForMessaging, enabled: enabled, selection: .none, editing: ContactsPeerItemEditing(editable: false, editing: false, revealed: false), index: nil, header: header, searchQuery: query, isAd: false, action: { _ in
-                    interaction.peerSelected(EnginePeer(peer.peer), nil, nil, nil, false)
+                return ContactsPeerItem(presentationData: ItemListPresentationData(presentationData), sortOrder: nameSortOrder, displayOrder: nameDisplayOrder, context: context, peerMode: .generalSearch(isSavedMessages: isSavedMessages), peer: .peer(peer: peer.peer, chatPeer: peer.peer), status: .addressName(suffixString), badge: badge, requiresPremiumForMessaging: requiresPremiumForMessaging, enabled: enabled, selection: .none, editing: ContactsPeerItemEditing(editable: false, editing: false, revealed: false), index: nil, header: header, searchQuery: query, isAd: false, action: { _ in
+                    interaction.peerSelected(peer.peer, nil, nil, nil, false)
                 }, disabledAction: { _ in
-                    interaction.disabledPeerSelected(EnginePeer(peer.peer), nil, requiresPremiumForMessaging ? .premiumRequired : .generic)
+                    interaction.disabledPeerSelected(peer.peer, nil, requiresPremiumForMessaging ? .premiumRequired : .generic)
                 }, contextAction: peerContextAction.flatMap { peerContextAction in
                     return { node, gesture, location in
-                        peerContextAction(EnginePeer(peer.peer), .search(nil), node, gesture, location)
+                        peerContextAction(peer.peer, .search(nil), node, gesture, location)
                     }
                 }, animationCache: interaction.animationCache, animationRenderer: interaction.animationRenderer, storyStats: storyStats.flatMap { stats in
                     return (stats.totalCount, stats.unseenCount, stats.hasUnseenCloseFriends, stats.hasLiveItems)
@@ -3081,15 +3081,15 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                     }
                 }
                 for peer in foundRemotePeers.0 {
-                    if !existingPeerIds.contains(peer.peer.id), filteredPeer(EnginePeer(peer.peer), EnginePeer(accountPeer)) {
+                    if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)) {
                         existingPeerIds.insert(peer.peer.id)
                         totalNumberOfLocalPeers += 1
                     }
                 }
-                
+
                 var totalNumberOfGlobalPeers = 0
                 for peer in foundRemotePeers.1 {
-                    if !existingPeerIds.contains(peer.peer.id), filteredPeer(EnginePeer(peer.peer), EnginePeer(accountPeer)) {
+                    if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)) {
                         totalNumberOfGlobalPeers += 1
                     }
                 }
@@ -3207,9 +3207,9 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                         break
                     }
                     
-                    if !existingPeerIds.contains(peer.peer.id), filteredPeer(EnginePeer(peer.peer), EnginePeer(accountPeer)) {
+                    if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)) {
                         existingPeerIds.insert(peer.peer.id)
-                        entries.append(.localPeer(EnginePeer(peer.peer), nil, nil, index, presentationData.theme, presentationData.strings, presentationData.nameSortOrder, presentationData.nameDisplayOrder, localExpandType, nil, false, false))
+                        entries.append(.localPeer(peer.peer, nil, nil, index, presentationData.theme, presentationData.strings, presentationData.nameSortOrder, presentationData.nameDisplayOrder, localExpandType, nil, false, false))
                         index += 1
                         numberOfLocalPeers += 1
                     }
@@ -3234,9 +3234,9 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                             break
                         }
                         
-                        if !existingPeerIds.contains(peer.peer.id), filteredPeer(EnginePeer(peer.peer), EnginePeer(accountPeer)) {
+                        if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)) {
                             existingPeerIds.insert(peer.peer.id)
-                            
+
                             entries.append(.globalPeer(peer, nil, index, presentationData.theme, presentationData.strings, presentationData.nameSortOrder, presentationData.nameDisplayOrder, globalExpandType, nil, false, finalQuery))
                             index += 1
                             numberOfGlobalPeers += 1
