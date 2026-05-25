@@ -40,9 +40,10 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
     let phoneNumber: String
     let phoneCodeHash: String
     let storeProduct: String
+    let premiumDays: Int32
     let supportEmailAddress: String
     let supportEmailSubject: String
-    
+
     init(
         sharedContext: SharedAccountContext,
         engine: TelegramEngineUnauthorized,
@@ -51,6 +52,7 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
         phoneNumber: String,
         phoneCodeHash: String,
         storeProduct: String,
+        premiumDays: Int32,
         supportEmailAddress: String,
         supportEmailSubject: String
     ) {
@@ -61,6 +63,7 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
         self.phoneNumber = phoneNumber
         self.phoneCodeHash = phoneCodeHash
         self.storeProduct = storeProduct
+        self.premiumDays = premiumDays
         self.supportEmailAddress = supportEmailAddress
         self.supportEmailSubject = supportEmailSubject
     }
@@ -116,7 +119,7 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
             self.state?.updated()
             
             let (currency, amount) = storeProduct.priceCurrencyAndAmount
-            let purpose: AppStoreTransactionPurpose = .authCode(restore: false, phoneNumber: component.phoneNumber, phoneCodeHash: component.phoneCodeHash, currency: currency, amount: amount)
+            let purpose: AppStoreTransactionPurpose = .authCode(restore: false, phoneNumber: component.phoneNumber, phoneCodeHash: component.phoneCodeHash, premiumDays: component.premiumDays, currency: currency, amount: amount)
             let _ = (component.engine.payments.canPurchasePremium(purpose: purpose)
             |> deliverOnMainQueue).start(next: { [weak self] available in
                 guard let self else {
@@ -468,6 +471,7 @@ public final class AuthorizationSequencePaymentScreen: ViewControllerComponentCo
         phoneNumber: String,
         phoneCodeHash: String,
         storeProduct: String,
+        premiumDays: Int32,
         supportEmailAddress: String,
         supportEmailSubject: String,
         back: @escaping () -> Void
@@ -480,6 +484,7 @@ public final class AuthorizationSequencePaymentScreen: ViewControllerComponentCo
             phoneNumber: phoneNumber,
             phoneCodeHash: phoneCodeHash,
             storeProduct: storeProduct,
+            premiumDays: premiumDays,
             supportEmailAddress: supportEmailAddress,
             supportEmailSubject: supportEmailSubject
         ), navigationBarAppearance: .transparent, theme: .default, updatedPresentationData: (initial: presentationData, signal: .single(presentationData)))
