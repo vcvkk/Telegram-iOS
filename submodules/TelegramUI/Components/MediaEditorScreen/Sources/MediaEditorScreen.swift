@@ -8103,7 +8103,7 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
                             case let .progress(progress):
                                 return .single((.progress(isVideo ? 0.5 + progress * 0.5 : progress), nil))
                             case let .complete(resource, _):
-                                let file = stickerFile(resource: resource, thumbnailResource: file.previewRepresentations.first?.resource, size: file.size ?? 0, dimensions: dimensions, duration: file.duration, isVideo: isVideo)
+                                let file = stickerFile(resource: resource._asResource(), thumbnailResource: file.previewRepresentations.first?.resource, size: file.size ?? 0, dimensions: dimensions, duration: file.duration, isVideo: isVideo)
                                 switch action {
                                 case .send:
                                     return .single((status, nil))
@@ -8117,7 +8117,7 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
                                     }
                                 case let .createStickerPack(title):
                                     let sticker = ImportSticker(
-                                        resource: .standalone(resource: resource),
+                                        resource: .standalone(resource: resource._asResource()),
                                         emojis: emojis,
                                         dimensions: dimensions,
                                         duration: duration,
@@ -8137,7 +8137,7 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
                                     }
                                 case let .addToStickerPack(pack, title):
                                     let sticker = ImportSticker(
-                                        resource: .standalone(resource: resource),
+                                        resource: .standalone(resource: resource._asResource()),
                                         emojis: emojis,
                                         dimensions: dimensions,
                                         duration: duration,
@@ -8182,7 +8182,8 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
                 case .update:
                     result = MediaEditorScreenImpl.Result(media: .sticker(file: file, emoji: emojis))
                 case .upload, .send:
-                    let file = stickerFile(resource: resource, thumbnailResource: file.previewRepresentations.first?.resource, size: resource.size ?? 0, dimensions: dimensions, duration: self.preferredStickerDuration(), isVideo: isVideo)
+                    let rawResource = resource._asResource()
+                    let file = stickerFile(resource: rawResource, thumbnailResource: file.previewRepresentations.first?.resource, size: rawResource.size ?? 0, dimensions: dimensions, duration: self.preferredStickerDuration(), isVideo: isVideo)
                     result = MediaEditorScreenImpl.Result(media: .sticker(file: file, emoji: emojis))
                 default:
                     result = MediaEditorScreenImpl.Result()
