@@ -1562,18 +1562,18 @@ public final class ContactListNode: ASDisplayNode {
                             var result = Set<EnginePeer.Id>()
                             
                             for peer in foundPeers.foundLocalContacts.0 {
-                                if let user = peer.peer as? TelegramUser, user.flags.contains(.requirePremium) {
+                                if case let .user(user) = peer.peer, user.flags.contains(.requirePremium) {
                                     result.insert(user.id)
                                 }
                             }
-                            
+
                             for peer in foundPeers.foundRemoteContacts.0 {
-                                if let user = peer.peer as? TelegramUser, user.flags.contains(.requirePremium) {
+                                if case let .user(user) = peer.peer, user.flags.contains(.requirePremium) {
                                     result.insert(user.id)
                                 }
                             }
                             for peer in foundPeers.foundRemoteContacts.1 {
-                                if let user = peer.peer as? TelegramUser, user.flags.contains(.requirePremium) {
+                                if case let .user(user) = peer.peer, user.flags.contains(.requirePremium) {
                                     result.insert(user.id)
                                 }
                             }
@@ -1655,16 +1655,16 @@ public final class ContactListNode: ASDisplayNode {
                                     continue
                                 }
                                 existingPeerIds.insert(peer.peer.id)
-                                peers.append(.peer(peer: peer.peer, isGlobal: false, participantCount: peer.subscribers))
+                                peers.append(.peer(peer: peer.peer._asPeer(), isGlobal: false, participantCount: peer.subscribers))
                                 if searchDeviceContacts,
-                                   let user = peer.peer as? TelegramUser,
+                                   case let .user(user) = peer.peer,
                                    let phone = user.phone {
                                     existingNormalizedPhoneNumbers.insert(DeviceContactNormalizedPhoneNumber(rawValue: formatPhoneNumber(phone)))
                                 }
                             }
                             for peer in remotePeers.0 {
                                 let matches: Bool
-                                if let user = peer.peer as? TelegramUser {
+                                if case let .user(user) = peer.peer {
                                     let phone = user.phone ?? ""
                                     if requirePhoneNumbers && phone.isEmpty {
                                         matches = false
@@ -1672,9 +1672,9 @@ public final class ContactListNode: ASDisplayNode {
                                         matches = true
                                     }
                                 } else if searchGroups || searchChannels {
-                                    if peer.peer is TelegramGroup && searchGroups {
+                                    if case .legacyGroup = peer.peer, searchGroups {
                                         matches = true
-                                    } else if let channel = peer.peer as? TelegramChannel {
+                                    } else if case let .channel(channel) = peer.peer {
                                         if case .group = channel.info {
                                             matches = searchGroups
                                         } else {
@@ -1692,9 +1692,9 @@ public final class ContactListNode: ASDisplayNode {
                                         continue
                                     }
                                     existingPeerIds.insert(peer.peer.id)
-                                    peers.append(.peer(peer: peer.peer, isGlobal: true, participantCount: peer.subscribers))
+                                    peers.append(.peer(peer: peer.peer._asPeer(), isGlobal: true, participantCount: peer.subscribers))
                                     if searchDeviceContacts,
-                                       let user = peer.peer as? TelegramUser,
+                                       case let .user(user) = peer.peer,
                                        let phone = user.phone {
                                         existingNormalizedPhoneNumbers.insert(DeviceContactNormalizedPhoneNumber(rawValue: formatPhoneNumber(phone)))
                                     }
@@ -1702,7 +1702,7 @@ public final class ContactListNode: ASDisplayNode {
                             }
                             for peer in remotePeers.1 {
                                 let matches: Bool
-                                if let user = peer.peer as? TelegramUser {
+                                if case let .user(user) = peer.peer {
                                     let phone = user.phone ?? ""
                                     if requirePhoneNumbers && phone.isEmpty {
                                         matches = false
@@ -1710,9 +1710,9 @@ public final class ContactListNode: ASDisplayNode {
                                         matches = true
                                     }
                                 } else if searchGroups || searchChannels {
-                                    if peer.peer is TelegramGroup {
+                                    if case .legacyGroup = peer.peer {
                                         matches = searchGroups
-                                    } else if let channel = peer.peer as? TelegramChannel {
+                                    } else if case let .channel(channel) = peer.peer {
                                         if case .group = channel.info {
                                             matches = searchGroups
                                         } else {
@@ -1724,15 +1724,15 @@ public final class ContactListNode: ASDisplayNode {
                                 } else {
                                     matches = false
                                 }
-                                
+
                                 if matches {
                                     if existingPeerIds.contains(peer.peer.id) || pendingRemovalPeerIds.contains(peer.peer.id) {
                                         continue
                                     }
                                     existingPeerIds.insert(peer.peer.id)
-                                    peers.append(.peer(peer: peer.peer, isGlobal: true, participantCount: peer.subscribers))
+                                    peers.append(.peer(peer: peer.peer._asPeer(), isGlobal: true, participantCount: peer.subscribers))
                                     if searchDeviceContacts,
-                                       let user = peer.peer as? TelegramUser,
+                                       case let .user(user) = peer.peer,
                                        let phone = user.phone {
                                         existingNormalizedPhoneNumbers.insert(DeviceContactNormalizedPhoneNumber(rawValue: formatPhoneNumber(phone)))
                                     }

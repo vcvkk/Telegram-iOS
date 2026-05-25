@@ -1499,14 +1499,14 @@ private func filteredPeerSearchQueryResults(value: ([FoundPeer], [FoundPeer]), s
     case .channels:
         return (
             value.0.filter { peer in
-                if let channel = peer.peer as? TelegramChannel, case .broadcast = channel.info {
+                if case let .channel(channel) = peer.peer, case .broadcast = channel.info {
                     return true
                 } else {
                     return false
                 }
             },
             value.1.filter { peer in
-                if let channel = peer.peer as? TelegramChannel, case .broadcast = channel.info {
+                if case let .channel(channel) = peer.peer, case .broadcast = channel.info {
                     return true
                 } else {
                     return false
