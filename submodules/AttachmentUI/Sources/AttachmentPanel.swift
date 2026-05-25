@@ -2220,11 +2220,15 @@ final class AttachmentPanel: ASDisplayNode, ASScrollViewDelegate, ASGestureRecog
     private func loadTextNodeIfNeeded() {
         if let _ = self.textInputPanelNode {
         } else {
-            let textInputPanelNode = AttachmentTextInputPanelNode(context: self.context, presentationInterfaceState: self.presentationInterfaceState, glass: self.panelStyle == .glass, isAttachment: true, isScheduledMessages: self.isScheduledMessages, presentController: { [weak self] c in
+            let textInputPanelNode = AttachmentTextInputPanelNode(context: self.context, presentationInterfaceState: self.presentationInterfaceState, glass: self.panelStyle == .glass, isAttachment: true, isScheduledMessages: self.isScheduledMessages, customEmojiAvailable: self.presentationInterfaceState.customEmojiAvailable, presentController: { [weak self] c in
                 if let strongSelf = self {
                     strongSelf.present(c)
                 }
-            }, makeEntityInputView: self.makeEntityInputView)
+            }, presentInGlobalOverlay: { [weak self] c in
+                self?.presentInGlobalOverlay(c)
+            }, getNavigationController: { [weak self] in
+                return self?.controller?.navigationController as? NavigationController
+            })
             if let data = self.context.currentAppConfiguration.with({ $0 }).data, let value = data["ios_disable_ai_chat"] as? Double, value == 1.0 {
             } else if let peerId = self.presentationInterfaceState.chatLocation.peerId, peerId.namespace != Namespaces.Peer.SecretChat {
                 textInputPanelNode.isAIEnabled = true

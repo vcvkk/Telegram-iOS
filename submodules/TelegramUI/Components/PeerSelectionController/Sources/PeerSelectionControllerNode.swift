@@ -964,8 +964,8 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                 self.addSubnode(forwardAccessoryPanelNode)
                 self.forwardAccessoryPanelNode = forwardAccessoryPanelNode
                 
-                let textInputPanelNode = AttachmentTextInputPanelNode(context: self.context, presentationInterfaceState: self.presentationInterfaceState, presentController: { [weak self] c in self?.present(c, nil) }, makeEntityInputView: {
-                    return nil
+                let textInputPanelNode = AttachmentTextInputPanelNode(context: self.context, presentationInterfaceState: self.presentationInterfaceState, customEmojiAvailable: self.presentationInterfaceState.customEmojiAvailable, presentController: { [weak self] c in self?.present(c, nil) }, presentInGlobalOverlay: { [weak self] c in self?.presentInGlobalOverlay(c, nil) }, getNavigationController: { [weak self] in
+                    return self?.controller?.navigationController as? NavigationController
                 })
                 textInputPanelNode.interfaceInteraction = self.interfaceInteraction
                 textInputPanelNode.sendMessage = { [weak self] mode, messageEffect in
