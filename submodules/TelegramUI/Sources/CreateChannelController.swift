@@ -503,7 +503,7 @@ public func createChannelController(context: AccountContext, mode: CreateChannel
                     let resource = LocalFileMediaResource(fileId: Int64.random(in: Int64.min ... Int64.max))
                     context.account.postbox.mediaBox.storeResourceData(resource.id, data: data)
                     let representation = TelegramMediaImageRepresentation(dimensions: PixelDimensions(width: 640, height: 640), resource: resource, progressiveSizes: [], immediateThumbnailData: nil, hasVideo: false, isPersonal: false)
-                    uploadedAvatar.set(context.engine.peers.uploadedPeerPhoto(resource: resource))
+                    uploadedAvatar.set(context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(resource)))
                     uploadedVideoAvatar = nil
                     updateState { current in
                         var current = current
@@ -605,7 +605,7 @@ public func createChannelController(context: AccountContext, mode: CreateChannel
                         }
                     }
                     
-                    uploadedAvatar.set(context.engine.peers.uploadedPeerPhoto(resource: photoResource))
+                    uploadedAvatar.set(context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(photoResource)))
                     
                     let promise = Promise<UploadedPeerPhotoData?>()
                     promise.set(signal
@@ -614,7 +614,7 @@ public func createChannelController(context: AccountContext, mode: CreateChannel
                     }
                     |> mapToSignal { resource -> Signal<UploadedPeerPhotoData?, NoError> in
                         if let resource = resource {
-                            return context.engine.peers.uploadedPeerVideo(resource: resource) |> map(Optional.init)
+                            return context.engine.peers.uploadedPeerVideo(resource: EngineMediaResource(resource)) |> map(Optional.init)
                         } else {
                             return .single(nil)
                         }

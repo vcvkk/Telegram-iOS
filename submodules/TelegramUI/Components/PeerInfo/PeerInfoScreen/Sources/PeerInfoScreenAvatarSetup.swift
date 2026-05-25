@@ -248,7 +248,7 @@ public extension PeerInfoScreenImpl {
         let postbox = context.account.postbox
         let signal: Signal<UpdatePeerPhotoStatus, UploadPeerPhotoError>
         
-        signal = context.engine.peers.updatePeerPhoto(peerId: peer.id, photo: context.engine.peers.uploadedPeerPhoto(resource: resource), mapResourceToAvatarSizes: { resource, representations in
+        signal = context.engine.peers.updatePeerPhoto(peerId: peer.id, photo: context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(resource)), mapResourceToAvatarSizes: { resource, representations in
             return mapResourceToAvatarSizes(postbox: postbox, resource: resource, representations: representations)
         })
         
@@ -409,7 +409,7 @@ public extension PeerInfoScreenImpl {
         let updateAvatarDisposable = MetaDisposable()
         updateAvatarDisposable.set((videoResource
         |> mapToSignal { videoResource -> Signal<UpdatePeerPhotoStatus, UploadPeerPhotoError> in
-            return context.engine.peers.updatePeerPhoto(peerId: peerId, photo: context.engine.peers.uploadedPeerPhoto(resource: photoResource), video: videoResource.flatMap { context.engine.peers.uploadedPeerVideo(resource: $0) |> map(Optional.init) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
+            return context.engine.peers.updatePeerPhoto(peerId: peerId, photo: context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(photoResource)), video: videoResource.flatMap { context.engine.peers.uploadedPeerVideo(resource: EngineMediaResource($0)) |> map(Optional.init) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
                 return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
             })
         }
@@ -815,7 +815,7 @@ extension PeerInfoScreenImpl {
                 return mapResourceToAvatarSizes(postbox: postbox, resource: resource, representations: representations)
             })
         } else {
-            signal = self.context.engine.peers.updatePeerPhoto(peerId: self.peerId, photo: self.context.engine.peers.uploadedPeerPhoto(resource: resource), mapResourceToAvatarSizes: { resource, representations in
+            signal = self.context.engine.peers.updatePeerPhoto(peerId: self.peerId, photo: self.context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(resource)), mapResourceToAvatarSizes: { resource, representations in
                 return mapResourceToAvatarSizes(postbox: postbox, resource: resource, representations: representations)
             })
         }
@@ -1037,7 +1037,7 @@ extension PeerInfoScreenImpl {
                     return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
                 })
             } else {
-                return context.engine.peers.updatePeerPhoto(peerId: peerId, photo: context.engine.peers.uploadedPeerPhoto(resource: photoResource), video: videoResource.flatMap { context.engine.peers.uploadedPeerVideo(resource: $0) |> map(Optional.init) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
+                return context.engine.peers.updatePeerPhoto(peerId: peerId, photo: context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(photoResource)), video: videoResource.flatMap { context.engine.peers.uploadedPeerVideo(resource: EngineMediaResource($0)) |> map(Optional.init) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
                     return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
                 })
             }
@@ -1251,7 +1251,7 @@ extension PeerInfoScreenImpl {
                     return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
                 })
             } else {
-                return context.engine.peers.updatePeerPhoto(peerId: peerId, photo: context.engine.peers.uploadedPeerPhoto(resource: photoResource), video: videoResource.flatMap { context.engine.peers.uploadedPeerVideo(resource: $0) |> map(Optional.init) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
+                return context.engine.peers.updatePeerPhoto(peerId: peerId, photo: context.engine.peers.uploadedPeerPhoto(resource: EngineMediaResource(photoResource)), video: videoResource.flatMap { context.engine.peers.uploadedPeerVideo(resource: EngineMediaResource($0)) |> map(Optional.init) }, videoStartTimestamp: videoStartTimestamp, markup: markup, mapResourceToAvatarSizes: { resource, representations in
                     return mapResourceToAvatarSizes(postbox: account.postbox, resource: resource, representations: representations)
                 })
             }
