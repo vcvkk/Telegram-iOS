@@ -2430,7 +2430,7 @@ final class StorageUsageScreenComponent: Component {
                                 
                                 if matches {
                                     result.imageItems.append(StorageMediaGridPanelComponent.Item(
-                                        message: EngineMessage(message),
+                                        message: message,
                                         size: messageSize
                                     ))
                                 }
@@ -2453,7 +2453,7 @@ final class StorageUsageScreenComponent: Component {
                                 
                                 if matches {
                                     result.fileItems.append(StorageFileListPanelComponent.Item(
-                                        message: message,
+                                        message: message._asMessage(),
                                         size: messageSize
                                     ))
                                 }
@@ -2473,7 +2473,7 @@ final class StorageUsageScreenComponent: Component {
                                 
                                 if matches {
                                     result.musicItems.append(StorageFileListPanelComponent.Item(
-                                        message: message,
+                                        message: message._asMessage(),
                                         size: messageSize
                                     ))
                                 }
