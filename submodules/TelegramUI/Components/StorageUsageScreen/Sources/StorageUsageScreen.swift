@@ -2395,7 +2395,7 @@ final class StorageUsageScreenComponent: Component {
                     var musicItems: [StorageFileListPanelComponent.Item] = []
                 }
                 
-                self.messagesDisposable = (component.context.engine.resources.renderStorageUsageStatsMessages(stats: contextStats, categories: [.files, .photos, .videos, .music], existingMessages: self.aggregatedData?.messages ?? [:])
+                self.messagesDisposable = (component.context.engine.resources.renderStorageUsageStatsMessages(stats: contextStats, categories: [.files, .photos, .videos, .music], existingMessages: self.aggregatedData?.messages.mapValues { EngineMessage($0) } ?? [:])
                 |> deliverOn(Queue())
                 |> map { messages -> RenderResult in
                     let result = RenderResult()
@@ -2954,7 +2954,7 @@ final class StorageUsageScreenComponent: Component {
                 
                 let totalSize = aggregatedData.selectedSize
                 
-                let _ = (component.context.engine.resources.clearStorage(peerId: component.peer?.id, categories: mappedCategories, includeMessages: aggregatedData.clearIncludeMessages, excludeMessages: aggregatedData.clearExcludeMessages)
+                let _ = (component.context.engine.resources.clearStorage(peerId: component.peer?.id, categories: mappedCategories, includeMessages: aggregatedData.clearIncludeMessages.map(EngineMessage.init), excludeMessages: aggregatedData.clearExcludeMessages.map(EngineMessage.init))
                 |> deliverOnMainQueue).start(next: { [weak self] progress in
                     guard let self else {
                         return
@@ -3068,17 +3068,17 @@ final class StorageUsageScreenComponent: Component {
                         }
                     }
                     
-                    var includeMessages: [Message] = []
-                    var excludeMessages: [Message] = []
-                    
+                    var includeMessages: [EngineMessage] = []
+                    var excludeMessages: [EngineMessage] = []
+
                     for (id, message) in aggregatedData.messages {
                         if aggregatedData.selectionState.selectedPeers.contains(id.peerId) {
                             if !aggregatedData.selectionState.selectedMessages.contains(id) {
-                                excludeMessages.append(message)
+                                excludeMessages.append(EngineMessage(message))
                             }
                         } else {
                             if aggregatedData.selectionState.selectedMessages.contains(id) {
-                                includeMessages.append(message)
+                                includeMessages.append(EngineMessage(message))
                             }
                         }
                     }
@@ -3292,7 +3292,7 @@ final class StorageUsageScreenComponent: Component {
                             }
                         })))
                     } else {
-                        subItems.append(.custom(MultiplePeerAvatarsContextItem(context: context, peers: peerExceptions.prefix(3).map { EnginePeer($0.peer.peer) }, totalCount: peerExceptions.count, action: { c, _ in
+                        subItems.append(.custom(MultiplePeerAvatarsContextItem(context: context, peers: peerExceptions.prefix(3).map { $0.peer.peer }, totalCount: peerExceptions.count, action: { c, _ in
                             c.dismiss(completion: {
                                 
                             })
