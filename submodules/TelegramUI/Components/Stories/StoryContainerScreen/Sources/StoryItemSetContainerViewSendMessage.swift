@@ -246,7 +246,7 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
                 
                 var availablePeers: [SendAsPeer] = []
                 availablePeers.append(SendAsPeer(
-                    peer: accountPeer._asPeer(),
+                    peer: accountPeer,
                     subscribers: nil,
                     isPremiumRequired: false
                 ))
@@ -4060,8 +4060,8 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
             let initialData = await ChatSendStarsScreen.initialData(
                 context: component.context,
                 peerId: peerId,
-                myPeer: (sendAsPeer?.peer).flatMap(EnginePeer.init),
-                reactSubject: .liveStream(peerId: peerId, storyId: focusedItem.storyItem.id, minAmount: Int(minAmount), liveChatMessageParams: LiveChatMessageParams(appConfig: component.context.currentAppConfiguration.with({ $0 })), availableSendAsPeers: component.isEmbeddedInCamera ? [] : (self.sendAsData?.availablePeers.map({ EnginePeer($0.peer) }) ?? []), isDisplayOnly: component.isEmbeddedInCamera),
+                myPeer: sendAsPeer?.peer,
+                reactSubject: .liveStream(peerId: peerId, storyId: focusedItem.storyItem.id, minAmount: Int(minAmount), liveChatMessageParams: LiveChatMessageParams(appConfig: component.context.currentAppConfiguration.with({ $0 })), availableSendAsPeers: component.isEmbeddedInCamera ? [] : (self.sendAsData?.availablePeers.map({ $0.peer }) ?? []), isDisplayOnly: component.isEmbeddedInCamera),
                 topPeers: topPeers,
                 completion: { [weak self, weak view] amount, privacy, _, _ in
                     guard let self, let view else {

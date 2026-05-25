@@ -3067,7 +3067,7 @@ public final class StoryItemSetContainerComponent: Component {
                         
                         sendAsConfiguration = sendAsPeer.flatMap { value in
                             return MessageInputPanelComponent.SendAsConfiguration(
-                                currentPeer: EnginePeer(value.peer),
+                                currentPeer: value.peer,
                                 subscriberCount: value.subscribers.flatMap(Int.init),
                                 isPremiumLocked: value.isPremiumRequired,
                                 isSelecting: self.sendMessageContext.isSelectingSendAsPeer,
@@ -7222,7 +7222,7 @@ public final class StoryItemSetContainerComponent: Component {
                         items.append(.separator)
                     }
                     
-                    let isMuted = resolvedAreStoriesMuted(globalSettings: globalSettings._asGlobalNotificationSettings(), peer: component.slice.effectivePeer._asPeer(), peerSettings: settings._asNotificationSettings(), topSearchPeers: topSearchPeers)
+                    let isMuted = resolvedAreStoriesMuted(globalSettings: globalSettings._asGlobalNotificationSettings(), peer: component.slice.effectivePeer, peerSettings: settings._asNotificationSettings(), topSearchPeers: topSearchPeers)
                     
                     if !component.slice.effectivePeer.isService && isContact {
                         items.append(.action(ContextMenuActionItem(text: isMuted ? component.strings.StoryFeed_ContextNotifyOn : component.strings.StoryFeed_ContextNotifyOff, icon: { theme in
