@@ -1028,7 +1028,7 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
                     }
                 }
                 if filter.contains(.onlyGroups) {
-                    if case .group = peer.peer {
+                    if case .legacyGroup = peer.peer {
                     } else if case let .channel(channel) = peer.peer, case .group = channel.info {
                     } else {
                         enabled = false
