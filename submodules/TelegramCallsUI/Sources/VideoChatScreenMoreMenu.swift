@@ -625,7 +625,7 @@ extension VideoChatScreenComponent.View {
         var isGroup = false
         if let displayAsPeers = self.displayAsPeers {
             for peer in displayAsPeers {
-                if case .group = peer.peer {
+                if case .legacyGroup = peer.peer {
                     isGroup = true
                     break
                 } else if case let .channel(channel) = peer.peer, case .group = channel.info {
