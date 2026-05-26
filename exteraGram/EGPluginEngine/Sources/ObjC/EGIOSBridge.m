@@ -90,12 +90,14 @@ static void (^g_registerMenuItemHandler)(NSString *, NSString *, NSString *, NSS
 // ---------------------------------------------------------------------------
 // Overlay system storage (BRIDGE_VERSION 4)
 // ---------------------------------------------------------------------------
-// overlay_id → UIView added to key window
-static NSMutableDictionary<NSNumber *, UIView *>         *g_overlays      = nil;
+// overlay_id → root UIView of the overlay UIWindow (content goes here)
+static NSMutableDictionary<NSNumber *, UIView *>         *g_overlays       = nil;
 // overlay_id → array of EGGestureTarget (keeps them alive while overlay lives)
 static NSMutableDictionary<NSNumber *, NSMutableArray *> *g_overlayTargets = nil;
+// overlay_id → UIWindow (kept alive; hidden/released on dismiss)
+static NSMutableDictionary<NSNumber *, UIWindow *>       *g_overlayWindows = nil;
 // audio_id → AVAudioPlayer
-static NSMutableDictionary<NSNumber *, AVAudioPlayer *>  *g_audioPlayers  = nil;
+static NSMutableDictionary<NSNumber *, AVAudioPlayer *>  *g_audioPlayers   = nil;
 static int32_t g_nextOverlayId = 1;
 static int32_t g_nextAudioId   = 1;
 
@@ -1387,7 +1389,9 @@ static PyObject *py_get_network_type(PyObject *self, PyObject *args) {
 // ---------------------------------------------------------------------------
 
 // create_overlay(alpha=0.0) → int overlay_id
-// Creates a transparent interactive UIView on top of the key window.
+// Creates a UIWindow at UIWindowLevelAlert+100 — above ALL Telegram windows.
+// Telegram uses a multi-window architecture; adding a UIView to the key window
+// puts it below the actual app-UI window, so touches bypass it.
 static PyObject *py_create_overlay(PyObject *self, PyObject *args) {
     double alpha = 0.0;
     if (!PyArg_ParseTuple(args, "|d", &alpha)) return NULL;
@@ -1397,20 +1401,43 @@ static PyObject *py_create_overlay(PyObject *self, PyObject *args) {
         if (!g_overlays) {
             g_overlays       = [NSMutableDictionary new];
             g_overlayTargets = [NSMutableDictionary new];
+            g_overlayWindows = [NSMutableDictionary new];
         }
-        UIWindow *win = eg_key_window_for_overlay();
-        CGRect bounds = win ? win.bounds : [UIScreen mainScreen].bounds;
-        UIView *overlay = [[UIView alloc] initWithFrame:bounds];
-        overlay.backgroundColor = [UIColor colorWithWhite:0 alpha:(CGFloat)alpha];
-        overlay.userInteractionEnabled = YES;
-        overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        if (win) {
-            [win addSubview:overlay];
-            [win bringSubviewToFront:overlay];
+
+        // Find the foreground UIWindowScene so the overlay appears in the correct screen.
+        UIWindowScene *scene = nil;
+        for (UIScene *s in [UIApplication sharedApplication].connectedScenes) {
+            if ([s isKindOfClass:[UIWindowScene class]] &&
+                s.activationState == UISceneActivationStateForegroundActive) {
+                scene = (UIWindowScene *)s;
+                break;
+            }
         }
+
+        UIWindow *overlayWin;
+        if (scene) {
+            overlayWin = [[UIWindow alloc] initWithWindowScene:scene];
+        } else {
+            overlayWin = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        }
+        overlayWin.frame            = [UIScreen mainScreen].bounds;
+        overlayWin.windowLevel      = UIWindowLevelAlert + 100.0f;
+        overlayWin.backgroundColor  = [UIColor colorWithWhite:0 alpha:(CGFloat)alpha];
+        overlayWin.userInteractionEnabled = YES;
+
+        UIViewController *rootVC    = [[UIViewController alloc] init];
+        rootVC.view.backgroundColor = [UIColor clearColor];
+        rootVC.view.userInteractionEnabled = YES;
+        overlayWin.rootViewController = rootVC;
+        overlayWin.hidden = NO;   // make visible WITHOUT stealing key-window status
+
         oid = g_nextOverlayId++;
-        g_overlays[@(oid)]       = overlay;
+        g_overlays[@(oid)]       = rootVC.view;  // gesture recognizers & projectile labels go here
         g_overlayTargets[@(oid)] = [NSMutableArray new];
+        g_overlayWindows[@(oid)] = overlayWin;   // retained here; released on dismiss
+        EGPluginDebugLog_appendCStr("Overlay",
+            [[NSString stringWithFormat:@"create_overlay id=%d level=%.0f",
+              oid, (double)overlayWin.windowLevel] UTF8String]);
     };
     if ([NSThread isMainThread]) blk();
     else dispatch_sync(dispatch_get_main_queue(), blk);
@@ -1422,13 +1449,21 @@ static PyObject *py_dismiss_overlay(PyObject *self, PyObject *args) {
     int oid = 0;
     if (!PyArg_ParseTuple(args, "i", &oid)) return NULL;
     dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *win   = g_overlayWindows[@(oid)];
         UIView *overlay = g_overlays[@(oid)];
-        if (overlay) {
-            [UIView animateWithDuration:0.2 animations:^{ overlay.alpha = 0; }
-                            completion:^(BOOL _) { [overlay removeFromSuperview]; }];
-            [g_overlays removeObjectForKey:@(oid)];
+        UIView *target  = win ?: overlay;
+        if (target) {
+            [UIView animateWithDuration:0.2 animations:^{ target.alpha = 0; }
+                            completion:^(BOOL _) {
+                win.hidden = YES;
+                [overlay removeFromSuperview];
+                [g_overlays removeObjectForKey:@(oid)];
+                [g_overlayWindows removeObjectForKey:@(oid)];
+            }];
         }
         [g_overlayTargets removeObjectForKey:@(oid)];
+        EGPluginDebugLog_appendCStr("Overlay",
+            [[NSString stringWithFormat:@"dismiss_overlay id=%d", oid] UTF8String]);
     });
     Py_RETURN_NONE;
 }
@@ -1444,12 +1479,17 @@ static PyObject *py_add_tap_gesture(PyObject *self, PyObject *args) {
     EGGestureTarget *target = [[EGGestureTarget alloc] initWithCallback:cb longPress:NO];
     dispatch_async(dispatch_get_main_queue(), ^{
         UIView *overlay = g_overlays[@(oid)];
-        if (!overlay) return;
+        if (!overlay) {
+            EGPluginDebugLog_appendCStr("Overlay", "add_tap_gesture: overlay not found");
+            return;
+        }
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
             initWithTarget:target action:@selector(handleGesture:)];
         tap.numberOfTapsRequired = (NSUInteger)MAX(1, tapCount);
         [overlay addGestureRecognizer:tap];
         [g_overlayTargets[@(oid)] addObject:target];
+        EGPluginDebugLog_appendCStr("Overlay",
+            [[NSString stringWithFormat:@"add_tap_gesture id=%d taps=%d", oid, tapCount] UTF8String]);
         // Make lower-count taps require higher-count taps to fail (so double-tap takes priority)
         for (UIGestureRecognizer *gr in overlay.gestureRecognizers) {
             if (gr == tap || ![gr isKindOfClass:[UITapGestureRecognizer class]]) continue;
@@ -1503,7 +1543,10 @@ static PyObject *py_show_projectile(PyObject *self, PyObject *args) {
 
     dispatch_async(dispatch_get_main_queue(), ^{
         UIView *overlay = g_overlays[@(oid)];
-        if (!overlay) return;
+        if (!overlay) {
+            EGPluginDebugLog_appendCStr("Overlay", "show_projectile: overlay not found");
+            return;
+        }
 
         UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(cx - sz/2, cy - sz/2, sz, sz)];
         lbl.text              = emoji;
