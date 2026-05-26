@@ -104,6 +104,12 @@ public final class EGPluginsEngineImpl {
                 self.loadPlugin(id: plugin.id, filePath: plugin.filePath)
             }
             EGLogger.shared.log("PluginEngine", "Engine started")
+            // Notify UI that plugin menu items may have been registered.
+            // Slight delay ensures py_register_plugin_entry's dispatch_async(main) has run.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NotificationCenter.default.post(
+                    name: Notification.Name("EGPluginMenuItemsUpdated"), object: nil)
+            }
             completion()
         }
     }

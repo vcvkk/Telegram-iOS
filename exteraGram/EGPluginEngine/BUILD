@@ -25,6 +25,7 @@ objc_library(
     sdk_frameworks = [
         "AVFoundation",
         "Foundation",
+        "ImageIO",
         "SystemConfiguration",
         "UIKit",
     ],

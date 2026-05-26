@@ -6720,11 +6720,17 @@ private final class ChatListLocationContext {
     var settingsButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
     var proxyButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
     var storyButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
-    
+    // MARK: exteraGram — plugin entry-point button
+    var pluginButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
+
     var rightButtons: [AnyComponentWithIdentity<NavigationButtonComponentEnvironment>] {
         var result: [AnyComponentWithIdentity<NavigationButtonComponentEnvironment>] = []
         if let settingsButton = self.settingsButton {
             result.append(settingsButton)
+        }
+        // MARK: exteraGram
+        if let pluginButton = self.pluginButton {
+            result.append(pluginButton)
         }
         if let rightButton = self.rightButton {
             result.append(rightButton)
@@ -7080,13 +7086,56 @@ private final class ChatListLocationContext {
                 }
             }
         })
+
+        // MARK: exteraGram — react to plugin registration
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name("EGPluginMenuItemsUpdated"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.updatePluginButton()
+            self.parentController?.requestLayout(transition: .animated(duration: 0.2, curve: .easeInOut))
+        }
     }
-                                
+
     deinit {
         self.titleDisposable?.dispose()
         self.stateDisposable?.dispose()
     }
-    
+
+    // MARK: exteraGram — plugin button
+    fileprivate func updatePluginButton() {
+        guard case .chatList(.root) = self.location else {
+            self.pluginButton = nil
+            return
+        }
+        let items = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "chatlist" }
+        if items.isEmpty {
+            self.pluginButton = nil
+        } else {
+            self.pluginButton = AnyComponentWithIdentity(
+                id: "plugins",
+                component: AnyComponent(NavigationButtonComponent(
+                    content: .icon(imageName: "Chat/Context Menu/Bots"),
+                    pressed: { [weak self] _ in
+                        guard let self else { return }
+                        let chatItems = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "chatlist" }
+                        if chatItems.count == 1 {
+                            EGPluginHooks.pluginMenuItemTappedHandler?(
+                                chatItems[0].pluginId, chatItems[0].entryType, chatItems[0].itemId)
+                        } else {
+                            for item in chatItems {
+                                EGPluginHooks.pluginMenuItemTappedHandler?(
+                                    item.pluginId, item.entryType, item.itemId)
+                            }
+                        }
+                    }
+                ))
+            )
+        }
+    }
+
     private func updateChatList(
         hideStories: Bool,
         networkState: AccountNetworkState,
@@ -7223,7 +7272,10 @@ private final class ChatListLocationContext {
                 } else {
                     self.storyButton = nil
                 }
-                
+
+                // MARK: exteraGram — plugin chatlist button
+                self.updatePluginButton()
+
                 // MARK: exteraGram
                 if EGSimpleSettings.shared.hideTabBar {
                     self.settingsButton = AnyComponentWithIdentity(id: "settings", component: AnyComponent(NavigationButtonComponent(

@@ -4,6 +4,7 @@
 #import "EGViewRenderer.h"
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
+#import <ImageIO/ImageIO.h>
 #import <netinet/in.h>
 #import <arpa/inet.h>
 #import <ifaddrs.h>
@@ -438,6 +439,66 @@ static NSMutableDictionary<NSString *, UIViewController *> *g_dialogs = nil;
         if (!r) { PyErr_Print(); PyErr_Clear(); } else Py_DECREF(r);
         PyGILState_Release(gs);
     }
+}
+@end
+
+// ---------------------------------------------------------------------------
+// Raw-touch overlay view: forwards touchesBegan/Moved/Ended/Cancelled → Python
+// (BRIDGE_VERSION 5 — add_touch_handler)
+// ---------------------------------------------------------------------------
+
+@interface EGOverlayContentView : UIView
+- (void)setTouchCallback:(PyObject *)callback;
+@end
+
+@implementation EGOverlayContentView {
+    PyObject *_touchCallback;
+}
+- (void)setTouchCallback:(PyObject *)callback {
+    PyGILState_STATE gs = PyGILState_Ensure();
+    Py_XDECREF(_touchCallback);
+    _touchCallback = callback;
+    Py_XINCREF(callback);
+    PyGILState_Release(gs);
+}
+- (void)dealloc {
+    if (_touchCallback) {
+        PyGILState_STATE gs = PyGILState_Ensure();
+        Py_DECREF(_touchCallback);
+        PyGILState_Release(gs);
+        _touchCallback = NULL;
+    }
+}
+- (void)_fireTouchEvent:(int)action touch:(UITouch *)touch {
+    if (!_touchCallback) return;
+    CGPoint pt = [touch locationInView:self];
+    PyGILState_STATE gs = PyGILState_Ensure();
+    PyObject *r = PyObject_CallFunction(_touchCallback, "idd", action, (double)pt.x, (double)pt.y);
+    if (!r) { PyErr_Print(); PyErr_Clear(); } else Py_DECREF(r);
+    PyGILState_Release(gs);
+}
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    for (UITouch *t in touches) [self _fireTouchEvent:0 touch:t];
+}
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    for (UITouch *t in touches) [self _fireTouchEvent:2 touch:t];
+}
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    for (UITouch *t in touches) [self _fireTouchEvent:1 touch:t];
+}
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    for (UITouch *t in touches) [self _fireTouchEvent:1 touch:t];
+}
+@end
+
+@interface EGOverlayViewController : UIViewController
+@end
+@implementation EGOverlayViewController
+- (void)loadView {
+    EGOverlayContentView *v = [[EGOverlayContentView alloc] init];
+    v.backgroundColor = UIColor.clearColor;
+    v.userInteractionEnabled = YES;
+    self.view = v;
 }
 @end
 
@@ -1425,9 +1486,7 @@ static PyObject *py_create_overlay(PyObject *self, PyObject *args) {
         overlayWin.backgroundColor  = [UIColor colorWithWhite:0 alpha:(CGFloat)alpha];
         overlayWin.userInteractionEnabled = YES;
 
-        UIViewController *rootVC    = [[UIViewController alloc] init];
-        rootVC.view.backgroundColor = [UIColor clearColor];
-        rootVC.view.userInteractionEnabled = YES;
+        EGOverlayViewController *rootVC = [[EGOverlayViewController alloc] init];
         overlayWin.rootViewController = rootVC;
         overlayWin.hidden = NO;   // make visible WITHOUT stealing key-window status
 
@@ -1655,6 +1714,149 @@ static PyObject *py_register_plugin_entry(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
+// ---------------------------------------------------------------------------
+// BRIDGE_VERSION 5 — show_splat, add_touch_handler, download_file
+// ---------------------------------------------------------------------------
+
+// GIF/PNG/JPG decoder: returns animated UIImage (multi-frame) or static UIImage.
+// Called on main thread from py_show_splat.
+static UIImage *eg_animated_image_from_data(NSData *data) {
+    if (!data || data.length == 0) return nil;
+    CGImageSourceRef src = CGImageSourceCreateWithData((__bridge CFDataRef)data, nil);
+    if (!src) return nil;
+    size_t count = CGImageSourceGetCount(src);
+    if (count == 0) { CFRelease(src); return nil; }
+    if (count == 1) {
+        CGImageRef cg = CGImageSourceCreateImageAtIndex(src, 0, nil);
+        CFRelease(src);
+        if (!cg) return nil;
+        UIImage *img = [UIImage imageWithCGImage:cg];
+        CGImageRelease(cg);
+        return img;
+    }
+    NSMutableArray<UIImage *> *frames = [NSMutableArray arrayWithCapacity:count];
+    double totalDuration = 0.0;
+    for (size_t i = 0; i < count; i++) {
+        CGImageRef cg = CGImageSourceCreateImageAtIndex(src, i, nil);
+        if (!cg) continue;
+        [frames addObject:[UIImage imageWithCGImage:cg]];
+        CGImageRelease(cg);
+        double delay = 0.1;
+        CFDictionaryRef props = CGImageSourceCopyPropertiesAtIndex(src, i, nil);
+        if (props) {
+            CFDictionaryRef gd = CFDictionaryGetValue(props, kCGImagePropertyGIFDictionary);
+            if (gd) {
+                CFNumberRef n = CFDictionaryGetValue(gd, kCGImagePropertyGIFUnclampedDelayTime);
+                if (!n) n = CFDictionaryGetValue(gd, kCGImagePropertyGIFDelayTime);
+                if (n) CFNumberGetValue(n, kCFNumberDoubleType, &delay);
+                if (delay < 0.011) delay = 0.1;
+            }
+            CFRelease(props);
+        }
+        totalDuration += delay;
+    }
+    CFRelease(src);
+    if (frames.count == 0) return nil;
+    return [UIImage animatedImageWithImages:frames duration:totalDuration];
+}
+
+// show_splat(overlay_id, image_path, x, y, size) → None
+// Display a GIF/PNG centered at (x,y) on the overlay; fade-in 250ms; auto-remove after one loop.
+static PyObject *py_show_splat(PyObject *self, PyObject *args) {
+    int oid = 0;
+    const char *path_c = "";
+    double x = 0, y = 0, sz = 200.0;
+    if (!PyArg_ParseTuple(args, "isddd", &oid, &path_c, &x, &y, &sz)) return NULL;
+    NSString *path = [NSString stringWithUTF8String:path_c];
+    CGFloat cx = (CGFloat)x, cy = (CGFloat)y, size = (CGFloat)sz;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIView *overlay = g_overlays[@(oid)];
+        if (!overlay) {
+            EGPluginDebugLog_appendCStr("Splat", "show_splat: overlay not found");
+            return;
+        }
+        NSData *data = [NSData dataWithContentsOfFile:path];
+        if (!data || data.length == 0) {
+            EGPluginDebugLog_appendCStr("Splat", "show_splat: file not found or empty");
+            return;
+        }
+        UIImage *img = eg_animated_image_from_data(data);
+        if (!img) {
+            EGPluginDebugLog_appendCStr("Splat", "show_splat: could not decode image");
+            return;
+        }
+        UIImageView *iv = [[UIImageView alloc] initWithImage:img];
+        iv.frame = CGRectMake(cx - size/2.0f, cy - size/2.0f, size, size);
+        iv.contentMode = UIViewContentModeScaleAspectFit;
+        iv.userInteractionEnabled = NO;
+        iv.alpha = 0.0f;
+        [overlay addSubview:iv];
+        [UIView animateWithDuration:0.25 animations:^{ iv.alpha = 1.0f; }];
+        double removeDur = (img.images.count > 1 && img.duration > 0)
+            ? img.duration + 0.15
+            : 1.5;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(removeDur * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [UIView animateWithDuration:0.2 animations:^{ iv.alpha = 0.0f; }
+                            completion:^(BOOL _) { [iv removeFromSuperview]; }];
+        });
+    });
+    Py_RETURN_NONE;
+}
+
+// add_touch_handler(overlay_id, callback) → None
+// callback(action: int, x: float, y: float) — action: 0=down, 1=up/cancel, 2=move
+static PyObject *py_add_touch_handler(PyObject *self, PyObject *args) {
+    int oid = 0;
+    PyObject *cb = Py_None;
+    if (!PyArg_ParseTuple(args, "iO", &oid, &cb)) return NULL;
+    if (!PyCallable_Check(cb)) {
+        PyErr_SetString(PyExc_TypeError, "callback must be callable"); return NULL;
+    }
+    Py_INCREF(cb);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIView *overlay = g_overlays[@(oid)];
+        if (!overlay || ![overlay isKindOfClass:[EGOverlayContentView class]]) {
+            PyGILState_STATE gs = PyGILState_Ensure();
+            Py_DECREF(cb);
+            PyGILState_Release(gs);
+            EGPluginDebugLog_appendCStr("Overlay", "add_touch_handler: overlay not found or wrong type");
+            return;
+        }
+        [(EGOverlayContentView *)overlay setTouchCallback:cb];
+        PyGILState_STATE gs = PyGILState_Ensure();
+        Py_DECREF(cb);  // EGOverlayContentView now owns its own reference
+        PyGILState_Release(gs);
+        EGPluginDebugLog_appendCStr("Overlay",
+            [[NSString stringWithFormat:@"add_touch_handler id=%d", oid] UTF8String]);
+    });
+    Py_RETURN_NONE;
+}
+
+// download_file(url, dest_path) → bool
+// Synchronous HTTP GET. Releases GIL while waiting so other Python threads can run.
+// Times out after 30 seconds.
+static PyObject *py_download_file(PyObject *self, PyObject *args) {
+    const char *url_c = "", *dest_c = "";
+    if (!PyArg_ParseTuple(args, "ss", &url_c, &dest_c)) return NULL;
+    NSURL *url = [NSURL URLWithString:[NSString stringWithUTF8String:url_c]];
+    NSString *dest = [NSString stringWithUTF8String:dest_c];
+    if (!url || !dest.length) Py_RETURN_FALSE;
+    __block BOOL success = NO;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    Py_BEGIN_ALLOW_THREADS
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession]
+        dataTaskWithURL:url
+      completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+        if (!err && data.length > 0) success = [data writeToFile:dest atomically:YES];
+        dispatch_semaphore_signal(sem);
+    }];
+    [task resume];
+    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30LL * NSEC_PER_SEC));
+    Py_END_ALLOW_THREADS
+    return PyBool_FromLong(success ? 1 : 0);
+}
+
 static PyMethodDef ios_bridge_methods[] = {
     {"log_text",           py_log_text,           METH_VARARGS, "log_text(msg, tag='Plugin')"},
     {"add_tl_hook",        py_add_tl_hook,        METH_VARARGS, "add_tl_hook(tl_type, callback)"},
@@ -1705,6 +1907,10 @@ static PyMethodDef ios_bridge_methods[] = {
     {"load_audio",              py_load_audio,              METH_VARARGS, "load_audio(path) -> audio_id or -1"},
     {"play_audio",              py_play_audio,              METH_VARARGS, "play_audio(audio_id, volume=1.0, rate=1.0)"},
     {"register_plugin_entry",   py_register_plugin_entry,   METH_VARARGS, "register_plugin_entry(plugin_id, entry_type, item_id, title)"},
+    // BRIDGE_VERSION 5 — show_splat, add_touch_handler, download_file
+    {"show_splat",              py_show_splat,              METH_VARARGS, "show_splat(overlay_id, image_path, x, y, size) — show GIF/PNG at position, fade-in, auto-remove"},
+    {"add_touch_handler",       py_add_touch_handler,       METH_VARARGS, "add_touch_handler(overlay_id, callback) — callback(action:int, x:float, y:float): 0=down, 1=up/cancel, 2=move"},
+    {"download_file",           py_download_file,           METH_VARARGS, "download_file(url, dest_path) -> bool — synchronous HTTP download"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -1724,7 +1930,8 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     //   3 — add_method_hook callbacks now receive view_ptr; add_view_label, get_theme_color, measure_text_width
     //   4 — create_overlay, dismiss_overlay, add_tap_gesture, add_longpress_gesture,
     //         show_projectile, load_audio, play_audio, register_plugin_entry
-    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 4);
+    //   5 — show_splat, add_touch_handler, download_file; EGOverlayContentView raw touch
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 5);
     return m;
 }
 

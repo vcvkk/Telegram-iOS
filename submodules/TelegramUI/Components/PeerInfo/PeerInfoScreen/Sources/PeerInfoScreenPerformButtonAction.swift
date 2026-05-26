@@ -1293,11 +1293,33 @@ extension PeerInfoScreenNode {
                     }
                 }
                 
+                // MARK: exteraGram — plugin "profile" entries
+                let pluginEntries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "profile" }
+                if !pluginEntries.isEmpty {
+                    items.append(.separator)
+                    for entry in pluginEntries {
+                        let pluginId = entry.pluginId
+                        let entryType = entry.entryType
+                        let itemId = entry.itemId
+                        let title = entry.title
+                        items.append(.action(ContextMenuActionItem(
+                            text: title,
+                            icon: { theme in generateTintedImage(
+                                image: UIImage(bundleImageName: "Chat/Context Menu/Bots"),
+                                color: theme.contextMenu.primaryColor) },
+                            action: { _, f in
+                                f(.default)
+                                EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                            }
+                        )))
+                    }
+                }
+
                 return .single(items)
             }
-            
+
             self.view.endEditing(true)
-            
+
             if let sourceNode = self.headerNode.buttonNodes[.more]?.referenceNode {
                 let items = mainItemsImpl?() ?? .single([])
                 
