@@ -4,14 +4,26 @@ __version__     = "1.0"
 __author__      = "@oodze"
 __description__ = "Throw tomatoes at anyone! **Tap** to launch · **Hold** for machine-gun · **Double-tap** to close."
 
+# NOTE: do NOT import random/math/struct — they are .so C extensions that are
+# not code-signed in unsigned builds and fail to dlopen on iOS.
 import _ios_bridge as bridge
 import threading
-import random
+import time
+
+# ── pure-Python LCG (no C deps) ────────────────────────────────────────────────
+_rng = [0xA3B2C1D0]
+
+def _rand():
+    """Lehmer LCG — returns float in [0, 1)."""
+    _rng[0] = (_rng[0] * 1664525 + 1013904223) & 0xFFFFFFFF
+    return _rng[0] / 0x100000000
+
+def _uniform(a, b):
+    return a + _rand() * (b - a)
 
 # ── runtime state ──────────────────────────────────────────────────────────────
 _overlay_id   = None
 _rapid_active = False
-_rapid_thread = None
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -21,20 +33,17 @@ def _screen_size():
 
 def _throw_tomato(oid):
     w, h  = _screen_size()
-    x0    = random.uniform(w * 0.12, w * 0.88)
+    x0    = _uniform(w * 0.12, w * 0.88)
     y0    = h + 10
-    vx    = random.uniform(-150, 150)
-    # Upward velocity: enough to reach roughly 70-100% of screen height
-    vy    = random.uniform(-h * 0.95, -h * 0.65)
-    size  = random.uniform(46, 74)
+    vx    = _uniform(-150.0, 150.0)
+    vy    = _uniform(-h * 0.95, -h * 0.65)
+    size  = _uniform(46.0, 74.0)
     bridge.show_projectile(oid, "🍅", x0, y0, size, vx, vy, 1.5)
 
 def _rapid_loop(oid):
     global _rapid_active
     while _rapid_active:
         bridge.run_on_main_thread(lambda o=oid: _throw_tomato(o))
-        # ~8 tomatoes/sec
-        import time
         time.sleep(0.12)
 
 # ── gesture handlers ───────────────────────────────────────────────────────────
@@ -50,13 +59,11 @@ def _on_double_tap(oid):
     _overlay_id = None
 
 def _on_longpress(oid, started):
-    global _rapid_active, _rapid_thread
+    global _rapid_active
     if started:
         _rapid_active = True
-        _rapid_thread = threading.Thread(
-            target=_rapid_loop, args=(oid,), daemon=True, name="tomato_rapid"
-        )
-        _rapid_thread.start()
+        t = threading.Thread(target=_rapid_loop, args=(oid,), daemon=True)
+        t.start()
         bridge.haptic_feedback("heavy")
     else:
         _rapid_active = False
@@ -66,20 +73,14 @@ def _on_longpress(oid, started):
 def _activate():
     global _overlay_id
     if _overlay_id is not None:
-        return  # already running
-
-    oid = bridge.create_overlay(0.0)          # fully transparent
+        return
+    oid = bridge.create_overlay(0.0)
     _overlay_id = oid
-
-    # Double-tap must be registered FIRST so single-tap can require it to fail
+    # Register double-tap first so single-tap requires it to fail
     bridge.add_tap_gesture(oid, 2, lambda o=oid: _on_double_tap(o))
     bridge.add_tap_gesture(oid, 1, lambda o=oid: _on_single_tap(o))
     bridge.add_longpress_gesture(oid, lambda s, o=oid: _on_longpress(o, s), 0.35)
-
-    bridge.show_bulletin(
-        "🍅 Tomato Bom",
-        "Tap to throw · Hold for rapid fire · Double-tap to close"
-    )
+    bridge.show_bulletin("🍅 Tomato Bom", "Tap · Hold for rapid fire · Double-tap to close")
 
 # ── menu item handler ──────────────────────────────────────────────────────────
 
