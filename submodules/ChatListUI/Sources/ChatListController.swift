@@ -7118,8 +7118,7 @@ private final class ChatListLocationContext {
                 id: "plugins",
                 component: AnyComponent(NavigationButtonComponent(
                     content: .icon(imageName: "Chat/Context Menu/Bots"),
-                    pressed: { [weak self] _ in
-                        guard let self else { return }
+                    pressed: { _ in
                         let chatItems = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "chatlist" }
                         if chatItems.count == 1 {
                             EGPluginHooks.pluginMenuItemTappedHandler?(
