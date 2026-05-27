@@ -68,8 +68,8 @@ http_file(
 # Files are NOT committed to git (add to .gitignore if checking third-party/).
 http_archive(
     name = "python_apple_support",
-    urls = ["https://github.com/beeware/Python-Apple-support/releases/download/3.14-b9/Python-3.14-iOS-support.b9.tar.gz"],
-    sha256 = "8e4123b543bf17fdae2e2c6c033434487752438431014eb12e6d833aa35927a8",
+    urls = ["https://github.com/beeware/Python-Apple-support/releases/download/3.13-b13/Python-3.13-iOS-support.b13.tar.gz"],
+    sha256 = "d1f95f95137a4b91dc0cbe9b99ddfc0a78918dde883c7fbe7147074a5e715274",
     # No strip_prefix — xcframework is at Python.xcframework/ in the archive root.
     build_file_content = """
 load(
@@ -89,20 +89,20 @@ apple_dynamic_xcframework_import(
     visibility = ["//visibility:public"],
 )
 
-# Python 3.14 standard library — bundled as a single zip to avoid rules_apple
+# Python 3.13 standard library — bundled as a single zip to avoid rules_apple
 # resource-flattening conflicts (__init__.py from every package would collide).
 # EGPluginRuntime extracts this zip to Library/Caches/EGPythonStdlib/ at first launch.
 # Excluded: test suite, GUI toolkits, __pycache__, compiled extensions, images.
 genrule(
     name = "PythonStdlibZip",
     srcs = glob(
-        ["Python.xcframework/lib/python3.14/**"],
+        ["Python.xcframework/lib/python3.13/**"],
         exclude = [
-            "Python.xcframework/lib/python3.14/test/**",
-            "Python.xcframework/lib/python3.14/tkinter/**",
-            "Python.xcframework/lib/python3.14/turtledemo/**",
-            "Python.xcframework/lib/python3.14/idlelib/**",
-            "Python.xcframework/lib/python3.14/**/__pycache__/**",
+            "Python.xcframework/lib/python3.13/test/**",
+            "Python.xcframework/lib/python3.13/tkinter/**",
+            "Python.xcframework/lib/python3.13/turtledemo/**",
+            "Python.xcframework/lib/python3.13/idlelib/**",
+            "Python.xcframework/lib/python3.13/**/__pycache__/**",
             "**/*.so",
             "**/*.dylib",
             "**/*.pyc",
@@ -118,27 +118,27 @@ genrule(
             "**/*.xbm",
         ],
     ) + glob([
-        # C extension modules for arm64 device — placed at lib/python3.14/lib-dynload/
+        # C extension modules for arm64 device — placed at lib/python3.13/lib-dynload/
         # in the zip so CPython's auto-computed sys.path finds them alongside the stdlib.
-        "Python.xcframework/ios-arm64/lib-arm64/python3.14/lib-dynload/**/*.so",
+        "Python.xcframework/ios-arm64/lib-arm64/python3.13/lib-dynload/**/*.so",
     ]),
-    outs = ["python3.14.zip"],
+    outs = ["python3.13.zip"],
     # cmd uses triple-single-quotes to avoid closing the outer build_file_content string.
     # $$(pwd)/$(OUTS): Bazel expands $(OUTS) to relative path, shell expands $(pwd) to abs cwd.
     # ANCHOR locates os.py; two dirname steps up reach Python.xcframework/ root.
     # DYNLOAD_DIR is the arm64-device lib-dynload folder inside the same xcframework.
-    # We stage the .so files at lib/python3.14/lib-dynload/ so Python's sys.path finds them.
+    # We stage the .so files at lib/python3.13/lib-dynload/ so Python's sys.path finds them.
     cmd = '''
         OUTPATH="$$(pwd)/$(OUTS)"
-        ANCHOR="$(location Python.xcframework/lib/python3.14/os.py)"
+        ANCHOR="$(location Python.xcframework/lib/python3.13/os.py)"
         XCFWDIR="$$(cd $$(dirname $$ANCHOR)/../.. && pwd)"
-        (cd $$XCFWDIR && zip -qr $$OUTPATH lib/python3.14)
-        DYNLOAD_DIR="$$XCFWDIR/ios-arm64/lib-arm64/python3.14/lib-dynload"
+        (cd $$XCFWDIR && zip -qr $$OUTPATH lib/python3.13)
+        DYNLOAD_DIR="$$XCFWDIR/ios-arm64/lib-arm64/python3.13/lib-dynload"
         if [ -d "$$DYNLOAD_DIR" ]; then
             STAGING="$$(mktemp -d)"
-            mkdir -p "$$STAGING/lib/python3.14/lib-dynload"
-            cp "$$DYNLOAD_DIR/"*.so "$$STAGING/lib/python3.14/lib-dynload/"
-            (cd "$$STAGING" && zip -qr $$OUTPATH lib/python3.14/lib-dynload)
+            mkdir -p "$$STAGING/lib/python3.13/lib-dynload"
+            cp "$$DYNLOAD_DIR/"*.so "$$STAGING/lib/python3.13/lib-dynload/"
+            (cd "$$STAGING" && zip -qr $$OUTPATH lib/python3.13/lib-dynload)
             rm -rf "$$STAGING"
         fi
     ''',
@@ -152,14 +152,14 @@ genrule(
 filegroup(
     name = "PythonDynloadSos",
     srcs = glob(
-        ["Python.xcframework/ios-arm64/lib-arm64/python3.14/lib-dynload/**/*.so"],
+        ["Python.xcframework/ios-arm64/lib-arm64/python3.13/lib-dynload/**/*.so"],
         exclude = [
             "**/_test*.so",
             "**/*_test.so",
             "**/xxlimited*.so",
-            "**/xxsubtype.cpython-314-iphoneos.so",
-            "**/_xxtestfuzz.cpython-314-iphoneos.so",
-            "**/_remote_debugging.cpython-314-iphoneos.so",
+            "**/xxsubtype.cpython-313-iphoneos.so",
+            "**/_xxtestfuzz.cpython-313-iphoneos.so",
+            "**/_remote_debugging.cpython-313-iphoneos.so",
         ],
     ),
     visibility = ["//visibility:public"],

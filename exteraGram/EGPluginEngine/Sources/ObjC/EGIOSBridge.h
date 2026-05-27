@@ -8,8 +8,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// Uses CPython C API internally; public interface is pure ObjC.
 @interface EGPythonBridge : NSObject
 
-/// Initialize CPython 3.14 runtime using the modern PyConfig API.
-/// @param pythonHome  Path where lib/python3.14/ can be found (PyConfig.home).
+/// Initialize CPython 3.13 runtime using the modern PyConfig API.
+/// @param pythonHome  Path where lib/python3.13/ can be found (PyConfig.home).
 /// @param sdkPath     Path to Python SDK .py files (added to module search paths).
 /// @param pluginsPath Path to installed .plugin files.
 /// @param sitePkgs    Path to site-packages directory.
@@ -54,7 +54,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// Used by 'button'-type settings to dispatch tap events into Python.
 + (void)invokePluginAction:(NSString *)pluginId key:(NSString *)key;
 
-/// Extract python3.14.zip (bundled as a data resource) to destDir, preserving paths.
+/// Install Python requirements for a plugin: calls pkg_manager.ensure_requirements() with GIL.
+/// Blocks the calling thread (called on engineQueue, not main). Returns YES if all satisfied.
++ (BOOL)installRequirements:(NSArray<NSString *> *)requirements forPlugin:(NSString *)pluginId;
+
+/// Extract python3.13.zip (bundled as a data resource) to destDir, preserving paths.
 /// Returns YES on success. Idempotent — call before initializeWithHome:.
 + (BOOL)extractPythonStdlibZip:(NSString *)zipPath toDirectory:(NSString *)destDir;
 

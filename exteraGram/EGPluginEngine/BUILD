@@ -62,6 +62,23 @@ objc_library(
     visibility = ["//visibility:public"],
 )
 
+# Stub binary for BeewarePackages.framework (defined in Telegram/BUILD).
+# The framework bundles pre-built beeware iOS arm64 C-extension .so modules
+# (Pillow, aiohttp, numpy, cffi, cryptography, etc.) plus their Python files.
+objc_library(
+    name = "EGBeewarePackagesStub",
+    srcs = ["Sources/ObjC/EGBeewarePackagesStub.m"],
+    visibility = ["//visibility:public"],
+)
+
+# Pre-bundled beeware C-extension packages for iOS arm64 (Python 3.13).
+# Both .so and .py files are included so sys.path can point to this directory.
+filegroup(
+    name = "BeewarePackages",
+    srcs = glob(["Python/BeewarePackages/**"]),
+    visibility = ["//visibility:public"],
+)
+
 # ---------------------------------------------------------------------------
 # Main Swift module
 # ---------------------------------------------------------------------------

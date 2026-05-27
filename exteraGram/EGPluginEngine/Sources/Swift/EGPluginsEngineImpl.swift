@@ -171,6 +171,19 @@ public final class EGPluginsEngineImpl {
             EGPluginDebugLog.shared.append(tag: "Engine", "[\(id)] \(msg)")
             return
         }
+        if let parsed = try? EGPluginLoader.shared.parseAndValidate(path: filePath) {
+            let reqs = parsed.requirements
+            if !reqs.isEmpty {
+                EGPluginDebugLog.shared.append(tag: "Engine", "[\(id)] installing requirements: \(reqs)")
+                let ok = EGPythonBridge.installRequirements(reqs, forPlugin: id)
+                if !ok {
+                    let msg = "Failed to install requirements: \(reqs.joined(separator: ", "))"
+                    errorStates[id] = msg
+                    EGPluginDebugLog.shared.append(tag: "Engine", "ERROR [\(id)]: \(msg)")
+                    return
+                }
+            }
+        }
         let watchdog = EGPluginsWatchdog.shared
         watchdog.begin(pluginId: id) { [weak self] in self?.notResponding[id] = true }
         EGPluginDebugLog.shared.append(tag: "Engine", "Loading plugin: \(id)")

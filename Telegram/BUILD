@@ -2089,6 +2089,53 @@ ios_framework(
     ],
 )
 
+# ---------------------------------------------------------------------------
+# BeewarePackages.framework — pre-built beeware iOS arm64 C-extension packages
+# Packages: Pillow, aiohttp, numpy, cffi, cryptography, yarl, brotli, bcrypt,
+#           kiwisolver, contourpy, plus pure-Python: aiosignal, async_timeout,
+#           attrs, multidict, frozenlist, pycparser.
+# Added to sys.path in EGIOSBridge.m so plugins can `import PIL`, `import aiohttp` etc.
+# ---------------------------------------------------------------------------
+
+plist_fragment(
+    name = "BeewarePackagesInfoPlist",
+    extension = "plist",
+    template =
+    """
+    <key>CFBundleIdentifier</key>
+    <string>{telegram_bundle_id}.BeewarePackages</string>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleName</key>
+    <string>BeewarePackages</string>
+    <key>CFBundlePackageType</key>
+    <string>FMWK</string>
+    """.format(
+        telegram_bundle_id = telegram_bundle_id,
+    )
+)
+
+ios_framework(
+    name = "BeewarePackagesFramework",
+    bundle_id = "{telegram_bundle_id}.BeewarePackages".format(
+        telegram_bundle_id = telegram_bundle_id,
+    ),
+    families = ["iphone", "ipad"],
+    minimum_os_version = minimum_os_version,
+    infoplists = [
+        ":BeewarePackagesInfoPlist",
+        ":BuildNumberInfoPlist",
+        ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
+    ],
+    deps = [
+        "//exteraGram/EGPluginEngine:EGBeewarePackagesStub",
+    ],
+    resources = [
+        "//exteraGram/EGPluginEngine:BeewarePackages",
+    ],
+)
+
 ios_application(
     name = "exteraGram",
     bundle_id = "{telegram_bundle_id}".format(
@@ -2123,6 +2170,7 @@ ios_application(
         ":TelegramCoreFramework",
         ":TelegramUIFramework",
         ":PythonExtensionsFramework",
+        ":BeewarePackagesFramework",
     ],
     strings = [
         ":AppStringResources",

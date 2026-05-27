@@ -1,12 +1,11 @@
 __id__          = "tomato_bom"
 __name__        = "🍅 Tomato Bom"
-__version__     = "1.1"
+__os__          = "ios"
+__version__     = "1.2"
 __author__      = "@oodze"
 __description__ = "Throw tomatoes at anyone! **Tap** to splat · **Hold** for machine-gun · **Double-tap** to close."
+__requirements__ = "Pillow"
 
-# NOTE: do NOT import random/math/struct — they are .so C extensions that are
-# not code-signed in unsigned builds and fail to dlopen on iOS.
-# urllib.request / ssl / socket are bundled in Python.xcframework and are fine.
 import _ios_bridge as bridge
 import threading
 import time
@@ -220,6 +219,11 @@ def _on_menu_tap(params):
 # ── plugin lifecycle ───────────────────────────────────────────────────────────
 
 def on_load(plugin):
+    try:
+        from PIL import Image
+        bridge.log(__id__, "Pillow {} ready".format(Image.__version__))
+    except ImportError as e:
+        bridge.log(__id__, "Pillow not available: {}".format(e))
     bridge.register_plugin_entry(__id__, "chatlist",     "open", "🍅 Tomato Bom")
     bridge.register_plugin_entry(__id__, "context_menu", "open", "🍅 Tomato Bom")
     bridge.add_tl_hook("plugin.menu_item_tapped", _on_menu_tap)

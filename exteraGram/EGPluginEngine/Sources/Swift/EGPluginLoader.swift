@@ -45,7 +45,7 @@ public struct EGFullPluginMetadata {
     public let description: String
     public let iconUrl: String?
     public let minVersion: String?
-    public let dependencies: [String]
+    public let requirements: [String]
     public let permissions: [String]
 }
 
@@ -108,7 +108,7 @@ public final class EGPluginLoader {
             description: raw["__description__"] ?? "",
             iconUrl: iconUrl,
             minVersion: raw["__min_version__"],
-            dependencies: parseList(raw["__dependencies__"]),
+            requirements: parseList(raw["__requirements__"]),
             permissions: parseList(raw["__permissions__"])
         )
     }

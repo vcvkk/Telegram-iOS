@@ -2056,7 +2056,7 @@ static id py_to_ns(PyObject *obj) {
 
     // dispatch_once guarantees exactly-once execution and blocks concurrent callers
     // until the block finishes.  This prevents the PyImport_AppendInittab-after-
-    // Py_Initialize fatal error that Python 3.14 raises on double-init attempts.
+    // Py_Initialize fatal error that Python 3.13 raises on double-init attempts.
     static dispatch_once_t s_pythonOnce = 0;
     dispatch_once(&s_pythonOnce, ^{
         // Safety net: detect if Python was somehow started by another path.
@@ -2074,7 +2074,7 @@ static id py_to_ns(PyObject *obj) {
         PyImport_AppendInittab("_ios_bridge", &PyInit__ios_bridge);
 
         // ---------------------------------------------------------------------------
-        // Python 3.14: use modern PyConfig API (replaces Py_Initialize() for embeds)
+        // Python 3.13: use modern PyConfig API (replaces Py_Initialize() for embeds)
         // ---------------------------------------------------------------------------
         PyPreConfig preconfig;
         PyPreConfig_InitIsolatedConfig(&preconfig);
@@ -2094,7 +2094,7 @@ static id py_to_ns(PyObject *obj) {
         config.install_signal_handlers = 1;
         config.use_system_logger = 1;     // stdout/stderr → os_log
 
-        // Set PYTHONHOME (tells CPython where lib/python3.14 lives)
+        // Set PYTHONHOME (tells CPython where lib/python3.13 lives)
         wchar_t *wHome = Py_DecodeLocale([pythonHome UTF8String], NULL);
         if (wHome) {
             status = PyConfig_SetString(&config, &config.home, wHome);
@@ -2165,6 +2165,18 @@ static id py_to_ns(PyObject *obj) {
                     [[NSString stringWithFormat:@"dynload: %@", fwDir] UTF8String]);
             } else {
                 EGPluginDebugLog_appendCStr("Runtime", "dynload: PythonExtensions.framework not found");
+            }
+
+            // Add BeewarePackages.framework to sys.path so plugins can import
+            // Pillow, aiohttp, numpy, cffi, cryptography, etc. directly.
+            // All .so files inside the framework are code-signed and dlopen-able.
+            NSString *bwDir = [[NSBundle mainBundle].privateFrameworksPath
+                stringByAppendingPathComponent:@"BeewarePackages.framework"];
+            if ([[NSFileManager defaultManager] fileExistsAtPath:bwDir]) {
+                PyObject *pyBwPath = PyUnicode_FromString([bwDir UTF8String]);
+                if (pyBwPath) { PyList_Insert(sysPath, 1, pyBwPath); Py_DECREF(pyBwPath); }
+                EGPluginDebugLog_appendCStr("Runtime",
+                    [[NSString stringWithFormat:@"beeware pkgs: %@", bwDir] UTF8String]);
             }
 
             NSMutableArray<NSString *> *extraPaths = [NSMutableArray new];
@@ -2647,6 +2659,35 @@ static id py_to_ns(PyObject *obj) {
                           object:nil
                         userInfo:@{@"tag": tag, @"msg": message}];
     });
+}
+
++ (BOOL)installRequirements:(NSArray<NSString *> *)requirements forPlugin:(NSString *)pluginId {
+    if (requirements.count == 0) return YES;
+    PyGILState_STATE gstate = PyGILState_Ensure();
+    PyObject *mgr = PyImport_ImportModule("pkg_manager");
+    BOOL ok = NO;
+    if (mgr) {
+        PyObject *reqList = PyList_New((Py_ssize_t)requirements.count);
+        for (NSUInteger i = 0; i < requirements.count; i++) {
+            PyList_SET_ITEM(reqList, (Py_ssize_t)i,
+                PyUnicode_FromString([requirements[i] UTF8String]));
+        }
+        PyObject *result = PyObject_CallMethod(mgr, "ensure_requirements", "O", reqList);
+        if (result) {
+            ok = PyObject_IsTrue(result) != 0;
+            Py_DECREF(result);
+        } else {
+            PyErr_Clear();
+        }
+        Py_DECREF(reqList);
+        Py_DECREF(mgr);
+    } else {
+        PyErr_Clear();
+        plugin_log(@"PluginEngine", @"pkg_manager not found — requirements skipped for %@", pluginId);
+        ok = YES; // non-fatal: allow plugin to load anyway
+    }
+    PyGILState_Release(gstate);
+    return ok;
 }
 
 + (BOOL)extractPythonStdlibZip:(NSString *)zipPath toDirectory:(NSString *)destDir {
