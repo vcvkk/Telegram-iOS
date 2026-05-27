@@ -53,6 +53,15 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# Stub binary for PythonExtensions.framework (defined in Telegram/BUILD).
+# Provides a valid linker entry point; the framework's real payload is the
+# CPython .so extension modules bundled as resources alongside this binary.
+objc_library(
+    name = "EGPythonExtensionsStub",
+    srcs = ["Sources/ObjC/EGPythonExtensionsStub.m"],
+    visibility = ["//visibility:public"],
+)
+
 # ---------------------------------------------------------------------------
 # Main Swift module
 # ---------------------------------------------------------------------------

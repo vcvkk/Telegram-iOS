@@ -144,6 +144,26 @@ genrule(
     ''',
     visibility = ["//visibility:public"],
 )
+
+# CPython .so extension modules for arm64 device — used by PythonExtensions.framework
+# (defined in Telegram/BUILD) so they are code-signed inside Frameworks/ and
+# dlopen-able on properly signed builds (Feather, SideStore, LiveContainer).
+# Test/internal modules are excluded; only runtime-useful extensions are kept.
+filegroup(
+    name = "PythonDynloadSos",
+    srcs = glob(
+        ["Python.xcframework/ios-arm64/lib-arm64/python3.14/lib-dynload/**/*.so"],
+        exclude = [
+            "**/_test*.so",
+            "**/*_test.so",
+            "**/xxlimited*.so",
+            "**/xxsubtype.cpython-314-iphoneos.so",
+            "**/_xxtestfuzz.cpython-314-iphoneos.so",
+            "**/_remote_debugging.cpython-314-iphoneos.so",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+)
 """,
 )
 

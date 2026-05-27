@@ -2046,6 +2046,49 @@ xcode_provisioning_profile(
    provisioning_profile = ":Telegram_local_profile",
 )
 
+# ---------------------------------------------------------------------------
+# PythonExtensions.framework — CPython .so modules signed inside the bundle
+# ---------------------------------------------------------------------------
+
+plist_fragment(
+    name = "PythonExtensionsInfoPlist",
+    extension = "plist",
+    template =
+    """
+    <key>CFBundleIdentifier</key>
+    <string>{telegram_bundle_id}.PythonExtensions</string>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleName</key>
+    <string>PythonExtensions</string>
+    <key>CFBundlePackageType</key>
+    <string>FMWK</string>
+    """.format(
+        telegram_bundle_id = telegram_bundle_id,
+    )
+)
+
+ios_framework(
+    name = "PythonExtensionsFramework",
+    bundle_id = "{telegram_bundle_id}.PythonExtensions".format(
+        telegram_bundle_id = telegram_bundle_id,
+    ),
+    families = ["iphone", "ipad"],
+    minimum_os_version = minimum_os_version,
+    infoplists = [
+        ":PythonExtensionsInfoPlist",
+        ":BuildNumberInfoPlist",
+        ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
+    ],
+    deps = [
+        "//exteraGram/EGPluginEngine:EGPythonExtensionsStub",
+    ],
+    resources = [
+        "@python_apple_support//:PythonDynloadSos",
+    ],
+)
+
 ios_application(
     name = "exteraGram",
     bundle_id = "{telegram_bundle_id}".format(
@@ -2079,6 +2122,7 @@ ios_application(
         ":PostboxFramework",
         ":TelegramCoreFramework",
         ":TelegramUIFramework",
+        ":PythonExtensionsFramework",
     ],
     strings = [
         ":AppStringResources",

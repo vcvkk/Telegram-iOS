@@ -2152,6 +2152,21 @@ static id py_to_ns(PyObject *obj) {
         // sdkPath may be a colon-separated list of paths (Swift side joins them).
         PyObject *sysPath = PySys_GetObject("path"); // borrowed ref — never NULL post-init
         if (sysPath) {
+            // Prepend PythonExtensions.framework path so its signed .so modules are
+            // found before the unsigned Caches/lib-dynload copies. On unsigned builds
+            // dlopen from Caches fails; on signed builds (Feather/SideStore/LiveContainer)
+            // the framework copies are signed and dlopen succeeds.
+            NSString *fwDir = [[NSBundle mainBundle].privateFrameworksPath
+                stringByAppendingPathComponent:@"PythonExtensions.framework"];
+            if ([[NSFileManager defaultManager] fileExistsAtPath:fwDir]) {
+                PyObject *pyFwPath = PyUnicode_FromString([fwDir UTF8String]);
+                if (pyFwPath) { PyList_Insert(sysPath, 0, pyFwPath); Py_DECREF(pyFwPath); }
+                EGPluginDebugLog_appendCStr("Runtime",
+                    [[NSString stringWithFormat:@"dynload: %@", fwDir] UTF8String]);
+            } else {
+                EGPluginDebugLog_appendCStr("Runtime", "dynload: PythonExtensions.framework not found");
+            }
+
             NSMutableArray<NSString *> *extraPaths = [NSMutableArray new];
             // Split colon-separated SDK paths
             for (NSString *p in [sdkPath componentsSeparatedByString:@":"]) {
