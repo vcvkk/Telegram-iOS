@@ -1013,16 +1013,31 @@ private struct PluginRowView: View {
 
     @ViewBuilder
     private func requirementPill(_ text: String) -> some View {
-        Text(text.trimmingCharacters(in: .whitespaces))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(
-                Capsule()
-                    .strokeBorder(.quaternary, lineWidth: 0.5)
-            )
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if #available(iOS 15, *) {
+            Text(trimmed)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color(.quaternarySystemFill), lineWidth: 0.5)
+                )
+        } else {
+            Text(trimmed)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color(.secondarySystemFill))
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(Color(.quaternarySystemFill), lineWidth: 0.5)
+                )
+        }
     }
 
     @ViewBuilder private var actionsRow: some View {
