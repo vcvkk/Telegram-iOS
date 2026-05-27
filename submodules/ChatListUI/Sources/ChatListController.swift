@@ -2865,6 +2865,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 titleComponent: primaryContext.chatTitleComponent.flatMap { AnyComponent<Empty>($0) },
                 chatListTitle: primaryContext.chatListTitle,
                 leftButton: primaryContext.leftButton,
+                secondaryLeftButton: primaryContext.pluginButton,
                 rightButtons: primaryContext.rightButtons,
                 backPressed: displayBackButton ? { [weak self] in
                     guard let self else {
@@ -2882,6 +2883,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 titleComponent: secondaryContext.chatTitleComponent.flatMap { AnyComponent<Empty>($0) },
                 chatListTitle: secondaryContext.chatListTitle,
                 leftButton: secondaryContext.leftButton,
+                secondaryLeftButton: secondaryContext.pluginButton,
                 rightButtons: secondaryContext.rightButtons,
                 backPressed: { [weak self] in
                     guard let self else {
@@ -3956,7 +3958,30 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             self.presentInGlobalOverlay(contextController)
         })
     }
-    
+
+    // MARK: exteraGram — present a menu of all chatlist plugin actions
+    func openPluginMenu(sourceView: UIView) {
+        let entries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "chatlist" }
+        guard !entries.isEmpty else {
+            return
+        }
+        let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+        var items: [ContextMenuItem] = []
+        for entry in entries {
+            let pluginId = entry.pluginId
+            let entryType = entry.entryType
+            let itemId = entry.itemId
+            items.append(.action(ContextMenuActionItem(text: entry.title, icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "msg_plugins"), color: theme.contextMenu.primaryColor)
+            }, action: { _, f in
+                f(.dismissWithoutContent)
+                EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+            })))
+        }
+        let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: self, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: nil)
+        self.presentInGlobalOverlay(contextController)
+    }
+
     private var initializedFilters = false
     private func reloadFilters(firstUpdate: (() -> Void)? = nil) {
         let filterItems = chatListFilterItems(context: self.context)
@@ -6728,10 +6753,6 @@ private final class ChatListLocationContext {
         if let settingsButton = self.settingsButton {
             result.append(settingsButton)
         }
-        // MARK: exteraGram
-        if let pluginButton = self.pluginButton {
-            result.append(pluginButton)
-        }
         if let rightButton = self.rightButton {
             result.append(rightButton)
         }
@@ -7117,18 +7138,9 @@ private final class ChatListLocationContext {
             self.pluginButton = AnyComponentWithIdentity(
                 id: "plugins",
                 component: AnyComponent(NavigationButtonComponent(
-                    content: .icon(imageName: "Chat/Context Menu/Bots"),
-                    pressed: { _ in
-                        let chatItems = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "chatlist" }
-                        if chatItems.count == 1 {
-                            EGPluginHooks.pluginMenuItemTappedHandler?(
-                                chatItems[0].pluginId, chatItems[0].entryType, chatItems[0].itemId)
-                        } else {
-                            for item in chatItems {
-                                EGPluginHooks.pluginMenuItemTappedHandler?(
-                                    item.pluginId, item.entryType, item.itemId)
-                            }
-                        }
+                    content: .icon(imageName: "msg_plugins"),
+                    pressed: { [weak self] sourceView in
+                        self?.parentController?.openPluginMenu(sourceView: sourceView)
                     }
                 ))
             )
@@ -7167,6 +7179,7 @@ private final class ChatListLocationContext {
             if case .chatList(.root) = self.location {
                 self.rightButton = nil
                 self.storyButton = nil
+                self.pluginButton = nil
             }
             let title = !stateAndFilterId.state.selectedPeerIds.isEmpty ? presentationData.strings.ChatList_SelectedChats(Int32(stateAndFilterId.state.selectedPeerIds.count)) : defaultTitle
             
@@ -7182,6 +7195,7 @@ private final class ChatListLocationContext {
             if case .chatList(.root) = self.location {
                 self.rightButton = nil
                 self.storyButton = nil
+                self.pluginButton = nil
             }
             self.leftButton = AnyComponentWithIdentity(id: "done", component: AnyComponent(NavigationButtonComponent(
                 content: .text(title: presentationData.strings.Common_Done, isBold: true),

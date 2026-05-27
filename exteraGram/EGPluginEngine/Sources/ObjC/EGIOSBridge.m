@@ -1723,9 +1723,19 @@ static PyObject *py_register_plugin_entry(PyObject *self, PyObject *args) {
 static UIImage *eg_animated_image_from_data(NSData *data) {
     if (!data || data.length == 0) return nil;
     CGImageSourceRef src = CGImageSourceCreateWithData((__bridge CFDataRef)data, nil);
-    if (!src) return nil;
+    if (!src) {
+        EGPluginDebugLog_appendCStr("Splat", "decode: CGImageSourceCreateWithData failed");
+        return nil;
+    }
     size_t count = CGImageSourceGetCount(src);
-    if (count == 0) { CFRelease(src); return nil; }
+    if (count == 0) {
+        CFStringRef uti = CGImageSourceGetType(src);
+        EGPluginDebugLog_appendCStr("Splat",
+            [[NSString stringWithFormat:@"decode: CGImageSourceGetCount==0 uti=%@ len=%lu",
+              uti ? (__bridge NSString *)uti : @"?", (unsigned long)data.length] UTF8String]);
+        CFRelease(src);
+        return nil;
+    }
     if (count == 1) {
         CGImageRef cg = CGImageSourceCreateImageAtIndex(src, 0, nil);
         CFRelease(src);
@@ -1845,10 +1855,40 @@ static PyObject *py_download_file(PyObject *self, PyObject *args) {
     __block BOOL success = NO;
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
     Py_BEGIN_ALLOW_THREADS
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    // Some hosts (e.g. gitflic) return an HTML page for the default NSURLSession UA.
+    [req setValue:@"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
+        forHTTPHeaderField:@"User-Agent"];
     NSURLSessionDataTask *task = [[NSURLSession sharedSession]
-        dataTaskWithURL:url
+        dataTaskWithRequest:req
       completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-        if (!err && data.length > 0) success = [data writeToFile:dest atomically:YES];
+        long status = 0;
+        NSString *contentType = @"?";
+        if ([resp isKindOfClass:[NSHTTPURLResponse class]]) {
+            NSHTTPURLResponse *http = (NSHTTPURLResponse *)resp;
+            status = (long)http.statusCode;
+            contentType = http.allHeaderFields[@"Content-Type"] ?: @"?";
+        }
+        // First 16 bytes as hex for format diagnosis (GIF = 47 49 46 38, HTML often 3C ...).
+        NSMutableString *head = [NSMutableString string];
+        const unsigned char *bytes = (const unsigned char *)data.bytes;
+        for (NSUInteger i = 0; i < MIN((NSUInteger)16, data.length); i++) {
+            [head appendFormat:@"%02x ", bytes[i]];
+        }
+        // Reject obvious HTML / error pages: non-200 status, or first non-space byte is '<'.
+        BOOL looksHTML = NO;
+        for (NSUInteger i = 0; i < data.length; i++) {
+            unsigned char c = bytes[i];
+            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') continue;
+            looksHTML = (c == '<');
+            break;
+        }
+        if (!err && data.length > 0 && status == 200 && !looksHTML) {
+            success = [data writeToFile:dest atomically:YES];
+        }
+        EGPluginDebugLog_appendCStr("Download",
+            [[NSString stringWithFormat:@"status=%ld type=%@ len=%lu html=%d ok=%d head=[%@]",
+              status, contentType, (unsigned long)data.length, looksHTML, success, head] UTF8String]);
         dispatch_semaphore_signal(sem);
     }];
     [task resume];

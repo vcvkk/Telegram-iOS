@@ -79,15 +79,18 @@ public final class ChatListHeaderComponent: Component {
         public let titleComponent: AnyComponent<Empty>?
         public let chatListTitle: NetworkStatusTitle?
         public let leftButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
+        // MARK: exteraGram — optional second left button (plugin entry point)
+        public let secondaryLeftButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
         public let rightButtons: [AnyComponentWithIdentity<NavigationButtonComponentEnvironment>]
         public let backPressed: (() -> Void)?
-        
+
         public init(
             title: String,
             navigationBackTitle: String?,
             titleComponent: AnyComponent<Empty>?,
             chatListTitle: NetworkStatusTitle?,
             leftButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?,
+            secondaryLeftButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>? = nil,
             rightButtons: [AnyComponentWithIdentity<NavigationButtonComponentEnvironment>],
             backPressed: (() -> Void)?
         ) {
@@ -96,6 +99,7 @@ public final class ChatListHeaderComponent: Component {
             self.titleComponent = titleComponent
             self.chatListTitle = chatListTitle
             self.leftButton = leftButton
+            self.secondaryLeftButton = secondaryLeftButton
             self.rightButtons = rightButtons
             self.backPressed = backPressed
         }
@@ -114,6 +118,9 @@ public final class ChatListHeaderComponent: Component {
                 return false
             }
             if lhs.leftButton != rhs.leftButton {
+                return false
+            }
+            if lhs.secondaryLeftButton != rhs.secondaryLeftButton {
                 return false
             }
             if lhs.rightButtons != rhs.rightButtons {
@@ -491,13 +498,14 @@ public final class ChatListHeaderComponent: Component {
             }
             
             var validLeftButtons = Set<AnyHashable>()
-            if let leftButton = content.leftButton {
+            // MARK: exteraGram — lay out primary + optional secondary left button (mirrors rightButtons loop)
+            for leftButton in [content.leftButton, content.secondaryLeftButton].compactMap({ $0 }) {
                 validLeftButtons.insert(leftButton.id)
 
                 if nextLeftButtonX != 0.0 {
                     nextLeftButtonX += buttonSpacing
                 }
-                
+
                 var buttonTransition = transition
                 var animateButtonIn = false
                 let buttonView: ComponentView<NavigationButtonComponentEnvironment>

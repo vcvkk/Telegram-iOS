@@ -1293,8 +1293,8 @@ extension PeerInfoScreenNode {
                     }
                 }
                 
-                // MARK: exteraGram — plugin "profile" entries
-                let pluginEntries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "profile" }
+                // MARK: exteraGram — plugin "profile" + "context_menu" entries
+                let pluginEntries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "profile" || $0.entryType == "context_menu" }
                 if !pluginEntries.isEmpty {
                     items.append(.separator)
                     for entry in pluginEntries {
@@ -1305,7 +1305,7 @@ extension PeerInfoScreenNode {
                         items.append(.action(ContextMenuActionItem(
                             text: title,
                             icon: { theme in generateTintedImage(
-                                image: UIImage(bundleImageName: "Chat/Context Menu/Bots"),
+                                image: UIImage(bundleImageName: "msg_plugins"),
                                 color: theme.contextMenu.primaryColor) },
                             action: { _, f in
                                 f(.default)

@@ -5630,7 +5630,21 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             f(.dismissWithoutContent)
                             self?.interfaceInteraction?.beginMessageSearch(.everything, "")
                         })))
-                                                
+
+                        // MARK: exteraGram — plugin context_menu entries
+                        let pluginEntries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "context_menu" }
+                        for entry in pluginEntries {
+                            let pluginId = entry.pluginId
+                            let entryType = entry.entryType
+                            let itemId = entry.itemId
+                            items.append(.action(ContextMenuActionItem(text: entry.title, icon: { theme in
+                                return generateTintedImage(image: UIImage(bundleImageName: "msg_plugins"), color: theme.actionSheet.primaryTextColor)
+                            }, action: { _, f in
+                                f(.dismissWithoutContent)
+                                EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                            })))
+                        }
+
                         return items
                     }
                 case let .replyThread(message):

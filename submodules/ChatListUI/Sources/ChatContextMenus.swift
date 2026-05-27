@@ -981,7 +981,7 @@ public func chatForumTopicMenuItems(context: AccountContext, peerId: PeerId, thr
                 items.append(.action(ContextMenuActionItem(
                     text: title,
                     icon: { theme in generateTintedImage(
-                        image: UIImage(bundleImageName: "Chat/Context Menu/Bots"),
+                        image: UIImage(bundleImageName: "msg_plugins"),
                         color: theme.contextMenu.primaryColor) },
                     action: { _, f in
                         f(.default)
