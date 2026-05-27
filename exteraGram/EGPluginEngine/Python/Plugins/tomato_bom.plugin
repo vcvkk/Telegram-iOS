@@ -6,10 +6,12 @@ __description__ = "Throw tomatoes at anyone! **Tap** to splat · **Hold** for ma
 
 # NOTE: do NOT import random/math/struct — they are .so C extensions that are
 # not code-signed in unsigned builds and fail to dlopen on iOS.
+# urllib.request / ssl / socket are bundled in Python.xcframework and are fine.
 import _ios_bridge as bridge
 import threading
 import time
 import os
+import urllib.request
 
 # ── pure-Python LCG (no C deps) ────────────────────────────────────────────────
 _rng = [0xA3B2C1D0]
@@ -53,6 +55,23 @@ _sound_path = None
 
 # ── asset management ───────────────────────────────────────────────────────────
 
+def _download_file(url, dest):
+    """HTTP GET url → dest file. Returns True on success."""
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = r.read()
+        if not data or data[:1] == b'<':
+            return False
+        with open(dest, 'wb') as f:
+            f.write(data)
+        return True
+    except Exception:
+        return False
+
+
 def _ensure_assets():
     """Download GIF and sound on first use. Returns True if GIF is ready."""
     global _gif_path, _sound_path
@@ -60,10 +79,10 @@ def _ensure_assets():
     _gif_path   = data_dir + "/splat.gif"
     _sound_path = data_dir + "/splat.mp3"
     if not os.path.exists(_gif_path):
-        if not bridge.download_file(_GIF_URL, _gif_path):
+        if not _download_file(_GIF_URL, _gif_path):
             return False
     if not os.path.exists(_sound_path):
-        bridge.download_file(_SOUND_URL, _sound_path)  # sound is optional
+        _download_file(_SOUND_URL, _sound_path)  # sound is optional
     return os.path.exists(_gif_path)
 
 # ── helpers ────────────────────────────────────────────────────────────────────

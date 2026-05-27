@@ -1715,7 +1715,8 @@ static PyObject *py_register_plugin_entry(PyObject *self, PyObject *args) {
 }
 
 // ---------------------------------------------------------------------------
-// BRIDGE_VERSION 5 — show_splat, add_touch_handler, download_file
+// BRIDGE_VERSION 5 — show_splat, add_touch_handler
+// (download_file removed in v6 — plugins use urllib.request directly)
 // ---------------------------------------------------------------------------
 
 // GIF/PNG/JPG decoder: returns animated UIImage (multi-frame) or static UIImage.
@@ -1843,60 +1844,6 @@ static PyObject *py_add_touch_handler(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
-// download_file(url, dest_path) → bool
-// Synchronous HTTP GET. Releases GIL while waiting so other Python threads can run.
-// Times out after 30 seconds.
-static PyObject *py_download_file(PyObject *self, PyObject *args) {
-    const char *url_c = "", *dest_c = "";
-    if (!PyArg_ParseTuple(args, "ss", &url_c, &dest_c)) return NULL;
-    NSURL *url = [NSURL URLWithString:[NSString stringWithUTF8String:url_c]];
-    NSString *dest = [NSString stringWithUTF8String:dest_c];
-    if (!url || !dest.length) Py_RETURN_FALSE;
-    __block BOOL success = NO;
-    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-    Py_BEGIN_ALLOW_THREADS
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
-    // Some hosts (e.g. gitflic) return an HTML page for the default NSURLSession UA.
-    [req setValue:@"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
-        forHTTPHeaderField:@"User-Agent"];
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession]
-        dataTaskWithRequest:req
-      completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-        long status = 0;
-        NSString *contentType = @"?";
-        if ([resp isKindOfClass:[NSHTTPURLResponse class]]) {
-            NSHTTPURLResponse *http = (NSHTTPURLResponse *)resp;
-            status = (long)http.statusCode;
-            contentType = http.allHeaderFields[@"Content-Type"] ?: @"?";
-        }
-        // First 16 bytes as hex for format diagnosis (GIF = 47 49 46 38, HTML often 3C ...).
-        NSMutableString *head = [NSMutableString string];
-        const unsigned char *bytes = (const unsigned char *)data.bytes;
-        for (NSUInteger i = 0; i < MIN((NSUInteger)16, data.length); i++) {
-            [head appendFormat:@"%02x ", bytes[i]];
-        }
-        // Reject obvious HTML / error pages: non-200 status, or first non-space byte is '<'.
-        BOOL looksHTML = NO;
-        for (NSUInteger i = 0; i < data.length; i++) {
-            unsigned char c = bytes[i];
-            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') continue;
-            looksHTML = (c == '<');
-            break;
-        }
-        if (!err && data.length > 0 && status == 200 && !looksHTML) {
-            success = [data writeToFile:dest atomically:YES];
-        }
-        EGPluginDebugLog_appendCStr("Download",
-            [[NSString stringWithFormat:@"status=%ld type=%@ len=%lu html=%d ok=%d head=[%@]",
-              status, contentType, (unsigned long)data.length, looksHTML, success, head] UTF8String]);
-        dispatch_semaphore_signal(sem);
-    }];
-    [task resume];
-    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30LL * NSEC_PER_SEC));
-    Py_END_ALLOW_THREADS
-    return PyBool_FromLong(success ? 1 : 0);
-}
-
 static PyMethodDef ios_bridge_methods[] = {
     {"log_text",           py_log_text,           METH_VARARGS, "log_text(msg, tag='Plugin')"},
     {"add_tl_hook",        py_add_tl_hook,        METH_VARARGS, "add_tl_hook(tl_type, callback)"},
@@ -1947,10 +1894,9 @@ static PyMethodDef ios_bridge_methods[] = {
     {"load_audio",              py_load_audio,              METH_VARARGS, "load_audio(path) -> audio_id or -1"},
     {"play_audio",              py_play_audio,              METH_VARARGS, "play_audio(audio_id, volume=1.0, rate=1.0)"},
     {"register_plugin_entry",   py_register_plugin_entry,   METH_VARARGS, "register_plugin_entry(plugin_id, entry_type, item_id, title)"},
-    // BRIDGE_VERSION 5 — show_splat, add_touch_handler, download_file
+    // BRIDGE_VERSION 5 — show_splat, add_touch_handler
     {"show_splat",              py_show_splat,              METH_VARARGS, "show_splat(overlay_id, image_path, x, y, size) — show GIF/PNG at position, fade-in, auto-remove"},
     {"add_touch_handler",       py_add_touch_handler,       METH_VARARGS, "add_touch_handler(overlay_id, callback) — callback(action:int, x:float, y:float): 0=down, 1=up/cancel, 2=move"},
-    {"download_file",           py_download_file,           METH_VARARGS, "download_file(url, dest_path) -> bool — synchronous HTTP download"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -1970,8 +1916,9 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     //   3 — add_method_hook callbacks now receive view_ptr; add_view_label, get_theme_color, measure_text_width
     //   4 — create_overlay, dismiss_overlay, add_tap_gesture, add_longpress_gesture,
     //         show_projectile, load_audio, play_audio, register_plugin_entry
-    //   5 — show_splat, add_touch_handler, download_file; EGOverlayContentView raw touch
-    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 5);
+    //   5 — show_splat, add_touch_handler; EGOverlayContentView raw touch
+    //   6 — download_file removed; plugins use urllib.request directly
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 6);
     return m;
 }
 
