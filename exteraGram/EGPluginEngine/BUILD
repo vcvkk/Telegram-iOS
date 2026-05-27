@@ -75,7 +75,15 @@ objc_library(
 # Both .so and .py files are included so sys.path can point to this directory.
 filegroup(
     name = "BeewarePackages",
-    srcs = glob(["Python/BeewarePackages/**"]),
+    srcs = glob(
+        ["Python/BeewarePackages/**"],
+        exclude = [
+            "Python/BeewarePackages/**/*.dist-info/**",
+            "Python/BeewarePackages/**/*.data/**",
+            "Python/BeewarePackages/**/__pycache__/**",
+            "Python/BeewarePackages/**/*.pyc",
+        ],
+    ),
     visibility = ["//visibility:public"],
 )
 
