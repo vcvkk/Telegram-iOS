@@ -71,22 +71,6 @@ objc_library(
     visibility = ["//visibility:public"],
 )
 
-# Pre-bundled beeware C-extension packages for iOS arm64 (Python 3.13).
-# Both .so and .py files are included so sys.path can point to this directory.
-filegroup(
-    name = "BeewarePackages",
-    srcs = glob(
-        ["Python/BeewarePackages/**"],
-        exclude = [
-            "Python/BeewarePackages/**/*.dist-info/**",
-            "Python/BeewarePackages/**/*.data/**",
-            "Python/BeewarePackages/**/__pycache__/**",
-            "Python/BeewarePackages/**/*.pyc",
-        ],
-    ),
-    visibility = ["//visibility:public"],
-)
-
 # ---------------------------------------------------------------------------
 # Main Swift module
 # ---------------------------------------------------------------------------

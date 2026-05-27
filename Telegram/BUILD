@@ -2132,7 +2132,7 @@ ios_framework(
         "//exteraGram/EGPluginEngine:EGBeewarePackagesStub",
     ],
     resources = [
-        "//exteraGram/EGPluginEngine:BeewarePackages",
+        "//exteraGram/EGPluginEngine/Python/BeewarePackages:BeewarePackagesResources",
     ],
 )
 
