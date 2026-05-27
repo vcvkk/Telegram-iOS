@@ -401,6 +401,77 @@ private final class EGRequirementsPillsComponent: Component {
     }
 }
 
+// MARK: - Markdown → NSAttributedString
+// Supports **bold**, *italic*, _italic_ — same subset as SwiftUI Text(.init(string)).
+
+private func egMarkdownAttributedString(_ raw: String, font: UIFont, color: UIColor) -> NSAttributedString {
+    let boldFont: UIFont = {
+        let desc = font.fontDescriptor.withSymbolicTraits(.traitBold) ?? font.fontDescriptor
+        return UIFont(descriptor: desc, size: font.pointSize)
+    }()
+    let italicFont: UIFont = {
+        let desc = font.fontDescriptor.withSymbolicTraits(.traitItalic) ?? font.fontDescriptor
+        return UIFont(descriptor: desc, size: font.pointSize)
+    }()
+
+    let result = NSMutableAttributedString()
+    var i = raw.startIndex
+    var plainStart = raw.startIndex
+
+    func flush(to end: String.Index) {
+        if plainStart < end {
+            result.append(NSAttributedString(
+                string: String(raw[plainStart..<end]),
+                attributes: [.font: font, .foregroundColor: color]
+            ))
+        }
+    }
+    func styled(_ range: Range<String.Index>, _ f: UIFont) {
+        result.append(NSAttributedString(
+            string: String(raw[range]),
+            attributes: [.font: f, .foregroundColor: color]
+        ))
+    }
+
+    while i < raw.endIndex {
+        let rest = raw[i...]
+        // Bold: **text**
+        if rest.hasPrefix("**"),
+           let openEnd = raw.index(i, offsetBy: 2, limitedBy: raw.endIndex),
+           let closeRange = raw.range(of: "**", range: openEnd..<raw.endIndex) {
+            flush(to: i)
+            styled(openEnd..<closeRange.lowerBound, boldFont)
+            i = closeRange.upperBound
+            plainStart = i
+            continue
+        }
+        // Italic: *text* (not when next char is also *)
+        if raw[i] == "*",
+           let next = raw.index(i, offsetBy: 1, limitedBy: raw.endIndex), next < raw.endIndex,
+           raw[next] != "*",
+           let closeRange = raw.range(of: "*", range: next..<raw.endIndex) {
+            flush(to: i)
+            styled(next..<closeRange.lowerBound, italicFont)
+            i = closeRange.upperBound
+            plainStart = i
+            continue
+        }
+        // Italic: _text_
+        if raw[i] == "_",
+           let next = raw.index(i, offsetBy: 1, limitedBy: raw.endIndex), next < raw.endIndex,
+           let closeRange = raw.range(of: "_", range: next..<raw.endIndex) {
+            flush(to: i)
+            styled(next..<closeRange.lowerBound, italicFont)
+            i = closeRange.upperBound
+            plainStart = i
+            continue
+        }
+        i = raw.index(after: i)
+    }
+    flush(to: raw.endIndex)
+    return result
+}
+
 // MARK: - Author Row Component (version · @tappable-usernames)
 
 private final class EGAuthorRowComponent: Component {
@@ -730,7 +801,7 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
             if let desc = component.metadata.description, !desc.isEmpty {
                 let desc = descText.update(
                     component: BalancedTextComponent(
-                        text: .plain(NSAttributedString(string: desc, font: Font.regular(15.0), textColor: theme.actionSheet.secondaryTextColor)),
+                        text: .plain(egMarkdownAttributedString(desc, font: Font.regular(15.0), color: theme.actionSheet.secondaryTextColor)),
                         horizontalAlignment: .center,
                         maximumNumberOfLines: 0,
                         lineSpacing: 0.2,
