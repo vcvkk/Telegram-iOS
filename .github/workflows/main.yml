@@ -77,8 +77,7 @@ jobs:
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=${{ github.event.inputs.configuration || 'release_arm64' }} \
             --buildNumber="$BUILD_NUMBER" \
-            --outputBuildArtifactsPath="$OUTPUT_PATH" \
-            --continueOnError
+            --outputBuildArtifactsPath="$OUTPUT_PATH"
 
           # Inject symbol maps into IPA so on-device symbolication works
           # without downloading a separate dSYM zip.
