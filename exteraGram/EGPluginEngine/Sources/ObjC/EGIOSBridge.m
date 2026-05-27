@@ -2092,7 +2092,6 @@ static id py_to_ns(PyObject *obj) {
         PyConfig_InitIsolatedConfig(&config);
         config.write_bytecode = 0;        // can't modify signed bundle
         config.install_signal_handlers = 1;
-        config.use_system_logger = 1;     // stdout/stderr → os_log
 
         // Set PYTHONHOME (tells CPython where lib/python3.13 lives)
         wchar_t *wHome = Py_DecodeLocale([pythonHome UTF8String], NULL);
