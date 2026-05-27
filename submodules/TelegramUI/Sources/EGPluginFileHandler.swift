@@ -288,6 +288,119 @@ private final class EGSourcePillComponent: Component {
     }
 }
 
+// MARK: - Requirements pills component
+// Renders a horizontally-scrolling row of Liquid Glass capsule badges,
+// one per __requirements__ entry. Tapping a pill opens its PyPI page.
+
+private final class EGRequirementsPillsComponent: Component {
+    let requirements: [String]
+    let onTap: (String) -> Void
+
+    init(requirements: [String], onTap: @escaping (String) -> Void) {
+        self.requirements = requirements
+        self.onTap = onTap
+    }
+
+    static func ==(lhs: EGRequirementsPillsComponent, rhs: EGRequirementsPillsComponent) -> Bool {
+        return lhs.requirements == rhs.requirements
+    }
+
+    final class View: UIScrollView {
+        private var pills: [PillView] = []
+        private var onTap: ((String) -> Void)?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            showsHorizontalScrollIndicator = false
+            showsVerticalScrollIndicator = false
+            clipsToBounds = false
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        func update(component: EGRequirementsPillsComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
+            self.onTap = component.onTap
+
+            // Remove old pills
+            pills.forEach { $0.removeFromSuperview() }
+            pills.removeAll()
+
+            let hGap: CGFloat = 6
+            var x: CGFloat = 0
+            let pillH: CGFloat = 26
+
+            for req in component.requirements {
+                let pill = PillView(text: req.trimmingCharacters(in: .whitespaces)) { [weak self] text in
+                    self?.onTap?(text)
+                }
+                addSubview(pill)
+                let pw = pill.intrinsicWidth()
+                pill.frame = CGRect(x: x, y: 0, width: pw, height: pillH)
+                pills.append(pill)
+                x += pw + hGap
+            }
+
+            let contentW = max(x - hGap, 0)
+            contentSize = CGSize(width: contentW, height: pillH)
+            return CGSize(width: availableSize.width, height: pillH)
+        }
+    }
+
+    // UIKit capsule pill with UIBlurEffect background (Liquid Glass)
+    private final class PillView: UIView {
+        private let blurView: UIVisualEffectView
+        private let borderView = UIView()
+        private let label = UILabel()
+        private let onTap: (String) -> Void
+        private let text: String
+
+        init(text: String, onTap: @escaping (String) -> Void) {
+            self.text = text
+            self.onTap = onTap
+            self.blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+            super.init(frame: .zero)
+
+            clipsToBounds = true
+            addSubview(blurView)
+
+            borderView.backgroundColor = .clear
+            borderView.layer.borderColor = UIColor.white.withAlphaComponent(0.18).cgColor
+            borderView.layer.borderWidth = 0.5
+            addSubview(borderView)
+
+            label.text = text
+            label.font = .systemFont(ofSize: 12, weight: .regular)
+            label.textColor = UIColor.label.withAlphaComponent(0.7)
+            addSubview(label)
+
+            addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        @objc private func tapped() { onTap(text) }
+
+        func intrinsicWidth() -> CGFloat {
+            let hPad: CGFloat = 10
+            return hPad + label.sizeThatFits(CGSize(width: 200, height: 26)).width + hPad
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            layer.cornerRadius = bounds.height / 2
+            blurView.frame = bounds
+            borderView.frame = bounds
+            borderView.layer.cornerRadius = bounds.height / 2
+            let textW = label.sizeThatFits(CGSize(width: 200, height: bounds.height)).width
+            let hPad: CGFloat = 10
+            label.frame = CGRect(x: hPad, y: (bounds.height - 15) / 2, width: textW, height: 15)
+        }
+    }
+
+    func makeView() -> View { View(frame: .zero) }
+    func update(view: View, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
+        return view.update(component: self, availableSize: availableSize, state: state, environment: environment, transition: transition)
+    }
+}
+
 // MARK: - Author Row Component (version · @tappable-usernames)
 
 private final class EGAuthorRowComponent: Component {
@@ -510,16 +623,17 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
     func makeState() -> State { State() }
 
     static var body: Body {
-        let closeButton  = Child(GlassBarButtonComponent.self)
-        let shareButton  = Child(GlassBarButtonComponent.self)
-        let authorRow    = Child(EGAuthorRowComponent.self)
-        let iconView     = Child(EGPluginIconComponent.self)
-        let titleText    = Child(BalancedTextComponent.self)
-        let descText     = Child(BalancedTextComponent.self)
-        let errorText    = Child(BalancedTextComponent.self)
-        let toggleRow    = Child(EGToggleRowComponent.self)
-        let sourcePill   = Child(EGSourcePillComponent.self)
-        let installBtn   = Child(ButtonComponent.self)
+        let closeButton   = Child(GlassBarButtonComponent.self)
+        let shareButton   = Child(GlassBarButtonComponent.self)
+        let authorRow     = Child(EGAuthorRowComponent.self)
+        let iconView      = Child(EGPluginIconComponent.self)
+        let titleText     = Child(BalancedTextComponent.self)
+        let descText      = Child(BalancedTextComponent.self)
+        let errorText     = Child(BalancedTextComponent.self)
+        let toggleRow     = Child(EGToggleRowComponent.self)
+        let sourcePill    = Child(EGSourcePillComponent.self)
+        let reqPills      = Child(EGRequirementsPillsComponent.self)
+        let installBtn    = Child(ButtonComponent.self)
 
         return { context in
             let env = context.environment[ViewControllerComponentContainer.Environment.self].value
@@ -627,6 +741,20 @@ private final class EGPluginInstallSheetContent: CombinedComponent {
                 )
                 context.add(desc.position(CGPoint(x: width / 2, y: y + desc.size.height / 2)))
                 y += desc.size.height + 10.0
+            }
+
+            // ── Requirements pills ────────────────────────────────────
+            if !component.metadata.requirements.isEmpty {
+                let pills = reqPills.update(
+                    component: EGRequirementsPillsComponent(
+                        requirements: component.metadata.requirements,
+                        onTap: { _ in }
+                    ),
+                    availableSize: CGSize(width: width - hPad * 2, height: 40),
+                    transition: .immediate
+                )
+                context.add(pills.position(CGPoint(x: hPad + pills.size.width / 2, y: y + pills.size.height / 2)))
+                y += pills.size.height + 12.0
             }
 
             // ── "Unknown source" red pill (centered) ────────────────

@@ -40,7 +40,7 @@ public struct EGPlugin: Identifiable, Codable {
 
     // New fields (default values preserve Codable backward-compatibility)
     public var os: [String] = ["ios"]
-    public var dependencies: [String] = []
+    public var requirements: [String] = []
     public var filePath: String = ""
     public var installedAt: Date = Date()
 
@@ -54,7 +54,7 @@ public struct EGPlugin: Identifiable, Codable {
         case id, name, subtitle, version, iconUrl
         case pluginDescription = "description"
         case isEnabled, isPinned, hasSettings, requiresPermissions
-        case os, dependencies, filePath, installedAt
+        case os, requirements, filePath, installedAt
     }
 
     public init(
@@ -69,7 +69,7 @@ public struct EGPlugin: Identifiable, Codable {
         hasSettings: Bool = false,
         requiresPermissions: [String] = [],
         os: [String] = ["ios"],
-        dependencies: [String] = [],
+        requirements: [String] = [],
         filePath: String = "",
         installedAt: Date = Date()
     ) {
@@ -84,7 +84,7 @@ public struct EGPlugin: Identifiable, Codable {
         self.hasSettings = hasSettings
         self.requiresPermissions = requiresPermissions
         self.os = os
-        self.dependencies = dependencies
+        self.requirements = requirements
         self.filePath = filePath
         self.installedAt = installedAt
     }
@@ -102,7 +102,7 @@ public struct EGPlugin: Identifiable, Codable {
         self.hasSettings = false
         self.requiresPermissions = meta.permissions
         self.os = meta.os
-        self.dependencies = meta.dependencies
+        self.requirements = meta.requirements
         self.filePath = filePath
         self.installedAt = Date()
     }
@@ -885,6 +885,7 @@ private struct PluginRowView: View {
                 headerSection
                 descriptionSection
                 permissionsSection
+                requirementsSection
                 // Divider: margin r=12, b=8
                 Divider()
                     .padding(.trailing, 12)
@@ -993,6 +994,35 @@ private struct PluginRowView: View {
                 .font(.footnote).foregroundColor(.orange)
                 .padding(.top, 4)
         }
+    }
+
+    @ViewBuilder private var requirementsSection: some View {
+        if !plugin.requirements.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(plugin.requirements, id: \.self) { req in
+                        requirementPill(req)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .padding(.top, 6)
+            .padding(.trailing, 12)
+        }
+    }
+
+    @ViewBuilder
+    private func requirementPill(_ text: String) -> some View {
+        Text(text.trimmingCharacters(in: .whitespaces))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(.quaternary, lineWidth: 0.5)
+            )
     }
 
     @ViewBuilder private var actionsRow: some View {
