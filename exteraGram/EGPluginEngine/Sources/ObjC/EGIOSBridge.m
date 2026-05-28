@@ -1794,10 +1794,11 @@ static void eg_spawn_splat_view(UIImage *img, UIView *overlay, CGFloat cx, CGFlo
     iv.userInteractionEnabled = NO;
     iv.alpha = 0.0f;
     // initWithImage: does NOT auto-start animation when the UIWindow is not keyWindow.
+    // animationRepeatCount = 0 loops forever; the fade-out below hides any loop boundary.
     if (img.images.count > 1) {
         iv.animationImages   = img.images;
         iv.animationDuration = img.duration;
-        iv.animationRepeatCount = 1;
+        iv.animationRepeatCount = 0;
         [iv startAnimating];
     }
     [overlay addSubview:iv];

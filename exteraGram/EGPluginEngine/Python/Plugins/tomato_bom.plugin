@@ -1,7 +1,7 @@
 __id__          = "tomato_bom"
 __name__        = "🍅 Tomato Bom"
 __os__          = "ios"
-__version__     = "1.2"
+__version__     = "1.3"
 __author__      = "@oodze"
 __description__ = "Throw tomatoes at anyone! **Tap** to splat · **Hold** for machine-gun · **Double-tap** to close."
 __requirements__ = "Pillow"
@@ -17,7 +17,6 @@ import urllib.request
 _rng = [0xA3B2C1D0]
 
 def _rand():
-    """Lehmer LCG — returns float in [0, 1)."""
     _rng[0] = (_rng[0] * 1664525 + 1013904223) & 0xFFFFFFFF
     return _rng[0] / 0x100000000
 
@@ -47,7 +46,6 @@ _current_x     = 0.0
 _current_y     = 0.0
 _last_sound_t  = 0.0
 _touch_down    = False
-_longpress_timer = None
 
 # Cached asset paths (set after first successful download)
 _gif_path   = None
@@ -56,12 +54,9 @@ _sound_path = None
 # ── asset management ───────────────────────────────────────────────────────────
 
 def _download_file(url, dest):
-    """HTTP GET url → dest file. Returns True on success."""
     req = urllib.request.Request(url, headers={
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
     })
-    # iOS Python doesn't ship a CA bundle, so standard SSL verification fails.
-    # Content is validated below (HTML / empty body check).
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -86,7 +81,6 @@ def _download_file(url, dest):
 
 
 def _make_splat_png(path):
-    """Generate a tomato-splat PNG locally using Pillow. Returns True on success."""
     try:
         from PIL import Image, ImageDraw, ImageFilter
         sz = 512
@@ -115,15 +109,12 @@ def _make_splat_png(path):
 
 
 def _ensure_assets():
-    """Prepare splat image and sound. Returns True if splat image is ready."""
     global _gif_path, _sound_path
     data_dir = bridge.get_plugin_data_dir(__id__)
-    gif_dest    = data_dir + "/splat.gif"
+    gif_dest     = data_dir + "/splat.gif"
     png_fallback = data_dir + "/splat.png"
-    _sound_path = data_dir + "/splat.mp3"
+    _sound_path  = data_dir + "/splat.mp3"
 
-    # Prefer the animated GIF. PNG fallback (Pillow-generated) must not block
-    # a fresh GIF download — if we only have a PNG, still attempt to get the GIF.
     if os.path.exists(gif_dest):
         _gif_path = gif_dest
         bridge.log("tomato_bom", "splat GIF cached")
@@ -132,7 +123,6 @@ def _ensure_assets():
         if _download_file(_GIF_URL, gif_dest):
             _gif_path = gif_dest
             bridge.log("tomato_bom", "splat GIF downloaded OK")
-            # Remove stale PNG fallback now that we have the real GIF
             if os.path.exists(png_fallback):
                 try: os.remove(png_fallback)
                 except: pass
@@ -146,7 +136,6 @@ def _ensure_assets():
                 bridge.log("tomato_bom", "Pillow also unavailable — giving up")
                 return False
 
-    # Sound is optional — skip silently if download fails
     if not os.path.exists(_sound_path):
         _download_file(_SOUND_URL, _sound_path)
 
@@ -160,42 +149,28 @@ def _play_sound():
     if _audio_id < 0:
         return
     now = time.time()
-    if now - _last_sound_t < 0.05:  # 50ms minimum between plays
+    if now - _last_sound_t < 0.05:
         return
     _last_sound_t = now
     bridge.play_audio(_audio_id, _sound_volume(), 1.0)
 
 def _spawn_tomato(x, y):
-    """Show splat GIF at (x, y). Called from main thread OR via run_on_main_thread."""
     if _overlay_id is None or not _gif_path or not os.path.exists(_gif_path):
         return
     bridge.show_splat(_overlay_id, _gif_path, x, y, _tomato_size())
     _play_sound()
 
 def _rapid_loop():
-    """Machine-gun loop: runs on a background thread."""
+    """Machine-gun loop: sleeps first then fires, matching Android behaviour."""
     global _rapid_active
-    while _rapid_active:
+    while _rapid_active and _touch_down:
+        time.sleep(_fire_interval())
+        if not _rapid_active or not _touch_down:
+            break
         x = _current_x + _uniform(-100.0, 100.0)
         y = _current_y + _uniform(-100.0, 100.0)
         bridge.run_on_main_thread(lambda lx=x, ly=y: _spawn_tomato(lx, ly))
-        time.sleep(_fire_interval())
-
-# ── long-press timer ───────────────────────────────────────────────────────────
-
-def _cancel_longpress():
-    global _longpress_timer
-    if _longpress_timer:
-        _longpress_timer.cancel()
-        _longpress_timer = None
-
-def _on_longpress_fired():
-    """Called from threading.Timer (background thread) after 0.35s hold."""
-    global _rapid_active
-    if _touch_down and not _rapid_active:
-        _rapid_active = True
-        bridge.haptic_feedback("heavy")
-        threading.Thread(target=_rapid_loop, daemon=True).start()
+    _rapid_active = False
 
 # ── raw touch handler ──────────────────────────────────────────────────────────
 # action: 0=down, 1=up/cancel, 2=move
@@ -203,7 +178,7 @@ def _on_longpress_fired():
 
 def _on_touch(action, x, y):
     global _last_tap_time, _current_x, _current_y
-    global _rapid_active, _overlay_id, _touch_down, _longpress_timer
+    global _rapid_active, _overlay_id, _touch_down
 
     if action == 0:  # DOWN
         _touch_down = True
@@ -211,10 +186,10 @@ def _on_touch(action, x, y):
         _current_y = y
         now = time.time()
 
-        # Double-tap detection (< 0.3s since last tap)
+        # Double-tap detection (< 0.3s since last tap) → close overlay
         if now - _last_tap_time < 0.3:
             _rapid_active = False
-            _cancel_longpress()
+            _touch_down = False
             oid = _overlay_id
             _overlay_id = None
             _last_tap_time = 0.0
@@ -224,15 +199,14 @@ def _on_touch(action, x, y):
 
         _last_tap_time = now
 
-        # Splat at touch position immediately (we're already on main thread)
+        # Splat immediately at touch position (already on main thread)
         _spawn_tomato(x, y)
         bridge.haptic_feedback("light")
 
-        # Arm long-press timer (0.35s → machine-gun)
-        _cancel_longpress()
-        timer = threading.Timer(0.35, _on_longpress_fired)
-        _longpress_timer = timer
-        timer.start()
+        # Start machine-gun immediately on hold (no long-press delay, matches Android)
+        if not _rapid_active:
+            _rapid_active = True
+            threading.Thread(target=_rapid_loop, daemon=True).start()
 
     elif action == 2:  # MOVE
         _current_x = x
@@ -240,7 +214,6 @@ def _on_touch(action, x, y):
 
     elif action == 1:  # UP / CANCEL
         _touch_down = False
-        _cancel_longpress()
         if _rapid_active:
             _rapid_active = False
             bridge.haptic_feedback("medium")
@@ -248,7 +221,6 @@ def _on_touch(action, x, y):
 # ── activation ─────────────────────────────────────────────────────────────────
 
 def _activate():
-    """Entry point: download assets then create overlay (called on main thread)."""
     global _overlay_id
     if _overlay_id is not None:
         return
@@ -259,7 +231,6 @@ def _activate():
             bridge.run_on_main_thread(lambda: bridge.show_bulletin(
                 "🍅 Tomato Bom", "Failed to download assets. Check your connection."))
             return
-        # Load audio once
         if _audio_id < 0 and _sound_path and os.path.exists(_sound_path):
             _audio_id = bridge.load_audio(_sound_path)
         bridge.run_on_main_thread(_create_overlay)
@@ -267,7 +238,6 @@ def _activate():
     threading.Thread(target=_async_activate, daemon=True).start()
 
 def _create_overlay():
-    """Create the full-screen touch overlay. Called on main thread."""
     global _overlay_id, _rapid_active, _last_tap_time, _touch_down
     if _overlay_id is not None:
         return
@@ -301,7 +271,7 @@ def on_load(plugin):
 def on_unload(plugin):
     global _overlay_id, _rapid_active, _audio_id
     _rapid_active = False
-    _cancel_longpress()
+    _touch_down = False
     if _overlay_id is not None:
         bridge.dismiss_overlay(_overlay_id)
         _overlay_id = None
