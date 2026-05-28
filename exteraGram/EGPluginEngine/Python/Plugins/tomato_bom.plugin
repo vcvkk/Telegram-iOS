@@ -167,8 +167,8 @@ def _rapid_loop():
         time.sleep(_fire_interval())
         if not _rapid_active or not _touch_down:
             break
-        x = _current_x + _uniform(-100.0, 100.0)
-        y = _current_y + _uniform(-100.0, 100.0)
+        x = _current_x + _uniform(-33.0, 33.0)
+        y = _current_y + _uniform(-33.0, 33.0)
         bridge.run_on_main_thread(lambda lx=x, ly=y: _spawn_tomato(lx, ly))
     _rapid_active = False
 
