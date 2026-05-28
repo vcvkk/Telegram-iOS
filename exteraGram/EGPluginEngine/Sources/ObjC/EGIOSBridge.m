@@ -2210,20 +2210,23 @@ static id py_to_ns(PyObject *obj) {
         // The .dylib extension is used because iOS signing tools (Feather, AltStore)
         // sign .dylib files but skip .so files in framework bundles — resulting in
         // unsigned .so files that AMFI blocks at dlopen time.
+        // Module references stored as class attributes so find_spec can access
+        // them after the global aliases are removed. 'import X' inside a class
+        // body assigns to the class namespace, not the module globals.
         PyRun_SimpleString(
-            "import sys as _sys, os as _os\n"
-            "import importlib.machinery as _im, importlib.util as _iu\n"
             "class _DylibExtFinder:\n"
+            "    import sys as _sys, os as _os\n"
+            "    import importlib.machinery as _im, importlib.util as _iu\n"
             "    _S = '.cpython-313-iphoneos.dylib'\n"
             "    def find_spec(self, name, path, target=None):\n"
-            "        for d in (path if path is not None else _sys.path):\n"
+            "        for d in (path if path is not None else self._sys.path):\n"
             "            p = d + '/' + name + self._S\n"
-            "            if _os.path.isfile(p):\n"
-            "                ld = _im.ExtensionFileLoader(name, p)\n"
-            "                return _iu.spec_from_loader(name, ld, origin=p)\n"
+            "            if self._os.path.isfile(p):\n"
+            "                ld = self._im.ExtensionFileLoader(name, p)\n"
+            "                return self._iu.spec_from_loader(name, ld, origin=p)\n"
             "        return None\n"
-            "_sys.meta_path.insert(0, _DylibExtFinder())\n"
-            "del _sys, _os, _im, _iu, _DylibExtFinder\n"
+            "_DylibExtFinder._sys.meta_path.insert(0, _DylibExtFinder())\n"
+            "del _DylibExtFinder\n"
         );
 
         PyGILState_Release(state);

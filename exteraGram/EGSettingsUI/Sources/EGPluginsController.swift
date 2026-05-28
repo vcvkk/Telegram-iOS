@@ -1043,6 +1043,7 @@ private struct PluginRowView: View {
                 }
                 .padding(.vertical, 2)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 6)
             .padding(.trailing, 12)
         }
