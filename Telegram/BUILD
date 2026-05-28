@@ -2070,6 +2070,7 @@ plist_fragment(
 
 ios_framework(
     name = "PythonExtensionsFramework",
+    bundle_name = "PythonExtensions",
     bundle_id = "{telegram_bundle_id}.PythonExtensions".format(
         telegram_bundle_id = telegram_bundle_id,
     ),
@@ -2117,6 +2118,7 @@ plist_fragment(
 
 ios_framework(
     name = "BeewarePackagesFramework",
+    bundle_name = "BeewarePackages",
     bundle_id = "{telegram_bundle_id}.BeewarePackages".format(
         telegram_bundle_id = telegram_bundle_id,
     ),

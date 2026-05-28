@@ -2188,6 +2188,14 @@ static id py_to_ns(PyObject *obj) {
                 PyObject *pyPath = PyUnicode_FromString([p UTF8String]);
                 if (pyPath) { PyList_Append(sysPath, pyPath); Py_DECREF(pyPath); }
             }
+
+            // Log the final sys.path so runtime issues are diagnosable.
+            PyObject *pathRepr = PyObject_Repr(sysPath);
+            if (pathRepr) {
+                EGPluginDebugLog_appendCStr("Runtime",
+                    [[NSString stringWithFormat:@"sys.path = %s", PyUnicode_AsUTF8(pathRepr)] UTF8String]);
+                Py_DECREF(pathRepr);
+            }
         }
         PyGILState_Release(state);
 
@@ -2681,8 +2689,18 @@ static id py_to_ns(PyObject *obj) {
         Py_DECREF(reqList);
         Py_DECREF(mgr);
     } else {
-        PyErr_Clear();
-        plugin_log(@"PluginEngine", @"pkg_manager not found — requirements skipped for %@", pluginId);
+        // Capture and log the Python exception so import errors in pkg_manager.py are visible.
+        if (PyErr_Occurred()) {
+            PyObject *type = NULL, *value = NULL, *tb = NULL;
+            PyErr_Fetch(&type, &value, &tb);
+            PyErr_NormalizeException(&type, &value, &tb);
+            PyObject *str = value ? PyObject_Str(value) : NULL;
+            const char *msg = str ? PyUnicode_AsUTF8(str) : "(unknown)";
+            plugin_log(@"PluginEngine", @"pkg_manager import error: %s (plugin: %@)", msg, pluginId);
+            Py_XDECREF(str); Py_XDECREF(type); Py_XDECREF(value); Py_XDECREF(tb);
+        } else {
+            plugin_log(@"PluginEngine", @"pkg_manager not found — requirements skipped for %@", pluginId);
+        }
         ok = YES; // non-fatal: allow plugin to load anyway
     }
     PyGILState_Release(gstate);

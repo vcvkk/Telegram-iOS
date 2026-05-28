@@ -93,6 +93,8 @@ apple_dynamic_xcframework_import(
 # resource-flattening conflicts (__init__.py from every package would collide).
 # EGPluginRuntime extracts this zip to Library/Caches/EGPythonStdlib/ at first launch.
 # Excluded: test suite, GUI toolkits, __pycache__, compiled extensions, images.
+# NOTE: .so files are intentionally excluded — they must live in PythonExtensions.framework
+# so Xcode code-signs them. Unsigned .so in Caches is blocked by AMFI on device.
 genrule(
     name = "PythonStdlibZip",
     srcs = glob(
@@ -117,30 +119,18 @@ genrule(
             "**/*.bmp",
             "**/*.xbm",
         ],
-    ) + glob([
-        # C extension modules for arm64 device — placed at lib/python3.13/lib-dynload/
-        # in the zip so CPython's auto-computed sys.path finds them alongside the stdlib.
-        "Python.xcframework/ios-arm64/lib-arm64/python3.13/lib-dynload/**/*.so",
-    ]),
+    ),
     outs = ["python3.13.zip"],
     # cmd uses triple-single-quotes to avoid closing the outer build_file_content string.
     # $$(pwd)/$(OUTS): Bazel expands $(OUTS) to relative path, shell expands $(pwd) to abs cwd.
     # ANCHOR locates os.py; two dirname steps up reach Python.xcframework/ root.
-    # DYNLOAD_DIR is the arm64-device lib-dynload folder inside the same xcframework.
-    # We stage the .so files at lib/python3.13/lib-dynload/ so Python's sys.path finds them.
+    # Only pure-Python stdlib files are zipped; .so lib-dynload files ship in
+    # PythonExtensions.framework where they receive a code signature.
     cmd = '''
         OUTPATH="$$(pwd)/$(OUTS)"
         ANCHOR="$(location Python.xcframework/lib/python3.13/os.py)"
         XCFWDIR="$$(cd $$(dirname $$ANCHOR)/../.. && pwd)"
-        (cd $$XCFWDIR && zip -qr $$OUTPATH lib/python3.13)
-        DYNLOAD_DIR="$$XCFWDIR/ios-arm64/lib-arm64/python3.13/lib-dynload"
-        if [ -d "$$DYNLOAD_DIR" ]; then
-            STAGING="$$(mktemp -d)"
-            mkdir -p "$$STAGING/lib/python3.13/lib-dynload"
-            cp "$$DYNLOAD_DIR/"*.so "$$STAGING/lib/python3.13/lib-dynload/"
-            (cd "$$STAGING" && zip -qr $$OUTPATH lib/python3.13/lib-dynload)
-            rm -rf "$$STAGING"
-        fi
+        (cd $$XCFWDIR && zip -qr $$OUTPATH lib/python3.13 --exclude "*.so" --exclude "*.dylib")
     ''',
     visibility = ["//visibility:public"],
 )
