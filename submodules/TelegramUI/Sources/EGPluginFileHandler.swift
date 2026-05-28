@@ -18,6 +18,7 @@ import ButtonComponent
 import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import StickerResources
+import ShimmerEffect
 import UndoUI
 import EGSettingsUI
 
@@ -114,7 +115,8 @@ private final class EGPluginIconComponent: Component {
         private let badgeInnerCircle = UIView()
         private let badgeIconView = UIImageView()
 
-        private var stickerNode: DefaultAnimatedStickerNodeImpl?
+        private var imageView: TransformImageView?
+        private var shimmerBg: UIView?
         private var packDisposable: Disposable?
         private var fetchDisposable: Disposable?
         private var loadedIconUrl: String?
@@ -163,11 +165,11 @@ private final class EGPluginIconComponent: Component {
         required init?(coder: NSCoder) { fatalError() }
 
         deinit {
-            let node = stickerNode; let d1 = packDisposable; let d2 = fetchDisposable
+            let iv = imageView; let d1 = packDisposable; let d2 = fetchDisposable
             if Thread.isMainThread {
-                node?.view.removeFromSuperview(); d1?.dispose(); d2?.dispose()
+                iv?.removeFromSuperview(); d1?.dispose(); d2?.dispose()
             } else {
-                DispatchQueue.main.async { node?.view.removeFromSuperview(); d1?.dispose(); d2?.dispose() }
+                DispatchQueue.main.async { iv?.removeFromSuperview(); d1?.dispose(); d2?.dispose() }
             }
         }
 
@@ -183,7 +185,8 @@ private final class EGPluginIconComponent: Component {
 
             if loadedIconUrl != component.iconUrl {
                 loadedIconUrl = component.iconUrl
-                stickerNode?.view.removeFromSuperview(); stickerNode = nil
+                imageView?.removeFromSuperview(); imageView = nil
+                shimmerBg?.removeFromSuperview(); shimmerBg = nil
                 packDisposable?.dispose(); fetchDisposable?.dispose()
                 fallbackBg.isHidden = false; fallbackIcon.isHidden = false
 
@@ -198,37 +201,55 @@ private final class EGPluginIconComponent: Component {
             guard let slashIdx = iconStr.lastIndex(of: "/"),
                   let index = Int(iconStr[iconStr.index(after: slashIdx)...]) else { return }
             let packName = String(iconStr[iconStr.startIndex..<slashIdx])
-            let iconSize = CGSize(width: size, height: size)
-            let pixelSide = Int(size * UIScreen.main.scale)
+            let pts = CGSize(width: size, height: size)
+            let radius = size * 0.22
 
-            packDisposable = (context.engine.stickers.loadedStickerPack(reference: .name(packName), forceActualized: false)
+            let bg = UIView(frame: CGRect(origin: .zero, size: pts))
+            bg.backgroundColor = UIColor.systemGray5
+            let shimmer = ShimmerEffectForegroundView()
+            shimmer.frame = bg.bounds
+            shimmer.update(backgroundColor: UIColor.systemGray5, foregroundColor: UIColor.systemGray4,
+                           gradientSize: nil, globalTimeOffset: true, duration: nil, horizontal: true)
+            shimmer.updateAbsoluteRect(bg.bounds, within: pts)
+            bg.addSubview(shimmer)
+            clipView.addSubview(bg)
+            self.shimmerBg = bg
+
+            packDisposable = (context.engine.stickers.loadedStickerPack(reference: .name(packName), forceActualized: true)
+                |> filter { if case .result = $0 { return true }; return false }
+                |> take(1)
                 |> deliverOnMainQueue
             ).startStandalone(next: { [weak self] result in
-                guard let self, self.stickerNode == nil else { return }
+                guard let self, self.imageView == nil else { return }
                 guard case .result(_, let items, _) = result, index < items.count else { return }
                 let file = items[index].file._parse()
-                let node = DefaultAnimatedStickerNodeImpl()
-                // Fix 5: set visibility flags and add to hierarchy BEFORE setup()
-                // so didEnterHierarchy fires and isDisplaying=true when setup triggers rendering
-                node.updateLayout(size: iconSize)
-                node.overrideVisibility = true
-                node.visibility = true
-                node.frame = CGRect(origin: .zero, size: iconSize)
-                node.view.frame = CGRect(origin: .zero, size: iconSize)
-                self.fallbackBg.isHidden = true
-                self.fallbackIcon.isHidden = true
-                self.clipView.addSubview(node.view)
-                self.stickerNode = node
+                let scale = UIScreen.main.scale
+                let pixels = CGSize(width: pts.width * scale, height: pts.height * scale)
 
-                node.setup(
-                    source: AnimatedStickerResourceSource(account: context.account, resource: file.resource, isVideo: file.isVideoSticker),
-                    width: pixelSide, height: pixelSide,
-                    playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
-                )
+                let iv = TransformImageView()
+                iv.frame = CGRect(origin: .zero, size: pts)
+                iv.contentAnimations = .firstUpdate
+                iv.imageUpdated = { [weak self] image in
+                    guard image != nil else { return }
+                    UIView.animate(withDuration: 0.2) {
+                        self?.shimmerBg?.alpha = 0
+                        self?.fallbackBg.isHidden = true
+                        self?.fallbackIcon.isHidden = true
+                    }
+                }
+                iv.setSignal(chatMessageSticker(account: context.account, userLocation: .other,
+                                                file: file, small: false))
+                let apply = iv.asyncLayout()
+                apply(TransformImageArguments(corners: ImageCorners(radius: radius),
+                                             imageSize: pixels, boundingSize: pixels,
+                                             intrinsicInsets: .zero))()
+                self.clipView.addSubview(iv)
+                self.imageView = iv
 
                 self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
                     account: context.account, userLocation: .other,
-                    fileReference: stickerPackFileReference(file), resource: file.resource
+                    fileReference: stickerPackFileReference(file),
+                    resource: chatMessageStickerResource(file: file, small: false)
                 ).startStandalone()
             })
         }

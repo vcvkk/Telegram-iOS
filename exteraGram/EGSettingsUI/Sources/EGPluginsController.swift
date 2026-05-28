@@ -16,6 +16,8 @@ import TelegramCore
 import Postbox
 import AnimatedStickerNode
 import TelegramAnimatedStickerNode
+import StickerResources
+import ShimmerEffect
 import UndoUI
 
 /// Reference-type holder for the latest connection-state string so the
@@ -765,7 +767,8 @@ private struct PluginsEmptyView: View {
 }
 
 // MARK: - Plugin Icon View
-// Loads a sticker from "packName/index" and displays it as an animated icon.
+// Loads a static sticker thumbnail via TransformImageView (matches Android getForDocument approach).
+// Shows a shimmer placeholder while loading, fades it out when the image arrives.
 
 @available(iOS 14.0, *)
 private struct EGPluginIconView: UIViewRepresentable {
@@ -773,70 +776,99 @@ private struct EGPluginIconView: UIViewRepresentable {
     let size: CGFloat
     let context: AccountContext
 
-    func makeCoordinator() -> Coordinator { Coordinator(iconUrl: iconUrl, size: size, context: context) }
+    func makeCoordinator() -> Coordinator { Coordinator(size: size, context: context) }
 
     func makeUIView(context uiCtx: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .clear
-        uiCtx.coordinator.load(into: view)
-        return view
+        let container = UIView()
+        container.backgroundColor = .clear
+        uiCtx.coordinator.load(iconUrl, into: container)
+        return container
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context uiCtx: Context) {
+        if iconUrl != uiCtx.coordinator.currentIconUrl {
+            uiCtx.coordinator.reset()
+            uiCtx.coordinator.load(iconUrl, into: uiView)
+        }
+    }
 
     final class Coordinator {
-        private let iconUrl: String
+        private(set) var currentIconUrl: String = ""
         private let size: CGFloat
         private let context: AccountContext
         private var loadDisposable: Disposable?
         private var fetchDisposable: Disposable?
-        private var node: DefaultAnimatedStickerNodeImpl?
+        private weak var shimmerBg: UIView?
+        private weak var imageView: TransformImageView?
 
-        init(iconUrl: String, size: CGFloat, context: AccountContext) {
-            self.iconUrl = iconUrl; self.size = size; self.context = context
+        init(size: CGFloat, context: AccountContext) {
+            self.size = size; self.context = context
         }
 
         deinit { loadDisposable?.dispose(); fetchDisposable?.dispose() }
 
-        func load(into container: UIView) {
+        func reset() {
+            loadDisposable?.dispose(); loadDisposable = nil
+            fetchDisposable?.dispose(); fetchDisposable = nil
+            imageView?.removeFromSuperview(); imageView = nil
+            shimmerBg?.removeFromSuperview(); shimmerBg = nil
+            currentIconUrl = ""
+        }
+
+        func load(_ iconUrl: String, into container: UIView) {
+            currentIconUrl = iconUrl
             guard let slashIdx = iconUrl.lastIndex(of: "/"),
                   let index = Int(iconUrl[iconUrl.index(after: slashIdx)...]) else { return }
             let packName = String(iconUrl[iconUrl.startIndex..<slashIdx])
-            let iconSize = CGSize(width: size, height: size)
-            let pixelSide = Int(size * UIScreen.main.scale)
+            let pts = CGSize(width: size, height: size)
+            let radius = size * 0.22
+
+            let bg = UIView(frame: CGRect(origin: .zero, size: pts))
+            bg.backgroundColor = UIColor.systemGray5
+            bg.layer.cornerRadius = radius
+            bg.clipsToBounds = true
+            let shimmer = ShimmerEffectForegroundView()
+            shimmer.frame = bg.bounds
+            shimmer.update(backgroundColor: UIColor.systemGray5, foregroundColor: UIColor.systemGray4,
+                           gradientSize: nil, globalTimeOffset: true, duration: nil, horizontal: true)
+            shimmer.updateAbsoluteRect(bg.bounds, within: pts)
+            bg.addSubview(shimmer)
+            container.addSubview(bg)
+            self.shimmerBg = bg
 
             loadDisposable = (context.engine.stickers.loadedStickerPack(
-                    reference: .name(packName), forceActualized: false)
+                reference: .name(packName), forceActualized: true)
+                |> filter { if case .result = $0 { return true }; return false }
+                |> take(1)
                 |> deliverOnMainQueue
-            ).startStandalone(next: { [weak container, weak self] result in
-                guard let self, let container else { return }
-                guard self.node == nil else { return }
-                guard case .result(_, let items, _) = result, index < items.count else { return }
-
+            ).startStandalone(next: { [weak self, weak container] result in
+                guard let self, let container,
+                      case .result(_, let items, _) = result,
+                      index < items.count else { return }
                 let file = items[index].file._parse()
-                let node = DefaultAnimatedStickerNodeImpl()
-                node.setup(
-                    source: AnimatedStickerResourceSource(
-                        account: self.context.account,
-                        resource: file.resource,
-                        isVideo: file.isVideoSticker
-                    ),
-                    width: pixelSide, height: pixelSide,
-                    playbackMode: .loop, mode: .direct(cachePathPrefix: nil)
-                )
-                node.updateLayout(size: iconSize)
-                node.overrideVisibility = true
-                node.visibility = true
-                node.frame = CGRect(origin: .zero, size: iconSize)
-                node.view.frame = CGRect(origin: .zero, size: iconSize)
-                container.addSubview(node.view)
-                self.node = node
+                let scale = UIScreen.main.scale
+                let pixels = CGSize(width: pts.width * scale, height: pts.height * scale)
+
+                let iv = TransformImageView()
+                iv.frame = CGRect(origin: .zero, size: pts)
+                iv.contentAnimations = .firstUpdate
+                iv.imageUpdated = { [weak self] image in
+                    guard image != nil else { return }
+                    UIView.animate(withDuration: 0.2) { self?.shimmerBg?.alpha = 0 }
+                }
+                iv.setSignal(chatMessageSticker(account: self.context.account, userLocation: .other,
+                                                file: file, small: false))
+                let apply = iv.asyncLayout()
+                apply(TransformImageArguments(corners: ImageCorners(radius: radius),
+                                             imageSize: pixels, boundingSize: pixels,
+                                             intrinsicInsets: .zero))()
+                container.addSubview(iv)
+                self.imageView = iv
 
                 self.fetchDisposable = freeMediaFileResourceInteractiveFetched(
-                    account: self.context.account,
-                    userLocation: .other,
+                    account: self.context.account, userLocation: .other,
                     fileReference: stickerPackFileReference(file),
-                    resource: file.resource
+                    resource: chatMessageStickerResource(file: file, small: false)
                 ).startStandalone()
             })
         }

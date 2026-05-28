@@ -133,6 +133,7 @@ swift_library(
         "//submodules/TextFormat:TextFormat",
         "//submodules/SwitchNode:SwitchNode",
         "//submodules/StickerResources:StickerResources",
+        "//submodules/ShimmerEffect:ShimmerEffect",
         "//submodules/SelectablePeerNode:SelectablePeerNode",
         "//submodules/SaveToCameraRoll:SaveToCameraRoll",
         "//submodules/LocalizedPeerData:LocalizedPeerData",
