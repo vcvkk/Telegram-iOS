@@ -63,39 +63,82 @@ def _download_file(url, dest):
         with urllib.request.urlopen(req, timeout=30) as r:
             status = getattr(r, "status", None)
             data = r.read()
-        print("[tomato_bom] GET {} → status={} bytes={}".format(url, status, len(data)))
+        bridge.log("tomato_bom", "GET {} → status={} bytes={}".format(url, status, len(data)))
         if not data:
-            print("[tomato_bom] download failed: empty body")
+            bridge.log("tomato_bom", "download failed: empty body")
             return False
         if data[:1] == b'<':
-            print("[tomato_bom] download failed: HTML/error body, first16={!r}".format(data[:16]))
+            bridge.log("tomato_bom", "download failed: HTML body, first16={!r}".format(data[:16]))
             return False
         with open(dest, 'wb') as f:
             f.write(data)
-        print("[tomato_bom] saved {} bytes → {}".format(len(data), dest))
+        bridge.log("tomato_bom", "saved {} bytes → {}".format(len(data), dest))
         return True
     except Exception as e:
-        print("[tomato_bom] download exception for {}: {}".format(url, e))
+        bridge.log("tomato_bom", "download exception: {}".format(e))
+        return False
+
+
+def _make_splat_png(path):
+    """Generate a tomato-splat PNG locally using Pillow. Returns True on success."""
+    try:
+        from PIL import Image, ImageDraw, ImageFilter
+        sz = 512
+        img = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        cx, cy = sz // 2, sz // 2
+        for _ in range(18):
+            r = _uniform(45, 160)
+            dx = _uniform(-130, 130)
+            dy = _uniform(-130, 130)
+            a = int(_uniform(185, 255))
+            draw.ellipse([cx+dx-r, cy+dy-r, cx+dx+r, cy+dy+r],
+                         fill=(int(_uniform(165, 220)), int(_uniform(10, 55)), int(_uniform(10, 45)), a))
+        for _ in range(7):
+            r = _uniform(7, 17)
+            dx = _uniform(-75, 75)
+            dy = _uniform(-75, 75)
+            draw.ellipse([cx+dx-r, cy+dy-r, cx+dx+r, cy+dy+r], fill=(75, 40, 10, 210))
+        img = img.filter(ImageFilter.GaussianBlur(radius=4))
+        img.save(path, "PNG")
+        bridge.log("tomato_bom", "splat PNG generated: {}".format(path))
+        return True
+    except Exception as e:
+        bridge.log("tomato_bom", "Pillow splat error: {}".format(e))
         return False
 
 
 def _ensure_assets():
-    """Download GIF and sound on first use. Returns True if GIF is ready."""
+    """Prepare splat image and sound. Returns True if splat image is ready."""
     global _gif_path, _sound_path
     data_dir = bridge.get_plugin_data_dir(__id__)
     _gif_path   = data_dir + "/splat.gif"
     _sound_path = data_dir + "/splat.mp3"
-    gif_cached = os.path.exists(_gif_path)
-    print("[tomato_bom] ensure_assets: gif={} cached={}".format(_gif_path, gif_cached))
-    if not gif_cached:
-        if not _download_file(_GIF_URL, _gif_path):
-            print("[tomato_bom] ensure_assets: GIF unavailable → abort")
-            return False
+    png_path    = data_dir + "/splat.png"
+
+    # Splat image: cached GIF → remote download → local Pillow generation
+    if os.path.exists(_gif_path):
+        bridge.log("tomato_bom", "splat GIF cached")
+    elif os.path.exists(png_path):
+        bridge.log("tomato_bom", "splat PNG cached")
+        _gif_path = png_path
+    else:
+        bridge.log("tomato_bom", "no cached splat — trying download")
+        if _download_file(_GIF_URL, _gif_path):
+            bridge.log("tomato_bom", "splat GIF downloaded OK")
+        else:
+            bridge.log("tomato_bom", "download failed — generating locally with Pillow")
+            if _make_splat_png(png_path):
+                _gif_path = png_path
+            else:
+                bridge.log("tomato_bom", "Pillow also unavailable — giving up")
+                return False
+
+    # Sound is optional — skip silently if download fails
     if not os.path.exists(_sound_path):
-        _download_file(_SOUND_URL, _sound_path)  # sound is optional
-    ready = os.path.exists(_gif_path)
-    print("[tomato_bom] ensure_assets: ready={}".format(ready))
-    return ready
+        _download_file(_SOUND_URL, _sound_path)
+
+    bridge.log("tomato_bom", "assets ready: splat={}".format(_gif_path))
     return os.path.exists(_gif_path)
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -235,9 +278,9 @@ def _on_menu_tap(params):
 def on_load(plugin):
     try:
         from PIL import Image
-        print("[tomato_bom] Pillow {} ready".format(Image.__version__))
+        bridge.log("tomato_bom", "Pillow {} ready".format(Image.__version__))
     except ImportError as e:
-        print("[tomato_bom] Pillow not available: {}".format(e))
+        bridge.log("tomato_bom", "Pillow not available: {}".format(e))
     bridge.register_plugin_entry(__id__, "chatlist",     "open", "🍅 Tomato Bom")
     bridge.register_plugin_entry(__id__, "context_menu", "open", "🍅 Tomato Bom")
     bridge.add_tl_hook("plugin.menu_item_tapped", _on_menu_tap)

@@ -921,6 +921,15 @@ static PyObject *py_get_connection_state(PyObject *self, PyObject *args) {
 }
 
 // ---------------------------------------------------------------------------
+// log(tag, message) — write directly to EGPluginDebugLog so Python plugins
+// can emit visible diagnostics without relying on stdout/print().
+static PyObject *py_log(PyObject *self, PyObject *args) {
+    const char *tag = "Plugin", *message = "";
+    if (!PyArg_ParseTuple(args, "ss", &tag, &message)) return NULL;
+    EGPluginDebugLog_appendCStr(tag, message);
+    Py_RETURN_NONE;
+}
+
 // Bulletin / toast
 // ---------------------------------------------------------------------------
 
@@ -1897,6 +1906,8 @@ static PyMethodDef ios_bridge_methods[] = {
     // BRIDGE_VERSION 5 — show_splat, add_touch_handler
     {"show_splat",              py_show_splat,              METH_VARARGS, "show_splat(overlay_id, image_path, x, y, size) — show GIF/PNG at position, fade-in, auto-remove"},
     {"add_touch_handler",       py_add_touch_handler,       METH_VARARGS, "add_touch_handler(overlay_id, callback) — callback(action:int, x:float, y:float): 0=down, 1=up/cancel, 2=move"},
+    // BRIDGE_VERSION 6 — log
+    {"log",                     py_log,                     METH_VARARGS, "log(tag, message) — write to EGPluginDebugLog"},
     {NULL, NULL, 0, NULL}
 };
 
