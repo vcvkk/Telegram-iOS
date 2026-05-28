@@ -507,7 +507,7 @@ public final class PluginsController {
     }
 
     private func showBulletin(title: String, text: String, icon: String) {
-        guard let vc = Self.topViewController() as? ViewController,
+        guard let vc = Self.findTelegramViewController(),
               let presentationData = storedContext.map({ $0.sharedContext.currentPresentationData.with { $0 } })
         else {
             EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: no VC or context — giving up")
@@ -522,6 +522,30 @@ public final class PluginsController {
             action: { _ in return false }
         )
         vc.present(overlay, in: .window(.root))
+    }
+
+    // Recursively finds any Telegram ViewController in the window hierarchy.
+    // WindowRootViewController (from Display) hosts Telegram's nav stack as
+    // child VCs, not presented VCs, so we must walk .children as well.
+    private static func findTelegramViewController() -> ViewController? {
+        let allWindows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        let win = allWindows.first(where: { $0.isKeyWindow })
+               ?? allWindows.first(where: { $0.rootViewController != nil })
+
+        func search(_ vc: UIViewController?) -> ViewController? {
+            guard let vc else { return nil }
+            if let tv = vc as? ViewController { return tv }
+            if let presented = vc.presentedViewController, !presented.isBeingDismissed {
+                if let found = search(presented) { return found }
+            }
+            for child in vc.children.reversed() {
+                if let found = search(child) { return found }
+            }
+            return nil
+        }
+        return search(win?.rootViewController)
     }
 
     private static func showToast(message: String, duration: Double) {
