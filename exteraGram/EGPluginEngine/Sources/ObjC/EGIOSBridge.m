@@ -1810,6 +1810,14 @@ static PyObject *py_show_splat(PyObject *self, PyObject *args) {
         iv.contentMode = UIViewContentModeScaleAspectFit;
         iv.userInteractionEnabled = NO;
         iv.alpha = 0.0f;
+        // initWithImage: does NOT auto-start animation when the UIWindow is not keyWindow.
+        // Explicitly configure and start the frame animation.
+        if (img.images.count > 1) {
+            iv.animationImages = img.images;
+            iv.animationDuration = img.duration;
+            iv.animationRepeatCount = 1;
+            [iv startAnimating];
+        }
         [overlay addSubview:iv];
         [UIView animateWithDuration:0.25 animations:^{ iv.alpha = 1.0f; }];
         double removeDur = (img.images.count > 1 && img.duration > 0)
