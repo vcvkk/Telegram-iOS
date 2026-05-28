@@ -10,6 +10,7 @@ import _ios_bridge as bridge
 import threading
 import time
 import os
+import ssl
 import urllib.request
 
 # ── pure-Python LCG (no C deps) ────────────────────────────────────────────────
@@ -59,8 +60,13 @@ def _download_file(url, dest):
     req = urllib.request.Request(url, headers={
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
     })
+    # iOS Python doesn't ship a CA bundle, so standard SSL verification fails.
+    # Content is validated below (HTML / empty body check).
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
             status = getattr(r, "status", None)
             data = r.read()
         bridge.log("tomato_bom", "GET {} → status={} bytes={}".format(url, status, len(data)))
@@ -112,24 +118,30 @@ def _ensure_assets():
     """Prepare splat image and sound. Returns True if splat image is ready."""
     global _gif_path, _sound_path
     data_dir = bridge.get_plugin_data_dir(__id__)
-    _gif_path   = data_dir + "/splat.gif"
+    gif_dest    = data_dir + "/splat.gif"
+    png_fallback = data_dir + "/splat.png"
     _sound_path = data_dir + "/splat.mp3"
-    png_path    = data_dir + "/splat.png"
 
-    # Splat image: cached GIF → remote download → local Pillow generation
-    if os.path.exists(_gif_path):
+    # Prefer the animated GIF. PNG fallback (Pillow-generated) must not block
+    # a fresh GIF download — if we only have a PNG, still attempt to get the GIF.
+    if os.path.exists(gif_dest):
+        _gif_path = gif_dest
         bridge.log("tomato_bom", "splat GIF cached")
-    elif os.path.exists(png_path):
-        bridge.log("tomato_bom", "splat PNG cached")
-        _gif_path = png_path
     else:
-        bridge.log("tomato_bom", "no cached splat — trying download")
-        if _download_file(_GIF_URL, _gif_path):
+        bridge.log("tomato_bom", "no cached GIF — trying download")
+        if _download_file(_GIF_URL, gif_dest):
+            _gif_path = gif_dest
             bridge.log("tomato_bom", "splat GIF downloaded OK")
+            # Remove stale PNG fallback now that we have the real GIF
+            if os.path.exists(png_fallback):
+                try: os.remove(png_fallback)
+                except: pass
         else:
-            bridge.log("tomato_bom", "download failed — generating locally with Pillow")
-            if _make_splat_png(png_path):
-                _gif_path = png_path
+            bridge.log("tomato_bom", "download failed — using PNG fallback")
+            if not os.path.exists(png_fallback):
+                _make_splat_png(png_fallback)
+            if os.path.exists(png_fallback):
+                _gif_path = png_fallback
             else:
                 bridge.log("tomato_bom", "Pillow also unavailable — giving up")
                 return False
