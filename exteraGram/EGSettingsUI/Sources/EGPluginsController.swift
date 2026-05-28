@@ -927,6 +927,7 @@ private struct PluginRowView: View {
                 actionsRow
                     .frame(height: 40)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 16)
             .padding(.top, 16)
             .padding(.trailing, 16)
@@ -971,6 +972,7 @@ private struct PluginRowView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity)
         .listRowInsets(EdgeInsets())
     }
 
