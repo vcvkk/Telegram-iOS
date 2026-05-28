@@ -34,8 +34,8 @@ def _fire_interval():
     return float(bridge.get_plugin_setting(__id__, "fire_interval", 0.12))
 
 # ── asset URLs (original Android sources) ──────────────────────────────────────
-_GIF_URL   = "https://gitflic.ru/attachment/upload/272e5dd1-a12c-4339-b78e-4bd8c1e5e05b"
-_SOUND_URL = "https://gitflic.ru/attachment/upload/ee0494f8-51f6-4e38-bae8-2c17c68b8d9e"
+_GIF_URL   = "https://gitflic.ru/project/fdijdkjl/kjhkjh/blob/raw?file=ezgif-4d2382b4323e220f.gif&inline=false&commit=b10d0e981c42998ed9180edda184d1852cd7362c"
+_SOUND_URL = "https://gitflic.ru/project/fdijdkjl/kjhkjh/blob/raw?file=c5855692202fecf58526e46da71c34d3.mp3&inline=false&commit=b10d0e981c42998ed9180edda184d1852cd7362c"
 
 # ── runtime state ──────────────────────────────────────────────────────────────
 _overlay_id    = None
