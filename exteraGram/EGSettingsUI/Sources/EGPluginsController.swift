@@ -981,10 +981,13 @@ private struct PluginRowView: View {
                     UIPasteboard.general.string = plugin.errorMessage ?? i18n("Plugins.State.Error", lang)
                 }
         } else if !plugin.pluginDescription.isEmpty {
-            Text(.init(plugin.pluginDescription))
-                .font(.subheadline).foregroundColor(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.trailing, 12).padding(.top, 6)
+            EGMarkdownText(
+                plugin.pluginDescription,
+                font: UIFont.preferredFont(forTextStyle: .subheadline),
+                color: UIColor.label
+            )
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.trailing, 12).padding(.top, 6)
         }
     }
 
