@@ -2197,6 +2197,22 @@ static id py_to_ns(PyObject *obj) {
                 Py_DECREF(pathRepr);
             }
         }
+
+        // Patch EXTENSION_SUFFIXES so Python finds .dylib renamed extensions.
+        // PythonExtensions.framework ships files as .cpython-313-iphoneos.dylib
+        // (renamed from .so at build time) so that iOS signing tools recognise
+        // and sign them with the developer certificate.
+        PyRun_SimpleString(
+            "try:\n"
+            "    import importlib._bootstrap_external as _ibe\n"
+            "    _suf = '.cpython-313-iphoneos.dylib'\n"
+            "    if _suf not in _ibe.EXTENSION_SUFFIXES:\n"
+            "        _ibe.EXTENSION_SUFFIXES.insert(0, _suf)\n"
+            "    del _ibe, _suf\n"
+            "except Exception:\n"
+            "    pass\n"
+        );
+
         PyGILState_Release(state);
 
         g_initialized = YES;
