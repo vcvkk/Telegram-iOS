@@ -101,6 +101,8 @@ static NSMutableDictionary<NSNumber *, UIWindow *>       *g_overlayWindows = nil
 static NSMutableDictionary<NSNumber *, AVAudioPlayer *>  *g_audioPlayers   = nil;
 static int32_t g_nextOverlayId = 1;
 static int32_t g_nextAudioId   = 1;
+// splat image cache: file path → decoded UIImage (animated). Avoids per-tap disk I/O + decode.
+static NSMutableDictionary<NSString *, UIImage *>        *g_splatCache     = nil;
 
 // UIKit values that must be read on main thread — cached at engine startup via prepareUIKitCaches.
 // Once written, only ever read (no synchronisation needed for reads after the barrier).
@@ -1530,6 +1532,9 @@ static PyObject *py_dismiss_overlay(PyObject *self, PyObject *args) {
             }];
         }
         [g_overlayTargets removeObjectForKey:@(oid)];
+        if (g_splatCache && g_overlays.count == 0) {
+            [g_splatCache removeAllObjects];
+        }
         EGPluginDebugLog_appendCStr("Overlay",
             [[NSString stringWithFormat:@"dismiss_overlay id=%d", oid] UTF8String]);
     });
@@ -1726,10 +1731,11 @@ static PyObject *py_register_plugin_entry(PyObject *self, PyObject *args) {
 // ---------------------------------------------------------------------------
 // BRIDGE_VERSION 5 — show_splat, add_touch_handler
 // (download_file removed in v6 — plugins use urllib.request directly)
+// BRIDGE_VERSION 7 — preload_splat; show_splat now uses background decode + cache
 // ---------------------------------------------------------------------------
 
 // GIF/PNG/JPG decoder: returns animated UIImage (multi-frame) or static UIImage.
-// Called on main thread from py_show_splat.
+// May be called on any thread.
 static UIImage *eg_animated_image_from_data(NSData *data) {
     if (!data || data.length == 0) return nil;
     CGImageSourceRef src = CGImageSourceCreateWithData((__bridge CFDataRef)data, nil);
@@ -1780,8 +1786,32 @@ static UIImage *eg_animated_image_from_data(NSData *data) {
     return [UIImage animatedImageWithImages:frames duration:totalDuration];
 }
 
+// Attach one splat image-view to an overlay and animate it. Must be called on main thread.
+static void eg_spawn_splat_view(UIImage *img, UIView *overlay, CGFloat cx, CGFloat cy, CGFloat size) {
+    UIImageView *iv = [[UIImageView alloc] initWithImage:img];
+    iv.frame = CGRectMake(cx - size/2.0f, cy - size/2.0f, size, size);
+    iv.contentMode = UIViewContentModeScaleAspectFit;
+    iv.userInteractionEnabled = NO;
+    iv.alpha = 0.0f;
+    // initWithImage: does NOT auto-start animation when the UIWindow is not keyWindow.
+    if (img.images.count > 1) {
+        iv.animationImages   = img.images;
+        iv.animationDuration = img.duration;
+        iv.animationRepeatCount = 1;
+        [iv startAnimating];
+    }
+    [overlay addSubview:iv];
+    [UIView animateWithDuration:0.25 animations:^{ iv.alpha = 1.0f; }];
+    double dur = (img.images.count > 1 && img.duration > 0) ? img.duration + 0.15 : 1.5;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(dur * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        [UIView animateWithDuration:0.2 animations:^{ iv.alpha = 0.0f; }
+                        completion:^(BOOL _) { [iv removeFromSuperview]; }];
+    });
+}
+
 // show_splat(overlay_id, image_path, x, y, size) → None
-// Display a GIF/PNG centered at (x,y) on the overlay; fade-in 250ms; auto-remove after one loop.
+// Cache-hit path: instant (main thread only). Cache-miss: decodes on background, stores in cache, then spawns.
 static PyObject *py_show_splat(PyObject *self, PyObject *args) {
     int oid = 0;
     const char *path_c = "";
@@ -1795,38 +1825,59 @@ static PyObject *py_show_splat(PyObject *self, PyObject *args) {
             EGPluginDebugLog_appendCStr("Splat", "show_splat: overlay not found");
             return;
         }
-        NSData *data = [NSData dataWithContentsOfFile:path];
-        if (!data || data.length == 0) {
-            EGPluginDebugLog_appendCStr("Splat", "show_splat: file not found or empty");
+        if (!g_splatCache) g_splatCache = [NSMutableDictionary new];
+        UIImage *cached = g_splatCache[path];
+        if (cached) {
+            eg_spawn_splat_view(cached, overlay, cx, cy, size);
             return;
         }
-        UIImage *img = eg_animated_image_from_data(data);
-        if (!img) {
-            EGPluginDebugLog_appendCStr("Splat", "show_splat: could not decode image");
-            return;
-        }
-        UIImageView *iv = [[UIImageView alloc] initWithImage:img];
-        iv.frame = CGRectMake(cx - size/2.0f, cy - size/2.0f, size, size);
-        iv.contentMode = UIViewContentModeScaleAspectFit;
-        iv.userInteractionEnabled = NO;
-        iv.alpha = 0.0f;
-        // initWithImage: does NOT auto-start animation when the UIWindow is not keyWindow.
-        // Explicitly configure and start the frame animation.
-        if (img.images.count > 1) {
-            iv.animationImages = img.images;
-            iv.animationDuration = img.duration;
-            iv.animationRepeatCount = 1;
-            [iv startAnimating];
-        }
-        [overlay addSubview:iv];
-        [UIView animateWithDuration:0.25 animations:^{ iv.alpha = 1.0f; }];
-        double removeDur = (img.images.count > 1 && img.duration > 0)
-            ? img.duration + 0.15
-            : 1.5;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(removeDur * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            [UIView animateWithDuration:0.2 animations:^{ iv.alpha = 0.0f; }
-                            completion:^(BOOL _) { [iv removeFromSuperview]; }];
+        // Cache miss: decode on background queue to avoid blocking the main thread.
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
+            NSData *data = [NSData dataWithContentsOfFile:path];
+            if (!data || data.length == 0) {
+                EGPluginDebugLog_appendCStr("Splat", "show_splat: file not found or empty");
+                return;
+            }
+            UIImage *img = eg_animated_image_from_data(data);
+            if (!img) {
+                EGPluginDebugLog_appendCStr("Splat", "show_splat: could not decode image");
+                return;
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                UIView *ov = g_overlays[@(oid)];
+                if (!ov) return;
+                if (!g_splatCache) g_splatCache = [NSMutableDictionary new];
+                g_splatCache[path] = img;
+                eg_spawn_splat_view(img, ov, cx, cy, size);
+            });
+        });
+    });
+    Py_RETURN_NONE;
+}
+
+// preload_splat(image_path) → None
+// Decode and cache the splat image in the background without displaying it.
+// Call after create_overlay so the very first tap finds the cache already warm.
+static PyObject *py_preload_splat(PyObject *self, PyObject *args) {
+    const char *path_c = "";
+    if (!PyArg_ParseTuple(args, "s", &path_c)) return NULL;
+    NSString *path = [NSString stringWithUTF8String:path_c];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        // Re-check on main thread to avoid racing with another preload.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!g_splatCache) g_splatCache = [NSMutableDictionary new];
+            if (g_splatCache[path]) return; // already cached
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                NSData *data = [NSData dataWithContentsOfFile:path];
+                if (!data || data.length == 0) return;
+                UIImage *img = eg_animated_image_from_data(data);
+                if (!img) return;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (!g_splatCache) g_splatCache = [NSMutableDictionary new];
+                    g_splatCache[path] = img;
+                    EGPluginDebugLog_appendCStr("Splat", "preload_splat: cached");
+                });
+            });
         });
     });
     Py_RETURN_NONE;
@@ -1916,6 +1967,8 @@ static PyMethodDef ios_bridge_methods[] = {
     {"add_touch_handler",       py_add_touch_handler,       METH_VARARGS, "add_touch_handler(overlay_id, callback) — callback(action:int, x:float, y:float): 0=down, 1=up/cancel, 2=move"},
     // BRIDGE_VERSION 6 — log
     {"log",                     py_log,                     METH_VARARGS, "log(tag, message) — write to EGPluginDebugLog"},
+    // BRIDGE_VERSION 7 — preload_splat; show_splat now uses background decode + image cache
+    {"preload_splat",           py_preload_splat,           METH_VARARGS, "preload_splat(image_path) — decode and cache splat image without displaying it"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -1937,7 +1990,8 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     //         show_projectile, load_audio, play_audio, register_plugin_entry
     //   5 — show_splat, add_touch_handler; EGOverlayContentView raw touch
     //   6 — download_file removed; plugins use urllib.request directly
-    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 6);
+    //   7 — preload_splat; show_splat background decode + cache; dismiss_overlay evicts cache
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 7);
     return m;
 }
 

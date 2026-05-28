@@ -26,7 +26,7 @@ def _uniform(a, b):
 
 # ── settings ────────────────────────────────────────────────────────────────────
 def _tomato_size():
-    return float(bridge.get_plugin_setting(__id__, "tomato_size", 260.0))
+    return float(bridge.get_plugin_setting(__id__, "tomato_size", 650.0))
 
 def _sound_volume():
     return float(bridge.get_plugin_setting(__id__, "sound_volume", 0.7))
@@ -277,6 +277,7 @@ def _create_overlay():
     oid = bridge.create_overlay(0.0)
     _overlay_id = oid
     bridge.add_touch_handler(oid, _on_touch)
+    bridge.preload_splat(_gif_path)
     bridge.show_bulletin("🍅 Tomato Bom", "Tap · Hold for rapid fire · Double-tap to close")
 
 # ── menu item handler ──────────────────────────────────────────────────────────
