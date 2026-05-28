@@ -8,6 +8,7 @@
 #import <netinet/in.h>
 #import <arpa/inet.h>
 #import <ifaddrs.h>
+#import <stdatomic.h>
 #import <sys/sysctl.h>
 #import <sys/utsname.h>
 #import <sys/time.h>
@@ -107,7 +108,7 @@ static NSMutableDictionary<NSString *, UIImage *>        *g_splatCache     = nil
 static NSMutableDictionary<NSNumber *, UIView *>         *g_views          = nil;
 // view_id → overlay_id — used to purge views when their overlay is dismissed.
 static NSMutableDictionary<NSNumber *, NSNumber *>       *g_viewOwners     = nil;
-static int32_t g_nextViewId = 1;
+static _Atomic int32_t g_nextViewId = 1;
 
 // UIKit values that must be read on main thread — cached at engine startup via prepareUIKitCaches.
 // Once written, only ever read (no synchronisation needed for reads after the barrier).
@@ -1924,7 +1925,7 @@ static PyObject *py_add_image_view(PyObject *self, PyObject *args) {
     int repeat_count = 0;
     if (!PyArg_ParseTuple(args, "isddd|i", &oid, &path_c, &x, &y, &sz, &repeat_count)) return NULL;
     // Pre-allocate view_id so we can return it immediately (view will appear shortly).
-    int32_t vid = OSAtomicIncrement32(&g_nextViewId);
+    int32_t vid = atomic_fetch_add_explicit(&g_nextViewId, 1, memory_order_relaxed) + 1;
     NSString *path = [NSString stringWithUTF8String:path_c];
     CGFloat cx = (CGFloat)x, cy = (CGFloat)y, size = (CGFloat)sz;
     NSInteger rc = (NSInteger)repeat_count;
