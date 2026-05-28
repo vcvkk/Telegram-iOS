@@ -67,8 +67,8 @@ def _download_file(url, dest):
         if not data:
             bridge.log("tomato_bom", "download failed: empty body")
             return False
-        if data[:1] == b'<':
-            bridge.log("tomato_bom", "download failed: HTML body, first16={!r}".format(data[:16]))
+        if data.lstrip()[:1] == b'<':
+            bridge.log("tomato_bom", "download failed: HTML body, first32={!r}".format(data[:32]))
             return False
         with open(dest, 'wb') as f:
             f.write(data)
