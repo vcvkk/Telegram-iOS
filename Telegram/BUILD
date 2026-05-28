@@ -4,6 +4,9 @@ load("@bazel_skylib//rules:common_settings.bzl",
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
 
+# MARK: exteraGram — ad-hoc signing of CPython .so extension modules
+load("//exteraGram/EGPluginEngine:sign_extensions.bzl", "sign_ios_extensions")
+
 load("@build_bazel_rules_apple//apple:ios.bzl",
     "ios_application",
     "ios_extension",
@@ -2068,6 +2071,15 @@ plist_fragment(
     )
 )
 
+# Ad-hoc sign each .so so that Feather (and other iOS signing tools) detect
+# them as signed Mach-O and replace the signature with the developer certificate.
+# Without any signature the tools treat .so files as plain data resources and
+# skip them, leaving them "completely unsigned" → AMFI blocks dlopen at runtime.
+sign_ios_extensions(
+    name = "PythonDynloadSosSigned",
+    srcs = ["@python_apple_support//:PythonDynloadSos"],
+)
+
 ios_framework(
     name = "PythonExtensionsFramework",
     bundle_name = "PythonExtensions",
@@ -2086,7 +2098,7 @@ ios_framework(
         "//exteraGram/EGPluginEngine:EGPythonExtensionsStub",
     ],
     resources = [
-        "@python_apple_support//:PythonDynloadSos",
+        ":PythonDynloadSosSigned",
     ],
 )
 
