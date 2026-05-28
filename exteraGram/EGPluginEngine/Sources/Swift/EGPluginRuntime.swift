@@ -24,8 +24,8 @@ public final class EGPluginRuntime {
         // Migrate any plugins from old AppSupport location
         migrateFromAppSupport()
 
-        // Extract stdlib zip (python3.14.zip) from bundle to Caches on first launch.
-        // Returns the home dir where lib/python3.14/ was extracted.
+        // Extract stdlib zip (python3.13.zip) from bundle to Caches on first launch.
+        // Returns the home dir where lib/python3.13/ was extracted.
         guard let pythonHome = prepareStdlibAndGetHome() else {
             EGLogger.shared.log("PluginRuntime",
                 "Python stdlib extraction failed — engine disabled.")
@@ -190,9 +190,9 @@ __all__ = ['dynamic_proxy']
 
     // MARK: - Path discovery
 
-    /// Extract python3.14.zip from the app bundle to Library/Caches/EGPythonStdlib/ on first
-    /// launch (or when the app is updated). The zip contains lib/python3.14/** so after
-    /// extraction PyConfig.home = cacheDir → Python finds stdlib at cacheDir/lib/python3.14/.
+    /// Extract python3.13.zip from the app bundle to Library/Caches/EGPythonStdlib/ on first
+    /// launch (or when the app is updated). The zip contains lib/python3.13/** so after
+    /// extraction PyConfig.home = cacheDir → Python finds stdlib at cacheDir/lib/python3.13/.
     private func prepareStdlibAndGetHome() -> String? {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         let stdlibHome = caches.appendingPathComponent("EGPythonStdlib")
@@ -205,9 +205,9 @@ __all__ = ['dynamic_proxy']
             return stdlibHome.path
         }
 
-        guard let zipURL = Bundle.main.url(forResource: "python3.14", withExtension: "zip") else {
+        guard let zipURL = Bundle.main.url(forResource: "python3.13", withExtension: "zip") else {
             EGLogger.shared.log("PluginRuntime",
-                "python3.14.zip not found in bundle — " +
+                "python3.13.zip not found in bundle — " +
                 "ensure @python_apple_support//:PythonStdlibZip is in data deps.")
             return nil
         }
@@ -217,7 +217,7 @@ __all__ = ['dynamic_proxy']
 
         let ok = EGPythonBridge.extractPythonStdlibZip(zipURL.path, toDirectory: stdlibHome.path)
         guard ok else {
-            EGLogger.shared.log("PluginRuntime", "Failed to extract python3.14.zip")
+            EGLogger.shared.log("PluginRuntime", "Failed to extract python3.13.zip")
             return nil
         }
 
