@@ -164,6 +164,7 @@ public struct EGMarkdownText: UIViewRepresentable {
         tv.textContainerInset = .zero
         tv.textContainer.lineFragmentPadding = 0
         tv.setContentCompressionResistancePriority(.required,  for: .vertical)
+        tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         tv.setContentHuggingPriority(.defaultLow,              for: .horizontal)
         tv.setContentHuggingPriority(.required,                for: .vertical)
         return tv
@@ -172,5 +173,12 @@ public struct EGMarkdownText: UIViewRepresentable {
     public func updateUIView(_ uiView: UITextView, context: Context) {
         uiView.textContainer.maximumNumberOfLines = lineLimit
         uiView.attributedText = egAndroidMarkdown(text, font: font, color: color)
+    }
+
+    @available(iOS 16.0, *)
+    public func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        guard let w = proposal.width, w > 0 else { return nil }
+        let s = uiView.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude))
+        return CGSize(width: w, height: ceil(s.height))
     }
 }

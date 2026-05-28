@@ -221,9 +221,9 @@ def _on_menu_tap(params):
 def on_load(plugin):
     try:
         from PIL import Image
-        bridge.log(__id__, "Pillow {} ready".format(Image.__version__))
+        print("[tomato_bom] Pillow {} ready".format(Image.__version__))
     except ImportError as e:
-        bridge.log(__id__, "Pillow not available: {}".format(e))
+        print("[tomato_bom] Pillow not available: {}".format(e))
     bridge.register_plugin_entry(__id__, "chatlist",     "open", "🍅 Tomato Bom")
     bridge.register_plugin_entry(__id__, "context_menu", "open", "🍅 Tomato Bom")
     bridge.add_tl_hook("plugin.menu_item_tapped", _on_menu_tap)

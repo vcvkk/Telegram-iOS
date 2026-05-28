@@ -2147,6 +2147,7 @@ ios_framework(
     ],
     resources = [
         "//exteraGram/EGPluginEngine/Python/BeewarePackages:BeewarePackagesResources",
+        "//exteraGram/EGPluginEngine/Python/BeewarePackages:BeewarePackagesSignedExts",
     ],
 )
 

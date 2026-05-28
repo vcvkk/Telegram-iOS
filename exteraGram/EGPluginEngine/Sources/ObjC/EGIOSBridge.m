@@ -2213,17 +2213,25 @@ static id py_to_ns(PyObject *obj) {
         // Module references stored as class attributes so find_spec can access
         // them after the global aliases are removed. 'import X' inside a class
         // body assigns to the class namespace, not the module globals.
+        //
+        // Two fixes vs. the simple version:
+        // 1. Use name.rsplit('.',1)[-1] so 'PIL._imaging' maps to filename
+        //    '_imaging', not 'PIL._imaging' (find_spec receives the full dotted name).
+        // 2. Try both .cpython-313-iphoneos.dylib and .abi3.dylib suffixes so
+        //    bcrypt/_bcrypt.abi3.so (renamed .abi3.dylib) is found too.
         PyRun_SimpleString(
             "class _DylibExtFinder:\n"
             "    import sys as _sys, os as _os\n"
             "    import importlib.machinery as _im, importlib.util as _iu\n"
-            "    _S = '.cpython-313-iphoneos.dylib'\n"
+            "    _SUFFIXES = ('.cpython-313-iphoneos.dylib', '.abi3.dylib')\n"
             "    def find_spec(self, name, path, target=None):\n"
+            "        short = name.rsplit('.', 1)[-1]\n"
             "        for d in (path if path is not None else self._sys.path):\n"
-            "            p = d + '/' + name + self._S\n"
-            "            if self._os.path.isfile(p):\n"
-            "                ld = self._im.ExtensionFileLoader(name, p)\n"
-            "                return self._iu.spec_from_loader(name, ld, origin=p)\n"
+            "            for s in self._SUFFIXES:\n"
+            "                p = d + '/' + short + s\n"
+            "                if self._os.path.isfile(p):\n"
+            "                    ld = self._im.ExtensionFileLoader(name, p)\n"
+            "                    return self._iu.spec_from_loader(name, ld, origin=p)\n"
             "        return None\n"
             "_DylibExtFinder._sys.meta_path.insert(0, _DylibExtFinder())\n"
             "del _DylibExtFinder\n"
