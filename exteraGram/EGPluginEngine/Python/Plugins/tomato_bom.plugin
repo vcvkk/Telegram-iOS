@@ -154,10 +154,17 @@ def _play_sound():
     _last_sound_t = now
     bridge.play_audio(_audio_id, _sound_volume(), 1.0)
 
+def _splat_repeat():
+    return int(bridge.get_plugin_setting(__id__, "splat_repeat", 0))
+
+def _splat_remove_after():
+    return float(bridge.get_plugin_setting(__id__, "splat_remove_after", 0.0))
+
 def _spawn_tomato(x, y):
     if _overlay_id is None or not _gif_path or not os.path.exists(_gif_path):
         return
-    bridge.show_splat(_overlay_id, _gif_path, x, y, _tomato_size())
+    bridge.show_splat(_overlay_id, _gif_path, x, y, _tomato_size(),
+                      _splat_repeat(), _splat_remove_after())
     _play_sound()
 
 def _rapid_loop():

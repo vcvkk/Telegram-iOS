@@ -1787,23 +1787,28 @@ static UIImage *eg_animated_image_from_data(NSData *data) {
 }
 
 // Attach one splat image-view to an overlay and animate it. Must be called on main thread.
-static void eg_spawn_splat_view(UIImage *img, UIView *overlay, CGFloat cx, CGFloat cy, CGFloat size) {
+// repeat_count: passed to UIImageView.animationRepeatCount (0 = loop forever, N = play N times).
+// remove_after:  0.0 = auto (img.duration+0.15s or 1.5s for static), -1.0 = never auto-remove.
+static void eg_spawn_splat_view(UIImage *img, UIView *overlay,
+                                CGFloat cx, CGFloat cy, CGFloat size,
+                                NSInteger repeatCount, double removeAfter) {
     UIImageView *iv = [[UIImageView alloc] initWithImage:img];
     iv.frame = CGRectMake(cx - size/2.0f, cy - size/2.0f, size, size);
     iv.contentMode = UIViewContentModeScaleAspectFit;
     iv.userInteractionEnabled = NO;
     iv.alpha = 0.0f;
     // initWithImage: does NOT auto-start animation when the UIWindow is not keyWindow.
-    // animationRepeatCount = 0 loops forever; the fade-out below hides any loop boundary.
     if (img.images.count > 1) {
-        iv.animationImages   = img.images;
-        iv.animationDuration = img.duration;
-        iv.animationRepeatCount = 0;
+        iv.animationImages      = img.images;
+        iv.animationDuration    = img.duration;
+        iv.animationRepeatCount = repeatCount;
         [iv startAnimating];
     }
     [overlay addSubview:iv];
     [UIView animateWithDuration:0.25 animations:^{ iv.alpha = 1.0f; }];
-    double dur = (img.images.count > 1 && img.duration > 0) ? img.duration + 0.15 : 1.5;
+    if (removeAfter < 0) return; // plugin requested no auto-removal
+    double dur = (removeAfter > 0) ? removeAfter
+               : ((img.images.count > 1 && img.duration > 0) ? img.duration + 0.15 : 1.5);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(dur * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         [UIView animateWithDuration:0.2 animations:^{ iv.alpha = 0.0f; }
@@ -1811,15 +1816,21 @@ static void eg_spawn_splat_view(UIImage *img, UIView *overlay, CGFloat cx, CGFlo
     });
 }
 
-// show_splat(overlay_id, image_path, x, y, size) → None
+// show_splat(overlay_id, image_path, x, y, size[, repeat_count[, remove_after]]) → None
+// repeat_count (int, default 0): 0=loop forever, N=play N times.
+// remove_after (float, default 0.0): 0=auto (animation duration+0.15s), -1=never remove.
 // Cache-hit path: instant (main thread only). Cache-miss: decodes on background, stores in cache, then spawns.
 static PyObject *py_show_splat(PyObject *self, PyObject *args) {
     int oid = 0;
     const char *path_c = "";
     double x = 0, y = 0, sz = 200.0;
-    if (!PyArg_ParseTuple(args, "isddd", &oid, &path_c, &x, &y, &sz)) return NULL;
+    int repeat_count = 0;
+    double remove_after = 0.0;
+    if (!PyArg_ParseTuple(args, "isddd|id", &oid, &path_c, &x, &y, &sz, &repeat_count, &remove_after)) return NULL;
     NSString *path = [NSString stringWithUTF8String:path_c];
     CGFloat cx = (CGFloat)x, cy = (CGFloat)y, size = (CGFloat)sz;
+    NSInteger rc = (NSInteger)repeat_count;
+    double ra = remove_after;
     dispatch_async(dispatch_get_main_queue(), ^{
         UIView *overlay = g_overlays[@(oid)];
         if (!overlay) {
@@ -1829,7 +1840,7 @@ static PyObject *py_show_splat(PyObject *self, PyObject *args) {
         if (!g_splatCache) g_splatCache = [NSMutableDictionary new];
         UIImage *cached = g_splatCache[path];
         if (cached) {
-            eg_spawn_splat_view(cached, overlay, cx, cy, size);
+            eg_spawn_splat_view(cached, overlay, cx, cy, size, rc, ra);
             return;
         }
         // Cache miss: decode on background queue to avoid blocking the main thread.
@@ -1849,7 +1860,7 @@ static PyObject *py_show_splat(PyObject *self, PyObject *args) {
                 if (!ov) return;
                 if (!g_splatCache) g_splatCache = [NSMutableDictionary new];
                 g_splatCache[path] = img;
-                eg_spawn_splat_view(img, ov, cx, cy, size);
+                eg_spawn_splat_view(img, ov, cx, cy, size, rc, ra);
             });
         });
     });
@@ -1992,7 +2003,8 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     //   5 — show_splat, add_touch_handler; EGOverlayContentView raw touch
     //   6 — download_file removed; plugins use urllib.request directly
     //   7 — preload_splat; show_splat background decode + cache; dismiss_overlay evicts cache
-    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 7);
+    //   8 — show_splat gains optional repeat_count and remove_after params
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 8);
     return m;
 }
 
