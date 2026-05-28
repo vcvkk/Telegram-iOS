@@ -149,19 +149,13 @@ public func getEGAPIRegDate(token: String, deviceToken: String, userId: Int64) -
 /// Fetch the full profiles list from the exteraGram API.
 /// The result is used to populate `BadgesController.shared`.
 /// Returns an empty array (no error) if the endpoint is not yet deployed (404).
+/// Note: the endpoint is public — no Authorization header is sent.
 public func getEGProfiles(token: String) -> Signal<[EGProfileDTO], EGAPIError> {
     return Signal { subscriber in
         let url = URL(string: buildApiUrl("profiles"))!
-        let headers = [EG_API_AUTHORIZATION_HEADER: "Token \(token)"]
         let completed = Atomic<Bool>(value: false)
 
-        var request = URLRequest(url: url)
-        headers.forEach { key, value in
-            request.addValue(value, forHTTPHeaderField: key)
-        }
-        request.timeoutInterval = 10
-
-        let downloadSignal = requestsCustom(request: request).start(next: { data, urlResponse in
+        let downloadSignal = requestsGet(url: url).start(next: { data, urlResponse in
             let _ = completed.swap(true)
 
             if let http = urlResponse as? HTTPURLResponse {
