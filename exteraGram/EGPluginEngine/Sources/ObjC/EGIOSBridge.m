@@ -103,6 +103,11 @@ static int32_t g_nextOverlayId = 1;
 static int32_t g_nextAudioId   = 1;
 // splat image cache: file path → decoded UIImage (animated). Avoids per-tap disk I/O + decode.
 static NSMutableDictionary<NSString *, UIImage *>        *g_splatCache     = nil;
+// view_id → UIView — tracks individual views created via add_image_view.
+static NSMutableDictionary<NSNumber *, UIView *>         *g_views          = nil;
+// view_id → overlay_id — used to purge views when their overlay is dismissed.
+static NSMutableDictionary<NSNumber *, NSNumber *>       *g_viewOwners     = nil;
+static int32_t g_nextViewId = 1;
 
 // UIKit values that must be read on main thread — cached at engine startup via prepareUIKitCaches.
 // Once written, only ever read (no synchronisation needed for reads after the barrier).
@@ -1532,6 +1537,17 @@ static PyObject *py_dismiss_overlay(PyObject *self, PyObject *args) {
             }];
         }
         [g_overlayTargets removeObjectForKey:@(oid)];
+        // Purge views owned by this overlay.
+        if (g_viewOwners) {
+            NSMutableArray<NSNumber *> *dead = [NSMutableArray new];
+            for (NSNumber *vid in g_viewOwners) {
+                if ([g_viewOwners[vid] isEqual:@(oid)]) [dead addObject:vid];
+            }
+            for (NSNumber *vid in dead) {
+                [g_views removeObjectForKey:vid];
+                [g_viewOwners removeObjectForKey:vid];
+            }
+        }
         if (g_splatCache && g_overlays.count == 0) {
             [g_splatCache removeAllObjects];
         }
@@ -1895,6 +1911,88 @@ static PyObject *py_preload_splat(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
+// BRIDGE_VERSION 9 — add_image_view, remove_view
+// ---------------------------------------------------------------------------
+
+// add_image_view(overlay_id, image_path, x, y, size[, repeat_count]) → view_id
+// Creates a UIImageView centred at (x,y), starts animation, fades in 0.25s, returns a stable id.
+// Plugin is responsible for calling remove_view when done (no auto-removal).
+// repeat_count: 0 = loop forever (default), N = play N times.
+// Image must be preloaded via preload_splat; on cache miss a background decode is attempted.
+static PyObject *py_add_image_view(PyObject *self, PyObject *args) {
+    int oid = 0; const char *path_c = ""; double x = 0, y = 0, sz = 200.0;
+    int repeat_count = 0;
+    if (!PyArg_ParseTuple(args, "isddd|i", &oid, &path_c, &x, &y, &sz, &repeat_count)) return NULL;
+    // Pre-allocate view_id so we can return it immediately (view will appear shortly).
+    int32_t vid = OSAtomicIncrement32(&g_nextViewId);
+    NSString *path = [NSString stringWithUTF8String:path_c];
+    CGFloat cx = (CGFloat)x, cy = (CGFloat)y, size = (CGFloat)sz;
+    NSInteger rc = (NSInteger)repeat_count;
+
+    void (^spawnBlock)(UIImage *, UIView *) = ^(UIImage *img, UIView *overlay) {
+        UIImageView *iv = [[UIImageView alloc] initWithImage:img];
+        iv.frame = CGRectMake(cx - size/2.0f, cy - size/2.0f, size, size);
+        iv.contentMode = UIViewContentModeScaleAspectFit;
+        iv.userInteractionEnabled = NO;
+        iv.alpha = 0.0f;
+        if (img.images.count > 1) {
+            iv.animationImages      = img.images;
+            iv.animationDuration    = img.duration;
+            iv.animationRepeatCount = rc;
+            [iv startAnimating];
+        }
+        [overlay addSubview:iv];
+        [UIView animateWithDuration:0.25 animations:^{ iv.alpha = 1.0f; }];
+        if (!g_views) g_views = [NSMutableDictionary new];
+        if (!g_viewOwners) g_viewOwners = [NSMutableDictionary new];
+        g_views[@(vid)]      = iv;
+        g_viewOwners[@(vid)] = @(oid);
+    };
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIView *overlay = g_overlays[@(oid)];
+        if (!overlay) return;
+        if (!g_splatCache) g_splatCache = [NSMutableDictionary new];
+        UIImage *cached = g_splatCache[path];
+        if (cached) {
+            spawnBlock(cached, overlay);
+        } else {
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
+                NSData *data = [NSData dataWithContentsOfFile:path];
+                if (!data || data.length == 0) return;
+                UIImage *img = eg_animated_image_from_data(data);
+                if (!img) return;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    UIView *ov = g_overlays[@(oid)];
+                    if (!ov) return;
+                    if (!g_splatCache) g_splatCache = [NSMutableDictionary new];
+                    g_splatCache[path] = img;
+                    spawnBlock(img, ov);
+                });
+            });
+        }
+    });
+    return PyLong_FromLong((long)vid);
+}
+
+// remove_view(view_id[, fade_duration]) → None
+// Fades out the view and removes it. fade_duration defaults to 0.2s; pass 0 for instant removal.
+static PyObject *py_remove_view(PyObject *self, PyObject *args) {
+    int vid = 0;
+    double fade = 0.2;
+    if (!PyArg_ParseTuple(args, "i|d", &vid, &fade)) return NULL;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIView *v = g_views[@(vid)];
+        if (!v) return;
+        [g_views removeObjectForKey:@(vid)];
+        [g_viewOwners removeObjectForKey:@(vid)];
+        NSTimeInterval dur = MAX(0.0, fade);
+        [UIView animateWithDuration:dur animations:^{ v.alpha = 0.0f; }
+                        completion:^(BOOL _) { [v removeFromSuperview]; }];
+    });
+    Py_RETURN_NONE;
+}
+
 // add_touch_handler(overlay_id, callback) → None
 // callback(action: int, x: float, y: float) — action: 0=down, 1=up/cancel, 2=move
 static PyObject *py_add_touch_handler(PyObject *self, PyObject *args) {
@@ -1981,6 +2079,10 @@ static PyMethodDef ios_bridge_methods[] = {
     {"log",                     py_log,                     METH_VARARGS, "log(tag, message) — write to EGPluginDebugLog"},
     // BRIDGE_VERSION 7 — preload_splat; show_splat now uses background decode + image cache
     {"preload_splat",           py_preload_splat,           METH_VARARGS, "preload_splat(image_path) — decode and cache splat image without displaying it"},
+    // BRIDGE_VERSION 8 — show_splat gains optional repeat_count and remove_after params
+    // BRIDGE_VERSION 9 — add_image_view, remove_view (low-level; plugin owns removal timing)
+    {"add_image_view",          py_add_image_view,          METH_VARARGS, "add_image_view(overlay_id, path, x, y, size[, repeat_count=0]) -> view_id — create animated image view, no auto-removal"},
+    {"remove_view",             py_remove_view,             METH_VARARGS, "remove_view(view_id[, fade=0.2]) — fade out and remove a view created by add_image_view"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -2004,7 +2106,8 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     //   6 — download_file removed; plugins use urllib.request directly
     //   7 — preload_splat; show_splat background decode + cache; dismiss_overlay evicts cache
     //   8 — show_splat gains optional repeat_count and remove_after params
-    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 8);
+    //   9 — add_image_view, remove_view: plugin-controlled view lifecycle
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 9);
     return m;
 }
 

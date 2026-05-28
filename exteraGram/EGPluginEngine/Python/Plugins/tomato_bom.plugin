@@ -1,7 +1,7 @@
 __id__          = "tomato_bom"
 __name__        = "🍅 Tomato Bom"
 __os__          = "ios"
-__version__     = "1.3"
+__version__     = "1.4"
 __author__      = "@oodze"
 __description__ = "Throw tomatoes at anyone! **Tap** to splat · **Hold** for machine-gun · **Double-tap** to close."
 __requirements__ = "Pillow"
@@ -155,17 +155,21 @@ def _play_sound():
     bridge.play_audio(_audio_id, _sound_volume(), 1.0)
 
 def _splat_repeat():
+    # 0 = loop forever, 1 = play once, N = play N times
     return int(bridge.get_plugin_setting(__id__, "splat_repeat", 0))
 
-def _splat_remove_after():
-    return float(bridge.get_plugin_setting(__id__, "splat_remove_after", 0.0))
+def _splat_lifetime():
+    # Seconds before the splat fades out. 0 = stay until overlay closes (Android-style).
+    return float(bridge.get_plugin_setting(__id__, "splat_lifetime", 1.5))
 
 def _spawn_tomato(x, y):
     if _overlay_id is None or not _gif_path or not os.path.exists(_gif_path):
         return
-    bridge.show_splat(_overlay_id, _gif_path, x, y, _tomato_size(),
-                      _splat_repeat(), _splat_remove_after())
+    vid = bridge.add_image_view(_overlay_id, _gif_path, x, y, _tomato_size(), _splat_repeat())
     _play_sound()
+    lifetime = _splat_lifetime()
+    if lifetime > 0.0:
+        threading.Timer(lifetime, lambda v=vid: bridge.remove_view(v)).start()
 
 def _rapid_loop():
     """Machine-gun loop: sleeps first then fires, matching Android behaviour."""
