@@ -507,62 +507,40 @@ public final class PluginsController {
     }
 
     private func showBulletin(title: String, text: String, icon: String) {
-        guard let presentationData = storedContext.map({ $0.sharedContext.currentPresentationData.with { $0 } }) else {
+        guard let context = storedContext else {
             EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: storedContext nil — giving up")
             return
         }
-        let subtitle = text.isEmpty ? nil : text
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
         let overlay = UndoOverlayController(
             presentationData: presentationData,
-            content: .info(title: title.isEmpty ? nil : title, text: subtitle ?? "", timeout: nil, customUndoText: nil),
+            content: .info(title: title.isEmpty ? nil : title, text: text, timeout: nil, customUndoText: nil),
             elevatedLayout: false,
             animateInAsReplacement: false,
             action: { _ in return false }
         )
-        // Telegram's navigation controller is not in the UIKit child-VC hierarchy —
-        // the Window framework manages it via views and closures. Present via
-        // WindowHost directly so we don't need a ViewController reference.
-        let allWindows = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-        let keyWindow = allWindows.first(where: { $0.isKeyWindow })
-                     ?? allWindows.first(where: { $0.rootViewController != nil })
-        if let windowHost = keyWindow as? WindowHost {
-            windowHost.present(overlay, on: PresentationSurfaceLevel(rawValue: 0), blockInteraction: false, completion: {})
-            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: presented via WindowHost ✓")
-        } else if let vc = Self.findTelegramViewController() {
-            vc.present(overlay, in: .window(.root))
-            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: presented via ViewController ✓")
+        // Telegram's navigation stack is managed by the Display framework's Window1,
+        // not the UIKit child-VC hierarchy. Present on the shared mainWindow — the
+        // canonical way to surface an overlay when we only hold an AccountContext.
+        if let window = context.sharedContext.mainWindow {
+            window.present(overlay, on: .root, blockInteraction: false, completion: {})
+            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: presented via mainWindow ✓")
         } else {
-            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: no WindowHost or VC — giving up")
+            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: mainWindow nil — giving up")
         }
-    }
-
-    // Fallback: recursively find any Telegram ViewController in UIKit hierarchy.
-    // Only reached if the main window is not a WindowHost.
-    private static func findTelegramViewController() -> ViewController? {
-        let allWindows = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-        let win = allWindows.first(where: { $0.isKeyWindow })
-               ?? allWindows.first(where: { $0.rootViewController != nil })
-
-        func search(_ vc: UIViewController?) -> ViewController? {
-            guard let vc else { return nil }
-            if let tv = vc as? ViewController { return tv }
-            if let presented = vc.presentedViewController, !presented.isBeingDismissed {
-                if let found = search(presented) { return found }
-            }
-            for child in vc.children.reversed() {
-                if let found = search(child) { return found }
-            }
-            return nil
-        }
-        return search(win?.rootViewController)
     }
 
     private static func showToast(message: String, duration: Double) {
-        guard let vc = topViewController(), let view = vc.view else { return }
+        // Attach directly to the key UIWindow — a toast is a plain label and does
+        // not need a hosting ViewController (which the Window framework hides anyway).
+        let allWindows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        guard let window = allWindows.first(where: { $0.isKeyWindow })
+                        ?? allWindows.first(where: { $0.rootViewController != nil }) else {
+            EGPluginDebugLog.shared.append(tag: "Toast", "showToast: no window found")
+            return
+        }
         let label = UILabel()
         label.text = message
         label.textColor = .white
@@ -573,12 +551,12 @@ public final class PluginsController {
         label.clipsToBounds = true
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(label)
+        window.addSubview(label)
         NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            label.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            label.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
+            label.centerXAnchor.constraint(equalTo: window.centerXAnchor),
+            label.bottomAnchor.constraint(equalTo: window.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            label.leadingAnchor.constraint(greaterThanOrEqualTo: window.leadingAnchor, constant: 32),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: window.trailingAnchor, constant: -32),
         ])
         label.alpha = 0
         UIView.animate(withDuration: 0.3) { label.alpha = 1 }

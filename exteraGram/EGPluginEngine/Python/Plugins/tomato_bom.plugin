@@ -61,13 +61,21 @@ def _download_file(url, dest):
     })
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
+            status = getattr(r, "status", None)
             data = r.read()
-        if not data or data[:1] == b'<':
+        print("[tomato_bom] GET {} → status={} bytes={}".format(url, status, len(data)))
+        if not data:
+            print("[tomato_bom] download failed: empty body")
+            return False
+        if data[:1] == b'<':
+            print("[tomato_bom] download failed: HTML/error body, first16={!r}".format(data[:16]))
             return False
         with open(dest, 'wb') as f:
             f.write(data)
+        print("[tomato_bom] saved {} bytes → {}".format(len(data), dest))
         return True
-    except Exception:
+    except Exception as e:
+        print("[tomato_bom] download exception for {}: {}".format(url, e))
         return False
 
 
@@ -77,11 +85,17 @@ def _ensure_assets():
     data_dir = bridge.get_plugin_data_dir(__id__)
     _gif_path   = data_dir + "/splat.gif"
     _sound_path = data_dir + "/splat.mp3"
-    if not os.path.exists(_gif_path):
+    gif_cached = os.path.exists(_gif_path)
+    print("[tomato_bom] ensure_assets: gif={} cached={}".format(_gif_path, gif_cached))
+    if not gif_cached:
         if not _download_file(_GIF_URL, _gif_path):
+            print("[tomato_bom] ensure_assets: GIF unavailable → abort")
             return False
     if not os.path.exists(_sound_path):
         _download_file(_SOUND_URL, _sound_path)  # sound is optional
+    ready = os.path.exists(_gif_path)
+    print("[tomato_bom] ensure_assets: ready={}".format(ready))
+    return ready
     return os.path.exists(_gif_path)
 
 # ── helpers ────────────────────────────────────────────────────────────────────
