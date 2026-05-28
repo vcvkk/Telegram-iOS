@@ -576,6 +576,28 @@ func chatContextMenuItems(context: AccountContext, peerId: PeerId, promoInfo: Ch
                         }
                     }
 
+                    // MARK: exteraGram — plugin context_menu entries
+                    let pluginItems = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "context_menu" }
+                    if !pluginItems.isEmpty {
+                        items.append(.separator)
+                        for entry in pluginItems {
+                            let pluginId = entry.pluginId
+                            let entryType = entry.entryType
+                            let itemId = entry.itemId
+                            let title = entry.title
+                            items.append(.action(ContextMenuActionItem(
+                                text: title,
+                                icon: { theme in generateTintedImage(
+                                    image: UIImage(bundleImageName: "msg_plugins"),
+                                    color: theme.contextMenu.primaryColor) },
+                                action: { _, f in
+                                    f(.default)
+                                    EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                                }
+                            )))
+                        }
+                    }
+
                     if let item = items.last, case .separator = item {
                         items.removeLast()
                     }
