@@ -507,10 +507,8 @@ public final class PluginsController {
     }
 
     private func showBulletin(title: String, text: String, icon: String) {
-        guard let vc = Self.findTelegramViewController(),
-              let presentationData = storedContext.map({ $0.sharedContext.currentPresentationData.with { $0 } })
-        else {
-            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: no VC or context — giving up")
+        guard let presentationData = storedContext.map({ $0.sharedContext.currentPresentationData.with { $0 } }) else {
+            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: storedContext nil — giving up")
             return
         }
         let subtitle = text.isEmpty ? nil : text
@@ -521,12 +519,27 @@ public final class PluginsController {
             animateInAsReplacement: false,
             action: { _ in return false }
         )
-        vc.present(overlay, in: .window(.root))
+        // Telegram's navigation controller is not in the UIKit child-VC hierarchy —
+        // the Window framework manages it via views and closures. Present via
+        // WindowHost directly so we don't need a ViewController reference.
+        let allWindows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        let keyWindow = allWindows.first(where: { $0.isKeyWindow })
+                     ?? allWindows.first(where: { $0.rootViewController != nil })
+        if let windowHost = keyWindow as? WindowHost {
+            windowHost.present(overlay, on: PresentationSurfaceLevel(rawValue: 0), blockInteraction: false, completion: {})
+            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: presented via WindowHost ✓")
+        } else if let vc = Self.findTelegramViewController() {
+            vc.present(overlay, in: .window(.root))
+            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: presented via ViewController ✓")
+        } else {
+            EGPluginDebugLog.shared.append(tag: "Bulletin", "showBulletin: no WindowHost or VC — giving up")
+        }
     }
 
-    // Recursively finds any Telegram ViewController in the window hierarchy.
-    // WindowRootViewController (from Display) hosts Telegram's nav stack as
-    // child VCs, not presented VCs, so we must walk .children as well.
+    // Fallback: recursively find any Telegram ViewController in UIKit hierarchy.
+    // Only reached if the main window is not a WindowHost.
     private static func findTelegramViewController() -> ViewController? {
         let allWindows = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
