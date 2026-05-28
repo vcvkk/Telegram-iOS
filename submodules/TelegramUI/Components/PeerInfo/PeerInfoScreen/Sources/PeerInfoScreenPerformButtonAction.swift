@@ -1297,22 +1297,31 @@ extension PeerInfoScreenNode {
                 let pluginEntries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "profile" || $0.entryType == "context_menu" }
                 if !pluginEntries.isEmpty {
                     items.append(.separator)
-                    for entry in pluginEntries {
-                        let pluginId = entry.pluginId
-                        let entryType = entry.entryType
-                        let itemId = entry.itemId
-                        let title = entry.title
-                        items.append(.action(ContextMenuActionItem(
-                            text: title,
-                            icon: { theme in generateTintedImage(
-                                image: UIImage(bundleImageName: "msg_plugins"),
-                                color: theme.contextMenu.primaryColor) },
-                            action: { _, f in
-                                f(.default)
-                                EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                    items.append(.action(ContextMenuActionItem(
+                        text: "Плагины",
+                        icon: { theme in generateTintedImage(
+                            image: UIImage(bundleImageName: "msg_plugins"),
+                            color: theme.contextMenu.primaryColor) },
+                        action: { controller, _ in
+                            var subItems: [ContextMenuItem] = []
+                            for entry in pluginEntries {
+                                let pluginId = entry.pluginId
+                                let entryType = entry.entryType
+                                let itemId = entry.itemId
+                                subItems.append(.action(ContextMenuActionItem(
+                                    text: entry.title,
+                                    icon: { theme in generateTintedImage(
+                                        image: UIImage(bundleImageName: "msg_plugins"),
+                                        color: theme.contextMenu.primaryColor) },
+                                    action: { _, f2 in
+                                        f2(.dismissWithoutContent)
+                                        EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                                    }
+                                )))
                             }
-                        )))
-                    }
+                            controller?.pushItems(items: .single(ContextController.Items(content: .list(subItems))))
+                        }
+                    )))
                 }
 
                 return .single(items)

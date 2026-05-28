@@ -6747,6 +6747,7 @@ private final class ChatListLocationContext {
     var storyButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
     // MARK: exteraGram — plugin entry-point button
     var pluginButton: AnyComponentWithIdentity<NavigationButtonComponentEnvironment>?
+    private var pluginMenuItemsObserver: NSObjectProtocol?
 
     var rightButtons: [AnyComponentWithIdentity<NavigationButtonComponentEnvironment>] {
         var result: [AnyComponentWithIdentity<NavigationButtonComponentEnvironment>] = []
@@ -7109,7 +7110,7 @@ private final class ChatListLocationContext {
         })
 
         // MARK: exteraGram — react to plugin registration
-        NotificationCenter.default.addObserver(
+        pluginMenuItemsObserver = NotificationCenter.default.addObserver(
             forName: Notification.Name("EGPluginMenuItemsUpdated"),
             object: nil,
             queue: .main
@@ -7118,11 +7119,16 @@ private final class ChatListLocationContext {
             self.updatePluginButton()
             self.parentController?.requestLayout(transition: .animated(duration: 0.2, curve: .easeInOut))
         }
+        // Sync initial state — items may already be registered if engine started before this init
+        updatePluginButton()
     }
 
     deinit {
         self.titleDisposable?.dispose()
         self.stateDisposable?.dispose()
+        if let obs = pluginMenuItemsObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
     }
 
     // MARK: exteraGram — plugin button

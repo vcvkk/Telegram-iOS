@@ -276,8 +276,11 @@ def on_load(plugin):
     except ImportError as e:
         bridge.log("tomato_bom", "Pillow not available: {}".format(e))
     bridge.register_plugin_entry(__id__, "chatlist",     "open", "🍅 Tomato Bom")
+    bridge.log("tomato_bom", "registered chatlist entry")
     bridge.register_plugin_entry(__id__, "context_menu", "open", "🍅 Tomato Bom")
+    bridge.log("tomato_bom", "registered context_menu entry")
     bridge.add_tl_hook("plugin.menu_item_tapped", _on_menu_tap)
+    bridge.log("tomato_bom", "on_load complete")
 
 def on_unload(plugin):
     global _overlay_id, _rapid_active, _audio_id
