@@ -371,6 +371,9 @@ public final class ChatListHeaderComponent: Component {
                     return result
                 }
             }
+            if let view = self.pluginButtonView?.view, let result = view.hitTest(self.convert(point, to: view), with: event) {
+                return result
+            }
             for (_, buttonView) in self.rightButtonViews {
                 if let view = buttonView.view, let result = view.hitTest(self.convert(point, to: view), with: event) {
                     return result
@@ -1197,6 +1200,9 @@ public final class ChatListHeaderComponent: Component {
                 pluginBGTransition.setFrame(view: pluginButtonsBackgroundContainer, frame: pluginFrame)
                 pluginButtonsBackgroundContainer.update(size: pluginFrame.size, cornerRadius: pluginFrame.height * 0.5, isDark: component.theme.overallDarkAppearance, tintColor: .init(kind: .panel), isInteractive: true, transition: pluginBGTransition)
                 pluginBGTransition.setFrame(view: self.pluginButtonsContainer, frame: CGRect(origin: .zero, size: pluginFrame.size))
+                if let primaryContentView = self.primaryContentView {
+                    pluginBGTransition.setFrame(view: primaryContentView.pluginButtonContainer, frame: CGRect(origin: .zero, size: pluginFrame.size))
+                }
             } else {
                 if let pluginButtonsBackgroundContainer = self.pluginButtonsBackgroundContainer {
                     self.pluginButtonsBackgroundContainer = nil

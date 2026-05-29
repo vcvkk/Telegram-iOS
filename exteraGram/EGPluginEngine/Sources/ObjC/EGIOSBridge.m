@@ -98,8 +98,10 @@ static NSMutableDictionary<NSNumber *, UIView *>         *g_overlays       = nil
 static NSMutableDictionary<NSNumber *, NSMutableArray *> *g_overlayTargets = nil;
 // overlay_id → UIWindow (kept alive; hidden/released on dismiss)
 static NSMutableDictionary<NSNumber *, UIWindow *>       *g_overlayWindows = nil;
-// audio_id → AVAudioPlayer
-static NSMutableDictionary<NSNumber *, AVAudioPlayer *>  *g_audioPlayers   = nil;
+// audio_id → raw NSData (polyphonic: each play_audio creates a fresh AVAudioPlayer)
+static NSMutableDictionary<NSNumber *, NSData *>         *g_audioData      = nil;
+// active players retained until playback finishes
+static NSMutableSet<AVAudioPlayer *>                     *g_activePlayers  = nil;
 static int32_t g_nextOverlayId = 1;
 static int32_t g_nextAudioId   = 1;
 // splat image cache: file path → decoded UIImage (animated). Avoids per-tap disk I/O + decode.
@@ -1688,7 +1690,17 @@ static PyObject *py_show_projectile(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
+// Delegate that removes a player from the active set once it finishes.
+@interface EGAudioDelegate : NSObject <AVAudioPlayerDelegate> @end
+@implementation EGAudioDelegate
+- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer *)player successfully:(BOOL)flag {
+    [g_activePlayers removeObject:player];
+}
+@end
+static EGAudioDelegate *g_audioDelegate = nil;
+
 // load_audio(path) → int audio_id  (−1 on error)
+// Stores raw NSData so every play_audio call can spawn an independent AVAudioPlayer.
 static PyObject *py_load_audio(PyObject *self, PyObject *args) {
     const char *path_c = "";
     if (!PyArg_ParseTuple(args, "s", &path_c)) return NULL;
@@ -1696,14 +1708,11 @@ static PyObject *py_load_audio(PyObject *self, PyObject *args) {
 
     __block int32_t aid = -1;
     void (^blk)(void) = ^{
-        if (!g_audioPlayers) g_audioPlayers = [NSMutableDictionary new];
-        NSURL *url = [NSURL fileURLWithPath:path];
-        NSError *err = nil;
-        AVAudioPlayer *player = [[AVAudioPlayer alloc] initWithContentsOfURL:url error:&err];
-        if (!player || err) return;
-        [player prepareToPlay];
+        if (!g_audioData) g_audioData = [NSMutableDictionary new];
+        NSData *data = [NSData dataWithContentsOfFile:path];
+        if (!data || data.length == 0) return;
         aid = g_nextAudioId++;
-        g_audioPlayers[@(aid)] = player;
+        g_audioData[@(aid)] = data;
     };
     if ([NSThread isMainThread]) blk();
     else dispatch_sync(dispatch_get_main_queue(), blk);
@@ -1711,18 +1720,24 @@ static PyObject *py_load_audio(PyObject *self, PyObject *args) {
 }
 
 // play_audio(audio_id, volume=1.0, rate=1.0) → None
+// Creates a fresh AVAudioPlayer from cached data on every call — fully polyphonic.
 static PyObject *py_play_audio(PyObject *self, PyObject *args) {
     int aid = 0;
     double volume = 1.0, rate = 1.0;
     if (!PyArg_ParseTuple(args, "i|dd", &aid, &volume, &rate)) return NULL;
     dispatch_async(dispatch_get_main_queue(), ^{
-        AVAudioPlayer *p = g_audioPlayers[@(aid)];
-        if (!p) return;
-        p.volume      = (float)volume;
-        p.enableRate  = YES;
-        p.rate        = (float)rate;
-        [p stop];
-        p.currentTime = 0;
+        NSData *data = g_audioData[@(aid)];
+        if (!data) return;
+        if (!g_activePlayers) g_activePlayers = [NSMutableSet new];
+        if (!g_audioDelegate) g_audioDelegate = [EGAudioDelegate new];
+        NSError *err = nil;
+        AVAudioPlayer *p = [[AVAudioPlayer alloc] initWithData:data error:&err];
+        if (!p || err) return;
+        p.volume     = (float)volume;
+        p.enableRate = YES;
+        p.rate       = (float)rate;
+        p.delegate   = g_audioDelegate;
+        [g_activePlayers addObject:p]; // retain until audioPlayerDidFinishPlaying:
         [p play];
     });
     Py_RETURN_NONE;

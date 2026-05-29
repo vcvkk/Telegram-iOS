@@ -5643,10 +5643,11 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                 action: { controller, _ in
                                     var subItems: [ContextMenuItem] = []
                                     subItems.append(.action(ContextMenuActionItem(
-                                        text: "",
+                                        text: strongSelf.presentationData.strings.Common_Back,
                                         icon: { theme in generateTintedImage(
                                             image: UIImage(bundleImageName: "Chat/Context Menu/Back"),
                                             color: theme.actionSheet.primaryTextColor) },
+                                        iconPosition: .left,
                                         action: { c, _ in c?.popItems() }
                                     )))
                                     subItems.append(.separator)
