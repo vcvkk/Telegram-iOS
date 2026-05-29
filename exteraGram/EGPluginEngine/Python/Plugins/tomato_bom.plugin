@@ -122,6 +122,7 @@ def _ensure_assets():
         bridge.log("tomato_bom", "no cached GIF — trying download")
         if _download_file(_GIF_URL, gif_dest):
             _gif_path = gif_dest
+            _gif_duration = None  # invalidate cached duration for the new file
             bridge.log("tomato_bom", "splat GIF downloaded OK")
             if os.path.exists(png_fallback):
                 try: os.remove(png_fallback)
@@ -154,22 +155,35 @@ def _play_sound():
     _last_sound_t = now
     bridge.play_audio(_audio_id, _sound_volume(), 1.0)
 
-def _splat_repeat():
-    # 0 = loop forever, 1 = play once, N = play N times
-    return int(bridge.get_plugin_setting(__id__, "splat_repeat", 1))
+# Cached GIF duration in seconds (computed once via Pillow after assets are ready).
+_gif_duration = None
 
-def _splat_lifetime():
-    # Seconds before the splat fades out. 0 = stay until overlay closes (Android-style).
-    return float(bridge.get_plugin_setting(__id__, "splat_lifetime", 0.0))
+def _compute_gif_duration():
+    """Return total animation duration in seconds, or a fallback if Pillow unavailable."""
+    global _gif_duration
+    if _gif_duration is not None:
+        return _gif_duration
+    try:
+        from PIL import Image
+        img = Image.open(_gif_path)
+        total_ms = 0
+        for f in range(img.n_frames):
+            img.seek(f)
+            total_ms += img.info.get("duration", 100)
+        _gif_duration = total_ms / 1000.0
+    except Exception as e:
+        bridge.log("tomato_bom", "gif duration fallback ({}): using 1.5s".format(e))
+        _gif_duration = 1.5
+    bridge.log("tomato_bom", "gif duration: {:.3f}s".format(_gif_duration))
+    return _gif_duration
 
 def _spawn_tomato(x, y):
     if _overlay_id is None or not _gif_path or not os.path.exists(_gif_path):
         return
-    vid = bridge.add_image_view(_overlay_id, _gif_path, x, y, _tomato_size(), _splat_repeat())
+    # Play once (repeat_count=1), then remove when the animation naturally ends.
+    vid = bridge.add_image_view(_overlay_id, _gif_path, x, y, _tomato_size(), 1)
     _play_sound()
-    lifetime = _splat_lifetime()
-    if lifetime > 0.0:
-        threading.Timer(lifetime, lambda v=vid: bridge.remove_view(v)).start()
+    threading.Timer(_compute_gif_duration(), lambda v=vid: bridge.remove_view(v)).start()
 
 def _rapid_loop():
     """Machine-gun loop: sleeps first then fires, matching Android behaviour."""
