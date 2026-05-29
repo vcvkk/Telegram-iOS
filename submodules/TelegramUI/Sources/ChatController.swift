@@ -5635,41 +5635,44 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         let pluginEntries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "context_menu" }
                         if !pluginEntries.isEmpty {
                             items.append(.separator)
+                            let pluginSubMenuAction: (ContextControllerProtocol?, @escaping (ContextMenuActionResult) -> Void) -> Void = { [weak strongSelf] controller, _ in
+                                guard let strongSelf = strongSelf else { return }
+                                var subItems: [ContextMenuItem] = []
+                                subItems.append(.action(ContextMenuActionItem(
+                                    text: strongSelf.presentationData.strings.Common_Back,
+                                    icon: { theme in generateTintedImage(
+                                        image: UIImage(bundleImageName: "Chat/Context Menu/Back"),
+                                        color: theme.actionSheet.primaryTextColor) },
+                                    iconPosition: .left,
+                                    action: { c, _ in c?.popItems() }
+                                )))
+                                subItems.append(.separator)
+                                for entry in pluginEntries {
+                                    let pluginId = entry.pluginId
+                                    let entryType = entry.entryType
+                                    let itemId = entry.itemId
+                                    let iconName = entry.iconName
+                                    subItems.append(.action(ContextMenuActionItem(
+                                        text: entry.title,
+                                        icon: { (theme: PresentationTheme) in
+                                            guard let name = iconName else { return nil }
+                                            return generateTintedImage(image: UIImage(bundleImageName: name), color: theme.actionSheet.primaryTextColor)
+                                        },
+                                        action: { _, f2 in
+                                            f2(.dismissWithoutContent)
+                                            EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                                        }
+                                    )))
+                                }
+                                controller?.pushItems(items: .single(ContextController.Items(content: .list(subItems))))
+                            }
                             items.append(.action(ContextMenuActionItem(
                                 text: "Плагины",
                                 icon: { theme in generateTintedImage(
                                     image: UIImage(bundleImageName: "msg_plugins"),
                                     color: theme.actionSheet.primaryTextColor) },
-                                action: { controller, _ in
-                                    var subItems: [ContextMenuItem] = []
-                                    subItems.append(.action(ContextMenuActionItem(
-                                        text: strongSelf.presentationData.strings.Common_Back,
-                                        icon: { theme in generateTintedImage(
-                                            image: UIImage(bundleImageName: "Chat/Context Menu/Back"),
-                                            color: theme.actionSheet.primaryTextColor) },
-                                        iconPosition: .left,
-                                        action: { c, _ in c?.popItems() }
-                                    )))
-                                    subItems.append(.separator)
-                                    for entry in pluginEntries {
-                                        let pluginId = entry.pluginId
-                                        let entryType = entry.entryType
-                                        let itemId = entry.itemId
-                                        let iconName = entry.iconName
-                                        subItems.append(.action(ContextMenuActionItem(
-                                            text: entry.title,
-                                            icon: { (theme: PresentationTheme) in
-                                                guard let name = iconName else { return nil }
-                                                return generateTintedImage(image: UIImage(bundleImageName: name), color: theme.actionSheet.primaryTextColor)
-                                            },
-                                            action: { _, f2 in
-                                                f2(.dismissWithoutContent)
-                                                EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
-                                            }
-                                        )))
-                                    }
-                                    controller?.pushItems(items: .single(ContextController.Items(content: .list(subItems))))
-                                }
+                                action: pluginSubMenuAction,
+                                longPressAction: pluginSubMenuAction
                             )))
                         }
 

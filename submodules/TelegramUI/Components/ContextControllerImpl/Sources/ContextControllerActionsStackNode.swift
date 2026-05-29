@@ -28,7 +28,9 @@ public protocol ContextControllerActionsListItemNode: ASDisplayNode {
     func canBeHighlighted() -> Bool
     func updateIsHighlighted(isHighlighted: Bool)
     func performAction()
-    
+    var hasLongPressAction: Bool { get }
+    func performLongPressAction()
+
     var needsPadding: Bool { get }
 }
 
@@ -185,10 +187,26 @@ public final class ContextControllerActionsListActionItemNode: HighlightTracking
     public func canBeHighlighted() -> Bool {
         return self.item.action != nil
     }
-    
+
+    public var hasLongPressAction: Bool {
+        return self.item.longPressAction != nil
+    }
+
+    public func performLongPressAction() {
+        self.item.longPressAction?(ContextMenuActionItem.Action(
+            controller: self.getController(),
+            dismissWithResult: { [weak self] result in
+                self?.requestDismiss(result)
+            },
+            updateAction: { [weak self] id, updatedAction in
+                self?.requestUpdateAction(id, updatedAction)
+            }
+        ))
+    }
+
     public func updateIsHighlighted(isHighlighted: Bool) {
     }
-    
+
     public func performAction() {
         self.pressed()
     }
@@ -640,16 +658,19 @@ public final class ContextControllerActionsListActionItemNode: HighlightTracking
 
 private final class ContextControllerActionsListSeparatorItemNode: ASDisplayNode, ContextControllerActionsListItemNode {
     private let separatorView: UIImageView
-    
+
     let needsPadding: Bool = false
-    
+
     func canBeHighlighted() -> Bool {
         return false
     }
-    
+
+    var hasLongPressAction: Bool { return false }
+    func performLongPressAction() {}
+
     func updateIsHighlighted(isHighlighted: Bool) {
     }
-    
+
     func performAction() {
     }
     
@@ -695,7 +716,15 @@ private final class ContextControllerActionsListCustomItemNode: ASDisplayNode, C
             itemNode.performAction()
         }
     }
-    
+
+    var hasLongPressAction: Bool {
+        return self.itemNode?.hasLongPressAction ?? false
+    }
+
+    func performLongPressAction() {
+        self.itemNode?.performLongPressAction()
+    }
+
     var needsPadding: Bool {
         if let itemNode = self.itemNode {
             return itemNode.needsPadding
@@ -799,9 +828,10 @@ public final class ContextControllerActionsListStackItem: ContextControllerActio
         private var tipSeparatorNode: ContextControllerActionsListSeparatorItemNode?
         
         private var hapticFeedback: HapticFeedback?
-        
+
         private let highlightedItemBackgroundView: UIView
         private var highlightedItemNode: Item?
+        private var hoverTimer: Timer?
         
         private var params: Params?
         private var invalidatedItemNodes: Bool = false
@@ -1150,25 +1180,43 @@ public final class ContextControllerActionsListStackItem: ContextControllerActio
             if self.highlightedItemNode !== highlightedItemNode {
                 self.highlightedItemNode?.node.updateIsHighlighted(isHighlighted: false)
                 highlightedItemNode?.node.updateIsHighlighted(isHighlighted: true)
-                
+
                 self.highlightedItemNode = highlightedItemNode
                 if self.hapticFeedback == nil {
                     self.hapticFeedback = HapticFeedback()
                 }
                 self.hapticFeedback?.tap()
-                
+
                 self.update(transition: .animated(duration: 0.16, curve: .easeInOut))
+
+                // Sub-menu hover expansion — matches UIContextMenuInteraction 0.3 s delay
+                self.hoverTimer?.invalidate()
+                self.hoverTimer = nil
+                if let newItem = highlightedItemNode, newItem.node.hasLongPressAction {
+                    let nodeRef = newItem.node
+                    self.hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self, weak nodeRef] _ in
+                        guard let self, let nodeRef else { return }
+                        self.hoverTimer = nil
+                        if self.highlightedItemNode?.node === nodeRef {
+                            nodeRef.updateIsHighlighted(isHighlighted: false)
+                            self.highlightedItemNode = nil
+                            nodeRef.performLongPressAction()
+                        }
+                    }
+                }
             }
         }
-        
+
         func highlightGestureFinished(performAction: Bool) {
+            self.hoverTimer?.invalidate()
+            self.hoverTimer = nil
             if let highlightedItemNode = self.highlightedItemNode {
                 self.highlightedItemNode = nil
                 highlightedItemNode.node.updateIsHighlighted(isHighlighted: false)
                 if performAction {
                     highlightedItemNode.node.performAction()
                 }
-                
+
                 self.update(transition: .animated(duration: 0.2, curve: .easeInOut))
             }
         }
