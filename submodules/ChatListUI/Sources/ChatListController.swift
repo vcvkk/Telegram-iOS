@@ -3962,25 +3962,28 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     }
 
     // MARK: exteraGram — present a menu of all chatlist plugin actions
-    func openPluginMenu(sourceView: UIView) {
+    func openPluginMenu(sourceView: UIView, gesture: ContextGesture? = nil) {
         let entries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "chatlist" }
-        guard !entries.isEmpty else {
-            return
-        }
+        guard !entries.isEmpty else { return }
         let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
         var items: [ContextMenuItem] = []
         for entry in entries {
             let pluginId = entry.pluginId
             let entryType = entry.entryType
             let itemId = entry.itemId
-            items.append(.action(ContextMenuActionItem(text: entry.title, icon: { theme in
-                return generateTintedImage(image: UIImage(bundleImageName: "msg_plugins"), color: theme.contextMenu.primaryColor)
-            }, action: { _, f in
-                f(.dismissWithoutContent)
-                EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
-            })))
+            let iconName = entry.iconName
+            items.append(.action(ContextMenuActionItem(
+                text: entry.title,
+                icon: iconName.map { name in { theme in generateTintedImage(
+                    image: UIImage(bundleImageName: name),
+                    color: theme.contextMenu.primaryColor) } },
+                action: { _, f in
+                    f(.dismissWithoutContent)
+                    EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                }
+            )))
         }
-        let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: self, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: nil)
+        let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: self, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
         self.presentInGlobalOverlay(contextController)
     }
 
@@ -6358,6 +6361,26 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 }
             }
             
+            // MARK: exteraGram — plugin entries in tab long-press menu
+            let pluginTabEntries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "chatlist" }
+            if !pluginTabEntries.isEmpty {
+                items.append(.separator)
+                for entry in pluginTabEntries {
+                    let pluginId = entry.pluginId
+                    let entryType = entry.entryType
+                    let itemId = entry.itemId
+                    let iconName = entry.iconName
+                    items.append(.action(ContextMenuActionItem(
+                        text: entry.title,
+                        icon: iconName.map { name in { theme in generateTintedImage(image: UIImage(bundleImageName: name), color: theme.contextMenu.primaryColor) } },
+                        action: { _, f in
+                            f(.dismissWithoutContent)
+                            EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                        }
+                    )))
+                }
+            }
+
             let controller = makeContextController(context: strongSelf.context, presentationData: strongSelf.presentationData, source: .reference(ChatListTabBarContextReferenceContentSource(controller: strongSelf, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), recognizer: nil, gesture: gesture)
             strongSelf.context.sharedContext.mainWindow?.presentInGlobalOverlay(controller)
         })
@@ -7153,6 +7176,9 @@ private final class ChatListLocationContext {
                     content: .icon(imageName: "msg_plugins"),
                     pressed: { [weak self] sourceView in
                         self?.parentController?.openPluginMenu(sourceView: sourceView)
+                    },
+                    contextAction: { [weak self] sourceView, gesture in
+                        self?.parentController?.openPluginMenu(sourceView: sourceView, gesture: gesture)
                     }
                 ))
             )

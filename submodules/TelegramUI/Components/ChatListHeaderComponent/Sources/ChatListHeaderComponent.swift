@@ -305,6 +305,10 @@ public final class ChatListHeaderComponent: Component {
         
         let leftButtonsContainer: UIView
         var leftButtonViews: [AnyHashable: ComponentView<NavigationButtonComponentEnvironment>] = [:]
+        // MARK: exteraGram — separate container so plugin button gets its own pill
+        let pluginButtonContainer: UIView
+        var pluginButtonView: ComponentView<NavigationButtonComponentEnvironment>?
+        private(set) var pluginButtonWidth: CGFloat = 0.0
         let rightButtonsContainer: UIView
         var rightButtonViews: [AnyHashable: ComponentView<NavigationButtonComponentEnvironment>] = [:]
         var backButtonView: BackButtonView?
@@ -335,7 +339,8 @@ public final class ChatListHeaderComponent: Component {
             self.openStatusSetup = openStatusSetup
             self.toggleIsLocked = toggleIsLocked
             
-            self.leftButtonsContainer = UIView()            
+            self.leftButtonsContainer = UIView()
+            self.pluginButtonContainer = UIView()
             self.rightButtonsContainer = UIView()
 
             self.titleOffsetContainer = UIView()
@@ -498,38 +503,25 @@ public final class ChatListHeaderComponent: Component {
             }
             
             var validLeftButtons = Set<AnyHashable>()
-            // MARK: exteraGram — lay out primary + optional secondary left button (mirrors rightButtons loop)
-            for leftButton in [content.leftButton, content.secondaryLeftButton].compactMap({ $0 }) {
+            if let leftButton = content.leftButton {
                 validLeftButtons.insert(leftButton.id)
-
-                if nextLeftButtonX != 0.0 {
-                    nextLeftButtonX += buttonSpacing
-                }
-
+                if nextLeftButtonX != 0.0 { nextLeftButtonX += buttonSpacing }
                 var buttonTransition = transition
                 var animateButtonIn = false
                 let buttonView: ComponentView<NavigationButtonComponentEnvironment>
                 if let current = self.leftButtonViews[leftButton.id] {
                     buttonView = current
                 } else {
-                    buttonTransition = .immediate
-                    animateButtonIn = true
+                    buttonTransition = .immediate; animateButtonIn = true
                     buttonView = ComponentView<NavigationButtonComponentEnvironment>()
                     self.leftButtonViews[leftButton.id] = buttonView
                 }
-                let buttonSize = buttonView.update(
-                    transition: buttonTransition,
-                    component: leftButton.component,
-                    environment: {
-                        NavigationButtonComponentEnvironment(theme: theme)
-                    },
-                    containerSize: CGSize(width: 100.0, height: size.height)
-                )
+                let buttonSize = buttonView.update(transition: buttonTransition, component: leftButton.component,
+                    environment: { NavigationButtonComponentEnvironment(theme: theme) },
+                    containerSize: CGSize(width: 100.0, height: size.height))
                 let buttonFrame = CGRect(origin: CGPoint(x: nextLeftButtonX, y: floor((size.height - buttonSize.height) / 2.0)), size: buttonSize)
                 if let buttonComponentView = buttonView.view {
-                    if buttonComponentView.superview == nil {
-                        self.leftButtonsContainer.addSubview(buttonComponentView)
-                    }
+                    if buttonComponentView.superview == nil { self.leftButtonsContainer.addSubview(buttonComponentView) }
                     buttonTransition.setFrame(view: buttonComponentView, frame: buttonFrame)
                     if animateButtonIn {
                         alphaTransition.animateBlur(layer: buttonComponentView.layer, fromRadius: 10.0, toRadius: 0.0)
@@ -550,8 +542,39 @@ public final class ChatListHeaderComponent: Component {
                     removeLeftButtons.append(id)
                 }
             }
-            for id in removeLeftButtons {
-                self.leftButtonViews.removeValue(forKey: id)
+            for id in removeLeftButtons { self.leftButtonViews.removeValue(forKey: id) }
+
+            // MARK: exteraGram — plugin button in its own container (separate pill in outer view)
+            if let pluginButton = content.secondaryLeftButton {
+                var pluginTransition = transition
+                var animateIn = false
+                let pluginView: ComponentView<NavigationButtonComponentEnvironment>
+                if let current = self.pluginButtonView {
+                    pluginView = current
+                } else {
+                    pluginTransition = .immediate; animateIn = true
+                    pluginView = ComponentView<NavigationButtonComponentEnvironment>()
+                    self.pluginButtonView = pluginView
+                }
+                let pluginSize = pluginView.update(transition: pluginTransition, component: pluginButton.component,
+                    environment: { NavigationButtonComponentEnvironment(theme: theme) },
+                    containerSize: CGSize(width: 100.0, height: size.height))
+                self.pluginButtonWidth = pluginSize.width
+                if let v = pluginView.view {
+                    if v.superview == nil { self.pluginButtonContainer.addSubview(v) }
+                    pluginTransition.setFrame(view: v, frame: CGRect(origin: CGPoint(x: 0.0, y: floor((size.height - pluginSize.height) / 2.0)), size: pluginSize))
+                    if animateIn {
+                        alphaTransition.animateBlur(layer: v.layer, fromRadius: 10.0, toRadius: 0.0)
+                        alphaTransition.animateAlpha(view: v, from: 0.0, to: 1.0)
+                    }
+                }
+            } else if let pluginView = self.pluginButtonView {
+                self.pluginButtonView = nil
+                self.pluginButtonWidth = 0.0
+                if let v = pluginView.view {
+                    alphaTransition.setBlur(layer: v.layer, radius: 10.0)
+                    alphaTransition.setAlpha(view: v, alpha: 0.0, completion: { [weak v] _ in v?.removeFromSuperview() })
+                }
             }
             
             var nextRightButtonX: CGFloat = 0.0
@@ -739,6 +762,9 @@ public final class ChatListHeaderComponent: Component {
         private let rightButtonsContainer: UIView
         private var leftButtonsBackgroundContainer: GlassContextExtractableContainer?
         private var rightButtonsBackgroundContainer: GlassContextExtractableContainer?
+        // MARK: exteraGram — separate pill for the plugin button
+        private let pluginButtonsContainer: UIView
+        private var pluginButtonsBackgroundContainer: GlassContextExtractableContainer?
         
         private let storyPeerListExternalState = StoryPeerListComponent.ExternalState()
         private var storyPeerList: ComponentView<Empty>?
@@ -752,11 +778,12 @@ public final class ChatListHeaderComponent: Component {
         
         override init(frame: CGRect) {
             self.leftButtonsContainer = UIView()
+            self.pluginButtonsContainer = UIView()
             self.rightButtonsContainer = UIView()
             self.rightButtonsContainer.layer.anchorPoint = CGPoint(x: 1.0, y: 0.0)
 
             super.init(frame: frame)
-            
+
             self.storyOffsetFraction = 1.0
         }
         
@@ -871,6 +898,7 @@ public final class ChatListHeaderComponent: Component {
                     self.primaryContentView = primaryContentView
                     self.addSubview(primaryContentView)
                     self.leftButtonsContainer.addSubview(primaryContentView.leftButtonsContainer)
+                    self.pluginButtonsContainer.addSubview(primaryContentView.pluginButtonContainer)
                     self.rightButtonsContainer.addSubview(primaryContentView.rightButtonsContainer)
                 }
                 
@@ -898,6 +926,7 @@ public final class ChatListHeaderComponent: Component {
                 self.primaryContentView = nil
                 primaryContentView.removeFromSuperview()
                 primaryContentView.leftButtonsContainer.removeFromSuperview()
+                primaryContentView.pluginButtonContainer.removeFromSuperview()
                 primaryContentView.rightButtonsContainer.removeFromSuperview()
             }
             
@@ -1150,10 +1179,37 @@ public final class ChatListHeaderComponent: Component {
                 }
             }
 
+            let pluginButtonEffectiveWidth: CGFloat = self.primaryContentView?.pluginButtonWidth ?? 0.0
+            if pluginButtonEffectiveWidth > 0.0 && leftButtonsEffectiveWidth > 0.0 {
+                let pluginButtonsBackgroundContainer: GlassContextExtractableContainer
+                var pluginBGTransition = transition
+                if let current = self.pluginButtonsBackgroundContainer {
+                    pluginButtonsBackgroundContainer = current
+                } else {
+                    pluginBGTransition = pluginBGTransition.withAnimation(.none)
+                    pluginButtonsBackgroundContainer = GlassContextExtractableContainer()
+                    self.pluginButtonsBackgroundContainer = pluginButtonsBackgroundContainer
+                    self.addSubview(pluginButtonsBackgroundContainer)
+                    pluginButtonsBackgroundContainer.contentView.addSubview(self.pluginButtonsContainer)
+                }
+                let pluginX = component.sideInset + max(44.0, leftButtonsEffectiveWidth) + 8.0
+                let pluginFrame = CGRect(origin: CGPoint(x: pluginX, y: 0.0), size: CGSize(width: max(44.0, pluginButtonEffectiveWidth), height: 44.0))
+                pluginBGTransition.setFrame(view: pluginButtonsBackgroundContainer, frame: pluginFrame)
+                pluginButtonsBackgroundContainer.update(size: pluginFrame.size, cornerRadius: pluginFrame.height * 0.5, isDark: component.theme.overallDarkAppearance, tintColor: .init(kind: .panel), isInteractive: true, transition: pluginBGTransition)
+                pluginBGTransition.setFrame(view: self.pluginButtonsContainer, frame: CGRect(origin: .zero, size: pluginFrame.size))
+            } else {
+                if let pluginButtonsBackgroundContainer = self.pluginButtonsBackgroundContainer {
+                    self.pluginButtonsBackgroundContainer = nil
+                    transition.setAlpha(view: pluginButtonsBackgroundContainer, alpha: 0.0, completion: { [weak pluginButtonsBackgroundContainer] _ in
+                        pluginButtonsBackgroundContainer?.removeFromSuperview()
+                    })
+                }
+            }
+
             if rightButtonsEffectiveWidth != 0.0 {
                 let rightButtonsBackgroundContainer: GlassContextExtractableContainer
                 var rightButtonsBackgroundContainerTransition = transition
-                
+
                 let rightButtonsContainerFrame = CGRect(origin: CGPoint(x: availableSize.width - component.sideInset - max(44.0, rightButtonsEffectiveWidth), y: 0.0), size: CGSize(width: max(44.0, rightButtonsEffectiveWidth), height: 44.0))
                 
                 if let current = self.rightButtonsBackgroundContainer {

@@ -87,7 +87,7 @@ static void (^g_sendMessageHandler)(long long, NSString *) = nil;
 // Wired by PluginsController.wireClientInfo: lets plugins send Telegram reactions
 static void (^g_sendReactionHandler)(long long, int32_t, NSString *) = nil;
 // Wired by EGPluginsEngineImpl: register a plugin menu entry in the iOS UI
-static void (^g_registerMenuItemHandler)(NSString *, NSString *, NSString *, NSString *) = nil;
+static void (^g_registerMenuItemHandler)(NSString *, NSString *, NSString *, NSString *, NSString * _Nullable) = nil;
 
 // ---------------------------------------------------------------------------
 // Overlay system storage (BRIDGE_VERSION 4)
@@ -1728,18 +1728,20 @@ static PyObject *py_play_audio(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
-// register_plugin_entry(plugin_id, entry_type, item_id, title) → None
-// entry_type: "chatlist" | "context_menu" | "profile"
+// register_plugin_entry(plugin_id, entry_type, item_id, title[, icon_name]) → None
+// entry_type: "chatlist" | "context_menu" | "profile"; icon_name is optional (omit or None)
 static PyObject *py_register_plugin_entry(PyObject *self, PyObject *args) {
-    const char *pid_c=NULL, *etype_c=NULL, *iid_c=NULL, *title_c=NULL;
-    if (!PyArg_ParseTuple(args, "ssss", &pid_c, &etype_c, &iid_c, &title_c)) return NULL;
+    const char *pid_c=NULL, *etype_c=NULL, *iid_c=NULL, *title_c=NULL, *icon_c=NULL;
+    // Try 5 args first, fall back to 4
+    if (!PyArg_ParseTuple(args, "ssss|z", &pid_c, &etype_c, &iid_c, &title_c, &icon_c)) return NULL;
     NSString *pluginId  = [NSString stringWithUTF8String:pid_c];
     NSString *entryType = [NSString stringWithUTF8String:etype_c];
     NSString *itemId    = [NSString stringWithUTF8String:iid_c];
     NSString *title     = [NSString stringWithUTF8String:title_c];
+    NSString *iconName  = icon_c ? [NSString stringWithUTF8String:icon_c] : nil;
     if (g_registerMenuItemHandler) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            g_registerMenuItemHandler(pluginId, entryType, itemId, title);
+            g_registerMenuItemHandler(pluginId, entryType, itemId, title, iconName);
         });
     }
     Py_RETURN_NONE;
@@ -2222,8 +2224,8 @@ static id py_to_ns(PyObject *obj) {
 + (void (^)(long long, int32_t, NSString *))sendReactionHandler { return g_sendReactionHandler; }
 + (void)setSendReactionHandler:(void (^)(long long, int32_t, NSString *))b { g_sendReactionHandler = [b copy]; }
 
-+ (void (^)(NSString *, NSString *, NSString *, NSString *))registerMenuItemHandler { return g_registerMenuItemHandler; }
-+ (void)setRegisterMenuItemHandler:(void (^)(NSString *, NSString *, NSString *, NSString *))b { g_registerMenuItemHandler = [b copy]; }
++ (void (^)(NSString *, NSString *, NSString *, NSString *, NSString * _Nullable))registerMenuItemHandler { return g_registerMenuItemHandler; }
++ (void)setRegisterMenuItemHandler:(void (^)(NSString *, NSString *, NSString *, NSString *, NSString * _Nullable))b { g_registerMenuItemHandler = [b copy]; }
 
 + (void)prepareUIKitCaches {
     // Must be called on the main thread once before plugins query system info.

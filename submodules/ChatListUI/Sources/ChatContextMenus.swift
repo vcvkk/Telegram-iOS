@@ -590,15 +590,24 @@ func chatContextMenuItems(context: AccountContext, peerId: PeerId, promoInfo: Ch
                                 color: theme.contextMenu.primaryColor) },
                             action: { controller, _ in
                                 var subItems: [ContextMenuItem] = []
+                                subItems.append(.action(ContextMenuActionItem(
+                                    text: "",
+                                    icon: { theme in generateTintedImage(
+                                        image: UIImage(bundleImageName: "Chat/Context Menu/Back"),
+                                        color: theme.contextMenu.primaryColor) },
+                                    action: { c, _ in c?.popItems() }
+                                )))
+                                subItems.append(.separator)
                                 for entry in pluginItems {
                                     let pluginId = entry.pluginId
                                     let entryType = entry.entryType
                                     let itemId = entry.itemId
+                                    let iconName = entry.iconName
                                     subItems.append(.action(ContextMenuActionItem(
                                         text: entry.title,
-                                        icon: { theme in generateTintedImage(
-                                            image: UIImage(bundleImageName: "msg_plugins"),
-                                            color: theme.contextMenu.primaryColor) },
+                                        icon: iconName.map { name in { theme in generateTintedImage(
+                                            image: UIImage(bundleImageName: name),
+                                            color: theme.contextMenu.primaryColor) } },
                                         action: { _, f2 in
                                             f2(.dismissWithoutContent)
                                             EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
@@ -1014,15 +1023,24 @@ public func chatForumTopicMenuItems(context: AccountContext, peerId: PeerId, thr
                     color: theme.contextMenu.primaryColor) },
                 action: { controller, _ in
                     var subItems: [ContextMenuItem] = []
+                    subItems.append(.action(ContextMenuActionItem(
+                        text: "",
+                        icon: { theme in generateTintedImage(
+                            image: UIImage(bundleImageName: "Chat/Context Menu/Back"),
+                            color: theme.contextMenu.primaryColor) },
+                        action: { c, _ in c?.popItems() }
+                    )))
+                    subItems.append(.separator)
                     for entry in pluginItems {
                         let pluginId = entry.pluginId
                         let entryType = entry.entryType
                         let itemId = entry.itemId
+                        let iconName = entry.iconName
                         subItems.append(.action(ContextMenuActionItem(
                             text: entry.title,
-                            icon: { theme in generateTintedImage(
-                                image: UIImage(bundleImageName: "msg_plugins"),
-                                color: theme.contextMenu.primaryColor) },
+                            icon: iconName.map { name in { theme in generateTintedImage(
+                                image: UIImage(bundleImageName: name),
+                                color: theme.contextMenu.primaryColor) } },
                             action: { _, f2 in
                                 f2(.dismissWithoutContent)
                                 EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)

@@ -77,9 +77,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (class, nonatomic, copy, nullable) void (^sendReactionHandler)(long long peerId, int32_t msgId, NSString *emoticon);
 
 /// Wired by EGPluginsEngineImpl: called when a plugin registers a UI entry point via
-/// _ios_bridge.register_plugin_entry(plugin_id, entry_type, item_id, title).
-/// entry_type: "chatlist" | "context_menu" | "profile"
-@property (class, nonatomic, copy, nullable) void (^registerMenuItemHandler)(NSString *pluginId, NSString *entryType, NSString *itemId, NSString *title);
+/// _ios_bridge.register_plugin_entry(plugin_id, entry_type, item_id, title[, icon_name]).
+/// entry_type: "chatlist" | "context_menu" | "profile"; icon_name is optional (nil = no icon)
+@property (class, nonatomic, copy, nullable) void (^registerMenuItemHandler)(NSString *pluginId, NSString *entryType, NSString *itemId, NSString *title, NSString * _Nullable iconName);
 
 /// Must be called on the main thread before any plugin uses get_system_info / get_device_info.
 /// Enables UIDevice battery monitoring and caches immutable UIScreen dimensions so that

@@ -10,12 +10,14 @@ public struct EGPluginMenuItem {
     public let entryType: String   // "chatlist" | "context_menu" | "profile"
     public let itemId: String
     public let title: String
+    public let iconName: String?   // optional bundle image name; nil = no icon
 
-    public init(pluginId: String, entryType: String, itemId: String, title: String) {
+    public init(pluginId: String, entryType: String, itemId: String, title: String, iconName: String? = nil) {
         self.pluginId  = pluginId
         self.entryType = entryType
         self.itemId    = itemId
         self.title     = title
+        self.iconName  = iconName
     }
 }
 

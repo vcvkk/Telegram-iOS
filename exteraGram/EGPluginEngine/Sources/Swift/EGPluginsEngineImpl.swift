@@ -89,15 +89,15 @@ public final class EGPluginsEngineImpl {
                 EGPluginHooks.pluginSendReactionHandler?(peerId, msgId, emoticon)
             }
             // Wire register_plugin_entry() → EGPluginHooks.registeredMenuItems
-            EGPythonBridge.registerMenuItemHandler = { pluginId, entryType, itemId, title in
+            EGPythonBridge.registerMenuItemHandler = { pluginId, entryType, itemId, title, iconName in
                 let item = EGPluginMenuItem(pluginId: pluginId, entryType: entryType,
-                                           itemId: itemId, title: title)
+                                           itemId: itemId, title: title, iconName: iconName)
                 if !EGPluginHooks.registeredMenuItems.contains(where: {
                     $0.pluginId == pluginId && $0.itemId == itemId && $0.entryType == entryType
                 }) {
                     EGPluginHooks.registeredMenuItems.append(item)
                     EGPluginDebugLog.shared.append(tag: "PluginEngine",
-                        "Registered \(pluginId)/\(entryType)/\(itemId) total=\(EGPluginHooks.registeredMenuItems.count)")
+                        "Registered \(pluginId)/\(entryType)/\(itemId) icon=\(iconName ?? "nil") total=\(EGPluginHooks.registeredMenuItems.count)")
                 }
             }
             EGPluginDebugLog.shared.append(tag: "PluginEngine", "Starting \(plugins.count) plugin(s)…")
