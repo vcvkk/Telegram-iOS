@@ -156,11 +156,11 @@ def _play_sound():
 
 def _splat_repeat():
     # 0 = loop forever, 1 = play once, N = play N times
-    return int(bridge.get_plugin_setting(__id__, "splat_repeat", 0))
+    return int(bridge.get_plugin_setting(__id__, "splat_repeat", 1))
 
 def _splat_lifetime():
     # Seconds before the splat fades out. 0 = stay until overlay closes (Android-style).
-    return float(bridge.get_plugin_setting(__id__, "splat_lifetime", 1.5))
+    return float(bridge.get_plugin_setting(__id__, "splat_lifetime", 0.0))
 
 def _spawn_tomato(x, y):
     if _overlay_id is None or not _gif_path or not os.path.exists(_gif_path):
