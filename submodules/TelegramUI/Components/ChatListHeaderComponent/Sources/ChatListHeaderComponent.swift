@@ -1183,7 +1183,7 @@ public final class ChatListHeaderComponent: Component {
             }
 
             let pluginButtonEffectiveWidth: CGFloat = self.primaryContentView?.pluginButtonWidth ?? 0.0
-            if pluginButtonEffectiveWidth > 0.0 && leftButtonsEffectiveWidth > 0.0 {
+            if pluginButtonEffectiveWidth > 0.0 {
                 let pluginButtonsBackgroundContainer: GlassContextExtractableContainer
                 var pluginBGTransition = transition
                 if let current = self.pluginButtonsBackgroundContainer {
@@ -1195,7 +1195,8 @@ public final class ChatListHeaderComponent: Component {
                     self.addSubview(pluginButtonsBackgroundContainer)
                     pluginButtonsBackgroundContainer.contentView.addSubview(self.pluginButtonsContainer)
                 }
-                let pluginX = component.sideInset + max(44.0, leftButtonsEffectiveWidth) + 8.0
+                let leftOffset = leftButtonsEffectiveWidth > 0.0 ? max(44.0, leftButtonsEffectiveWidth) + 8.0 : 0.0
+                let pluginX = component.sideInset + leftOffset
                 let pluginFrame = CGRect(origin: CGPoint(x: pluginX, y: 0.0), size: CGSize(width: max(44.0, pluginButtonEffectiveWidth), height: 44.0))
                 pluginBGTransition.setFrame(view: pluginButtonsBackgroundContainer, frame: pluginFrame)
                 pluginButtonsBackgroundContainer.update(size: pluginFrame.size, cornerRadius: pluginFrame.height * 0.5, isDark: component.theme.overallDarkAppearance, tintColor: .init(kind: .panel), isInteractive: true, transition: pluginBGTransition)
