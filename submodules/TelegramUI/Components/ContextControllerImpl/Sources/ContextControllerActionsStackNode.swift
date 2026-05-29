@@ -718,11 +718,11 @@ private final class ContextControllerActionsListCustomItemNode: ASDisplayNode, C
     }
 
     var hasLongPressAction: Bool {
-        return self.itemNode?.hasLongPressAction ?? false
+        return (self.itemNode as? ContextControllerActionsListItemNode)?.hasLongPressAction ?? false
     }
 
     func performLongPressAction() {
-        self.itemNode?.performLongPressAction()
+        (self.itemNode as? ContextControllerActionsListItemNode)?.performLongPressAction()
     }
 
     var needsPadding: Bool {
@@ -831,7 +831,7 @@ public final class ContextControllerActionsListStackItem: ContextControllerActio
 
         private let highlightedItemBackgroundView: UIView
         private var highlightedItemNode: Item?
-        private var hoverTimer: Timer?
+        private var hoverTimer: Foundation.Timer?
         
         private var params: Params?
         private var invalidatedItemNodes: Bool = false
@@ -1194,7 +1194,7 @@ public final class ContextControllerActionsListStackItem: ContextControllerActio
                 self.hoverTimer = nil
                 if let newItem = highlightedItemNode, newItem.node.hasLongPressAction {
                     let nodeRef = newItem.node
-                    self.hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self, weak nodeRef] _ in
+                    self.hoverTimer = Foundation.Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self, weak nodeRef] _ in
                         guard let self, let nodeRef else { return }
                         self.hoverTimer = nil
                         if self.highlightedItemNode?.node === nodeRef {
