@@ -5657,9 +5657,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                         let iconName = entry.iconName
                                         subItems.append(.action(ContextMenuActionItem(
                                             text: entry.title,
-                                            icon: iconName.map { name in { (theme: PresentationTheme) in generateTintedImage(
-                                                image: UIImage(bundleImageName: name),
-                                                color: theme.actionSheet.primaryTextColor) } },
+                                            icon: { (theme: PresentationTheme) in
+                                                guard let name = iconName else { return nil }
+                                                return generateTintedImage(image: UIImage(bundleImageName: name), color: theme.actionSheet.primaryTextColor)
+                                            },
                                             action: { _, f2 in
                                                 f2(.dismissWithoutContent)
                                                 EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)

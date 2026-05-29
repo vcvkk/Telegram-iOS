@@ -3974,9 +3974,10 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             let iconName = entry.iconName
             items.append(.action(ContextMenuActionItem(
                 text: entry.title,
-                icon: iconName.map { name in { (theme: PresentationTheme) in generateTintedImage(
-                    image: UIImage(bundleImageName: name),
-                    color: theme.contextMenu.primaryColor) } },
+                icon: { (theme: PresentationTheme) in
+                    guard let name = iconName else { return nil }
+                    return generateTintedImage(image: UIImage(bundleImageName: name), color: theme.contextMenu.primaryColor)
+                },
                 action: { _, f in
                     f(.dismissWithoutContent)
                     EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
@@ -6372,7 +6373,10 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                     let iconName = entry.iconName
                     items.append(.action(ContextMenuActionItem(
                         text: entry.title,
-                        icon: iconName.map { name in { (theme: PresentationTheme) in generateTintedImage(image: UIImage(bundleImageName: name), color: theme.contextMenu.primaryColor) } },
+                        icon: { (theme: PresentationTheme) in
+                            guard let name = iconName else { return nil }
+                            return generateTintedImage(image: UIImage(bundleImageName: name), color: theme.contextMenu.primaryColor)
+                        },
                         action: { _, f in
                             f(.dismissWithoutContent)
                             EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
