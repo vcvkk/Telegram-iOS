@@ -96,6 +96,7 @@ public final class EGPluginsEngineImpl {
                     $0.pluginId == pluginId && $0.itemId == itemId
                 }) {
                     EGPluginHooks.registeredMenuItems.append(item)
+                    EGLogger.shared.log("PluginEngine", "Registered menu item: \(pluginId)/\(entryType)/\(itemId) — total=\(EGPluginHooks.registeredMenuItems.count)")
                 }
             }
             EGLogger.shared.log("PluginEngine", "Starting \(plugins.count) plugin(s)…")
@@ -103,10 +104,11 @@ public final class EGPluginsEngineImpl {
                 // loadPlugin also calls EGPluginRuntime.initialize() — dispatch_once makes it safe.
                 self.loadPlugin(id: plugin.id, filePath: plugin.filePath)
             }
-            EGLogger.shared.log("PluginEngine", "Engine started")
+            EGLogger.shared.log("PluginEngine", "Engine started — \(EGPluginHooks.registeredMenuItems.count) menu item(s) so far")
             // Notify UI that plugin menu items may have been registered.
             // Slight delay ensures py_register_plugin_entry's dispatch_async(main) has run.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                EGLogger.shared.log("PluginEngine", "Posting EGPluginMenuItemsUpdated — \(EGPluginHooks.registeredMenuItems.count) item(s)")
                 NotificationCenter.default.post(
                     name: Notification.Name("EGPluginMenuItemsUpdated"), object: nil)
             }

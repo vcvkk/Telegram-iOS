@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import SwiftSignalKit
+import EGLogging
 import ContextUI
 import AccountContext
 import Postbox
@@ -578,6 +579,7 @@ func chatContextMenuItems(context: AccountContext, peerId: PeerId, promoInfo: Ch
 
                     // MARK: exteraGram — plugin context_menu entries
                     let pluginItems = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "context_menu" }
+                    EGLogger.shared.log("ChatContextMenus", "chatContextMenuItems — context_menu items=\(pluginItems.count), total=\(EGPluginHooks.registeredMenuItems.count)")
                     if !pluginItems.isEmpty {
                         items.append(.separator)
                         items.append(.action(ContextMenuActionItem(

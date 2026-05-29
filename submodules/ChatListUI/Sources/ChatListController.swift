@@ -1,5 +1,6 @@
 // MARK: exteraGram
 import EGSimpleSettings
+import EGLogging
 
 import Foundation
 import UIKit
@@ -7116,10 +7117,13 @@ private final class ChatListLocationContext {
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
+            let count = EGPluginHooks.registeredMenuItems.count
+            EGLogger.shared.log("ChatListUI", "EGPluginMenuItemsUpdated received — \(count) total item(s)")
             self.updatePluginButton()
             self.parentController?.requestLayout(transition: .animated(duration: 0.2, curve: .easeInOut))
         }
         // Sync initial state — items may already be registered if engine started before this init
+        EGLogger.shared.log("ChatListUI", "ChatListLocationContext init — registeredMenuItems=\(EGPluginHooks.registeredMenuItems.count)")
         updatePluginButton()
     }
 
@@ -7138,6 +7142,7 @@ private final class ChatListLocationContext {
             return
         }
         let items = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "chatlist" }
+        EGLogger.shared.log("ChatListUI", "updatePluginButton — chatlist items=\(items.count), total=\(EGPluginHooks.registeredMenuItems.count)")
         if items.isEmpty {
             self.pluginButton = nil
         } else {

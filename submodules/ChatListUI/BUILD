@@ -4,7 +4,8 @@ egdeps = [
     "//exteraGram/EGSimpleSettings:EGSimpleSettings",
     "//exteraGram/EGAPIWebSettings:EGAPIWebSettings",
     "//exteraGram/EGAPIToken:EGAPIToken",
-    "//exteraGram/EGBadges:EGBadges"
+    "//exteraGram/EGBadges:EGBadges",
+    "//exteraGram/EGLogging:EGLogging",
 ]
 egsrcs = [
     "//exteraGram/EGChatListSimpleSettingsSignal:EGChatListSimpleSettingsSignal",
