@@ -1940,6 +1940,11 @@ static PyObject *py_add_image_view(PyObject *self, PyObject *args) {
             iv.animationImages      = img.images;
             iv.animationDuration    = img.duration;
             iv.animationRepeatCount = rc;
+            // When a finite animation (rc > 0) ends, UIKit falls back to iv.image.
+            // Pre-set it to the last frame so the end-state is shown, not frame 0.
+            if (rc > 0) {
+                iv.image = img.images.lastObject;
+            }
             [iv startAnimating];
         }
         [overlay addSubview:iv];
