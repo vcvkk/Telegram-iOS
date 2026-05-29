@@ -832,7 +832,20 @@ public final class ChatListHeaderComponent: Component {
                     return result
                 }
             }
-            
+
+            // MARK: exteraGram — direct routing for plugin button pill
+            // Bypasses GlassContextExtractableContainer intermediate containers that can
+            // intercept the touch before it reaches the actual NavigationButtonComponent.View.
+            if let pluginContainer = self.pluginButtonsBackgroundContainer,
+               !pluginContainer.isHidden,
+               pluginContainer.alpha > 0.01,
+               pluginContainer.isUserInteractionEnabled,
+               pluginContainer.frame.contains(point),
+               let buttonView = self.primaryContentView?.pluginButtonView?.view {
+                let converted = self.convert(point, to: buttonView)
+                return buttonView.hitTest(converted, with: event) ?? buttonView
+            }
+
             for subview in self.subviews.reversed() {
                 if !subview.isUserInteractionEnabled || subview.alpha < 0.01 || subview.isHidden {
                     continue
