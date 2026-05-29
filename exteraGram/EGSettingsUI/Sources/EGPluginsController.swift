@@ -115,6 +115,8 @@ public struct EGPlugin: Identifiable, Codable {
 public final class PluginsController {
     public static let shared = PluginsController()
     private init() {
+        EGLogger.shared.log("PluginsController",
+            "Singleton init — isEngineEnabled=\(isEngineEnabled) isSafeModeEnabled=\(isSafeModeEnabled) plugins=\(plugins.count) launchMarker=\(UserDefaults.standard.bool(forKey: launchMarkerKey))")
         observePluginUINotifications()
     }
 
@@ -167,7 +169,11 @@ public final class PluginsController {
     private let launchMarkerKey = "eg_plugins_launching"
 
     public func startEngine(completion: (() -> Void)? = nil) {
+        EGLogger.shared.log("PluginsController",
+            "startEngine called — isEngineEnabled=\(isEngineEnabled) isSafeModeEnabled=\(isSafeModeEnabled) plugins=\(plugins.count) enabled=\(plugins.filter { $0.isEnabled }.count)")
         guard isEngineEnabled, !isSafeModeEnabled else {
+            EGLogger.shared.log("PluginsController",
+                "startEngine guard failed — skipping start")
             completion?(); return
         }
 
