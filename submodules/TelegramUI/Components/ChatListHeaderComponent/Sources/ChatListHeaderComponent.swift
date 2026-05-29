@@ -883,6 +883,8 @@ public final class ChatListHeaderComponent: Component {
                         titleComponent: nil,
                         chatListTitle: nil,
                         leftButton: primaryContent.leftButton,
+                        // MARK: exteraGram — preserve plugin button when stories are shown
+                        secondaryLeftButton: primaryContent.secondaryLeftButton,
                         rightButtons: primaryContent.rightButtons,
                         backPressed: primaryContent.backPressed
                     )

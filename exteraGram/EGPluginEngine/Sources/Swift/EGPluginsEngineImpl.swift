@@ -93,7 +93,7 @@ public final class EGPluginsEngineImpl {
                 let item = EGPluginMenuItem(pluginId: pluginId, entryType: entryType,
                                            itemId: itemId, title: title)
                 if !EGPluginHooks.registeredMenuItems.contains(where: {
-                    $0.pluginId == pluginId && $0.itemId == itemId
+                    $0.pluginId == pluginId && $0.itemId == itemId && $0.entryType == entryType
                 }) {
                     EGPluginHooks.registeredMenuItems.append(item)
                     EGPluginDebugLog.shared.append(tag: "PluginEngine",
