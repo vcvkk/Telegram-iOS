@@ -102,8 +102,11 @@ static NSMutableDictionary<NSNumber *, UIWindow *>       *g_overlayWindows = nil
 static NSMutableDictionary<NSNumber *, NSData *>         *g_audioData      = nil;
 // active players retained until playback finishes
 static NSMutableSet<AVAudioPlayer *>                     *g_activePlayers  = nil;
-static int32_t g_nextOverlayId = 1;
-static int32_t g_nextAudioId   = 1;
+// instance_id → AVAudioPlayer — allows audio_control to target individual playbacks
+static NSMutableDictionary<NSNumber *, AVAudioPlayer *>  *g_playerById     = nil;
+static int32_t g_nextOverlayId   = 1;
+static int32_t g_nextAudioId     = 1;
+static _Atomic int32_t g_nextInstanceId = 1;  // per-playback handle returned by play_audio
 // splat image cache: file path → decoded UIImage (animated). Avoids per-tap disk I/O + decode.
 static NSMutableDictionary<NSString *, UIImage *>        *g_splatCache     = nil;
 // view_id → UIView — tracks individual views created via add_image_view.
@@ -1695,6 +1698,12 @@ static PyObject *py_show_projectile(PyObject *self, PyObject *args) {
 @implementation EGAudioDelegate
 - (void)audioPlayerDidFinishPlaying:(AVAudioPlayer *)player successfully:(BOOL)flag {
     [g_activePlayers removeObject:player];
+    // Remove from per-instance map (linear scan; set is small in practice).
+    NSNumber *found = nil;
+    for (NSNumber *key in g_playerById) {
+        if (g_playerById[key] == player) { found = key; break; }
+    }
+    if (found) [g_playerById removeObjectForKey:found];
 }
 @end
 static EGAudioDelegate *g_audioDelegate = nil;
@@ -1719,16 +1728,21 @@ static PyObject *py_load_audio(PyObject *self, PyObject *args) {
     return PyLong_FromLong(aid);
 }
 
-// play_audio(audio_id, volume=1.0, rate=1.0) → None
+// play_audio(audio_id, volume=1.0, rate=1.0) → instance_id
 // Creates a fresh AVAudioPlayer from cached data on every call — fully polyphonic.
+// Returns an instance_id that can be passed to audio_control() to stop/pause/resume
+// this specific playback. Returns -1 if the audio_id is unknown.
 static PyObject *py_play_audio(PyObject *self, PyObject *args) {
     int aid = 0;
     double volume = 1.0, rate = 1.0;
     if (!PyArg_ParseTuple(args, "i|dd", &aid, &volume, &rate)) return NULL;
+    // Allocate instance_id synchronously so we can return it to Python immediately.
+    int32_t iid = atomic_fetch_add(&g_nextInstanceId, 1);
     dispatch_async(dispatch_get_main_queue(), ^{
         NSData *data = g_audioData[@(aid)];
         if (!data) return;
         if (!g_activePlayers) g_activePlayers = [NSMutableSet new];
+        if (!g_playerById)    g_playerById    = [NSMutableDictionary new];
         if (!g_audioDelegate) g_audioDelegate = [EGAudioDelegate new];
         NSError *err = nil;
         AVAudioPlayer *p = [[AVAudioPlayer alloc] initWithData:data error:&err];
@@ -1737,8 +1751,47 @@ static PyObject *py_play_audio(PyObject *self, PyObject *args) {
         p.enableRate = YES;
         p.rate       = (float)rate;
         p.delegate   = g_audioDelegate;
-        [g_activePlayers addObject:p]; // retain until audioPlayerDidFinishPlaying:
+        [g_activePlayers addObject:p]; // retained until audioPlayerDidFinishPlaying:
+        g_playerById[@(iid)] = p;
         [p play];
+    });
+    return PyLong_FromLong(iid);
+}
+
+// audio_control(instance_id, action) → None
+// Controls a playing audio instance, or all active instances when instance_id == -1.
+// Actions: "stop", "pause", "resume"
+// Designed to be general-purpose so any plugin can manage its own playbacks precisely.
+static PyObject *py_audio_control(PyObject *self, PyObject *args) {
+    int32_t iid = 0;
+    const char *action_c = "";
+    if (!PyArg_ParseTuple(args, "is", &iid, &action_c)) return NULL;
+    NSString *action = [NSString stringWithUTF8String:action_c];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (iid == -1) {
+            // Apply to every currently active player.
+            if ([action isEqualToString:@"stop"]) {
+                for (AVAudioPlayer *p in g_activePlayers) [p stop];
+                [g_activePlayers removeAllObjects];
+                [g_playerById removeAllObjects];
+            } else if ([action isEqualToString:@"pause"]) {
+                for (AVAudioPlayer *p in g_activePlayers) [p pause];
+            } else if ([action isEqualToString:@"resume"]) {
+                for (AVAudioPlayer *p in g_activePlayers) [p play];
+            }
+        } else {
+            AVAudioPlayer *p = g_playerById[@(iid)];
+            if (!p) return;
+            if ([action isEqualToString:@"stop"]) {
+                [p stop];
+                [g_activePlayers removeObject:p];
+                [g_playerById removeObjectForKey:@(iid)];
+            } else if ([action isEqualToString:@"pause"]) {
+                [p pause];
+            } else if ([action isEqualToString:@"resume"]) {
+                [p play];
+            }
+        }
     });
     Py_RETURN_NONE;
 }
@@ -2093,7 +2146,8 @@ static PyMethodDef ios_bridge_methods[] = {
     {"add_longpress_gesture",   py_add_longpress_gesture,   METH_VARARGS, "add_longpress_gesture(overlay_id, callback, min_duration=0.4) — callback(started: bool)"},
     {"show_projectile",         py_show_projectile,         METH_VARARGS, "show_projectile(overlay_id, emoji, x, y, size, vx, vy, duration=1.4)"},
     {"load_audio",              py_load_audio,              METH_VARARGS, "load_audio(path) -> audio_id or -1"},
-    {"play_audio",              py_play_audio,              METH_VARARGS, "play_audio(audio_id, volume=1.0, rate=1.0)"},
+    {"play_audio",              py_play_audio,              METH_VARARGS, "play_audio(audio_id, volume=1.0, rate=1.0) -> instance_id"},
+    {"audio_control",           py_audio_control,           METH_VARARGS, "audio_control(instance_id, action) — action: stop/pause/resume; instance_id=-1 targets all"},
     {"register_plugin_entry",   py_register_plugin_entry,   METH_VARARGS, "register_plugin_entry(plugin_id, entry_type, item_id, title)"},
     // BRIDGE_VERSION 5 — show_splat, add_touch_handler
     {"show_splat",              py_show_splat,              METH_VARARGS, "show_splat(overlay_id, image_path, x, y, size) — show GIF/PNG at position, fade-in, auto-remove"},

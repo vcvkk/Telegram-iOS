@@ -60,6 +60,11 @@ _PREBUNDLED = {
     "multidict": "6.1.0",
     "frozenlist": "1.5.0",
     "pycparser": "2.22",
+    # rubicon-objc: pure-Python ObjC bridge (BeeWare). Always available — no
+    # requirements line needed. `import rubicon.objc` works out of the box.
+    "rubicon-objc": "0.5.4",
+    "rubicon_objc": "0.5.4",  # pip normalised form
+    "rubicon": "0.5.4",       # top-level import alias
 }
 
 # ---------------------------------------------------------------------------

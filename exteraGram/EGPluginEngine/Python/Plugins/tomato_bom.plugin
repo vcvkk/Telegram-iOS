@@ -1,7 +1,7 @@
 __id__          = "tomato_bom"
 __name__        = "🍅 Tomato Bom"
 __os__          = "ios"
-__version__     = "1.5"
+__version__     = "1.6"
 __author__      = "@oodze"
 __description__ = "Throw tomatoes at anyone! **Tap** to splat · **Hold** for machine-gun · **Double-tap** to close."
 __requirements__ = "Pillow"
@@ -222,6 +222,8 @@ def _on_touch(action, x, y):
             oid = _overlay_id
             _overlay_id = None
             _last_tap_time = 0.0
+            # Stop all in-flight sounds immediately before dismissing.
+            bridge.audio_control(-1, "stop")
             if oid is not None:
                 bridge.dismiss_overlay(oid)
             return
