@@ -154,7 +154,7 @@ def _play_sound():
     if now - _last_sound_t < 0.05:
         return
     _last_sound_t = now
-    bridge.play_audio(_audio_id, _sound_volume(), 1.0)
+    bridge.audio("play", _audio_id, _sound_volume(), 1.0)
 
 # Cached GIF duration in seconds (computed once via Pillow after assets are ready).
 _gif_duration = None
@@ -223,7 +223,7 @@ def _on_touch(action, x, y):
             _overlay_id = None
             _last_tap_time = 0.0
             # Stop all in-flight sounds immediately before dismissing.
-            bridge.audio_control(-1, "stop")
+            bridge.audio("stop", -1)
             if oid is not None:
                 bridge.dismiss_overlay(oid)
             return
@@ -273,7 +273,7 @@ def _activate():
                 "🍅 Tomato Bom", "Failed to download assets. Check your connection."))
             return
         if _audio_id < 0 and _sound_path and os.path.exists(_sound_path):
-            _audio_id = bridge.load_audio(_sound_path)
+            _audio_id = bridge.audio("load", _sound_path)
         # Pre-warm GIF duration on this background thread so the first call from the
         # main thread (_spawn_tomato) doesn't block the UI with Pillow frame-reading.
         _compute_gif_duration()

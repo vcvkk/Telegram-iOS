@@ -829,6 +829,39 @@ static PyObject *py_suppress_attribute_type(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
+// suppress(kind, type_name, active=True) — unified suppress
+// kind: "entity" | "attribute"
+static PyObject *py_suppress(PyObject *self, PyObject *args) {
+    const char *kind_c = "", *typeName_c = "";
+    int active = 1;
+    if (!PyArg_ParseTuple(args, "ss|p", &kind_c, &typeName_c, &active)) return NULL;
+    NSString *kind     = [NSString stringWithUTF8String:kind_c];
+    NSString *typeName = [NSString stringWithUTF8String:typeName_c];
+    if ([kind isEqualToString:@"entity"]) {
+        void (^h)(NSString *, BOOL) = g_suppressEntityTypeHandler;
+        if (h) {
+            h(typeName, (BOOL)active);
+            EGPluginDebugLog_appendCStr("Bridge",
+                [[NSString stringWithFormat:@"suppress entity: %s=%d", typeName_c, active] UTF8String]);
+        } else {
+            EGPluginDebugLog_appendCStr("Bridge", "suppress entity: handler NIL");
+        }
+    } else if ([kind isEqualToString:@"attribute"]) {
+        void (^h)(NSString *, BOOL) = g_suppressAttributeTypeHandler;
+        if (h) {
+            h(typeName, (BOOL)active);
+            EGPluginDebugLog_appendCStr("Bridge",
+                [[NSString stringWithFormat:@"suppress attribute: %s=%d", typeName_c, active] UTF8String]);
+        } else {
+            EGPluginDebugLog_appendCStr("Bridge", "suppress attribute: handler NIL");
+        }
+    } else {
+        PyErr_Format(PyExc_ValueError, "suppress: unknown kind '%s' (use \"entity\" or \"attribute\")", kind_c);
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
 // get_locale_language() -> str
 static PyObject *py_get_locale_language(PyObject *self, PyObject *args) {
     const char *lang = EGStringsBridge_currentLanguageCStr();
@@ -1621,6 +1654,68 @@ static PyObject *py_add_longpress_gesture(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
+// add_gesture(type, overlay_id, ...) — unified gesture registration
+// add_gesture("tap",       overlay_id, tap_count, callback)
+// add_gesture("longpress", overlay_id, callback, min_duration=0.4)
+static PyObject *py_add_gesture(PyObject *self, PyObject *args) {
+    Py_ssize_t nargs = PyTuple_GET_SIZE(args);
+    if (nargs < 3) { PyErr_SetString(PyExc_TypeError, "add_gesture(type, overlay_id, ...)"); return NULL; }
+    const char *type_c = PyUnicode_AsUTF8(PyTuple_GET_ITEM(args, 0));
+    if (!type_c) return NULL;
+    int oid = (int)PyLong_AsLong(PyTuple_GET_ITEM(args, 1));
+    if (PyErr_Occurred()) return NULL;
+    NSString *type = [NSString stringWithUTF8String:type_c];
+
+    if ([type isEqualToString:@"tap"]) {
+        if (nargs < 4) { PyErr_SetString(PyExc_TypeError, "add_gesture(\"tap\", overlay_id, tap_count, callback)"); return NULL; }
+        int tapCount = (int)PyLong_AsLong(PyTuple_GET_ITEM(args, 2));
+        PyObject *cb = PyTuple_GET_ITEM(args, 3);
+        if (PyErr_Occurred()) return NULL;
+        if (!PyCallable_Check(cb)) { PyErr_SetString(PyExc_TypeError, "callback must be callable"); return NULL; }
+        EGGestureTarget *target = [[EGGestureTarget alloc] initWithCallback:cb longPress:NO];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIView *overlay = g_overlays[@(oid)];
+            if (!overlay) { EGPluginDebugLog_appendCStr("Overlay", "add_gesture tap: overlay not found"); return; }
+            UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
+                initWithTarget:target action:@selector(handleGesture:)];
+            tap.numberOfTapsRequired = (NSUInteger)MAX(1, tapCount);
+            [overlay addGestureRecognizer:tap];
+            [g_overlayTargets[@(oid)] addObject:target];
+            for (UIGestureRecognizer *gr in overlay.gestureRecognizers) {
+                if (gr == tap || ![gr isKindOfClass:[UITapGestureRecognizer class]]) continue;
+                UITapGestureRecognizer *other = (UITapGestureRecognizer *)gr;
+                if (other.numberOfTapsRequired > tap.numberOfTapsRequired)
+                    [tap requireGestureRecognizerToFail:other];
+                else if (tap.numberOfTapsRequired > other.numberOfTapsRequired)
+                    [other requireGestureRecognizerToFail:tap];
+            }
+            EGPluginDebugLog_appendCStr("Overlay",
+                [[NSString stringWithFormat:@"add_gesture tap id=%d taps=%d", oid, tapCount] UTF8String]);
+        });
+
+    } else if ([type isEqualToString:@"longpress"]) {
+        PyObject *cb = PyTuple_GET_ITEM(args, 2);
+        if (!PyCallable_Check(cb)) { PyErr_SetString(PyExc_TypeError, "callback must be callable"); return NULL; }
+        double minDur = nargs > 3 ? PyFloat_AsDouble(PyTuple_GET_ITEM(args, 3)) : 0.4;
+        if (PyErr_Occurred()) return NULL;
+        EGGestureTarget *target = [[EGGestureTarget alloc] initWithCallback:cb longPress:YES];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIView *overlay = g_overlays[@(oid)];
+            if (!overlay) return;
+            UILongPressGestureRecognizer *lp = [[UILongPressGestureRecognizer alloc]
+                initWithTarget:target action:@selector(handleGesture:)];
+            lp.minimumPressDuration = (NSTimeInterval)minDur;
+            [overlay addGestureRecognizer:lp];
+            [g_overlayTargets[@(oid)] addObject:target];
+        });
+
+    } else {
+        PyErr_Format(PyExc_ValueError, "add_gesture: unknown type '%s'", type_c);
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
 // show_projectile(overlay_id, emoji, x, y, size, vx, vy, duration=1.4) → None
 // Launches an emoji label from (x,y) with velocity (vx,vy) along a parabolic arc.
 static PyObject *py_show_projectile(PyObject *self, PyObject *args) {
@@ -1707,6 +1802,94 @@ static PyObject *py_show_projectile(PyObject *self, PyObject *args) {
 }
 @end
 static EGAudioDelegate *g_audioDelegate = nil;
+
+// audio(action, ...) — unified audio management
+// audio("load", path) → audio_id or -1
+// audio("play", audio_id, volume=1.0, rate=1.0) → instance_id
+// audio("stop"/"pause"/"resume", instance_id=-1) → None   (-1 targets all)
+static PyObject *py_audio(PyObject *self, PyObject *args) {
+    Py_ssize_t nargs = PyTuple_GET_SIZE(args);
+    if (nargs < 1) { PyErr_SetString(PyExc_TypeError, "audio() requires at least 1 argument"); return NULL; }
+    const char *action_c = PyUnicode_AsUTF8(PyTuple_GET_ITEM(args, 0));
+    if (!action_c) return NULL;
+    NSString *action = [NSString stringWithUTF8String:action_c];
+
+    if ([action isEqualToString:@"load"]) {
+        if (nargs < 2) { PyErr_SetString(PyExc_TypeError, "audio(\"load\", path)"); return NULL; }
+        const char *path_c = PyUnicode_AsUTF8(PyTuple_GET_ITEM(args, 1));
+        if (!path_c) return NULL;
+        NSString *path = [NSString stringWithUTF8String:path_c];
+        __block int32_t aid = -1;
+        void (^blk)(void) = ^{
+            if (!g_audioData) g_audioData = [NSMutableDictionary new];
+            NSData *data = [NSData dataWithContentsOfFile:path];
+            if (!data || data.length == 0) return;
+            aid = g_nextAudioId++;
+            g_audioData[@(aid)] = data;
+        };
+        if ([NSThread isMainThread]) blk();
+        else dispatch_sync(dispatch_get_main_queue(), blk);
+        return PyLong_FromLong(aid);
+
+    } else if ([action isEqualToString:@"play"]) {
+        if (nargs < 2) { PyErr_SetString(PyExc_TypeError, "audio(\"play\", audio_id, ...)"); return NULL; }
+        int aid = (int)PyLong_AsLong(PyTuple_GET_ITEM(args, 1));
+        double volume = nargs > 2 ? PyFloat_AsDouble(PyTuple_GET_ITEM(args, 2)) : 1.0;
+        double rate   = nargs > 3 ? PyFloat_AsDouble(PyTuple_GET_ITEM(args, 3)) : 1.0;
+        if (PyErr_Occurred()) return NULL;
+        int32_t iid = atomic_fetch_add(&g_nextInstanceId, 1);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSData *data = g_audioData[@(aid)];
+            if (!data) return;
+            if (!g_activePlayers) g_activePlayers = [NSMutableSet new];
+            if (!g_playerById)    g_playerById    = [NSMutableDictionary new];
+            if (!g_audioDelegate) g_audioDelegate = [EGAudioDelegate new];
+            NSError *err = nil;
+            AVAudioPlayer *p = [[AVAudioPlayer alloc] initWithData:data error:&err];
+            if (!p || err) return;
+            p.volume     = (float)volume;
+            p.enableRate = YES;
+            p.rate       = (float)rate;
+            p.delegate   = g_audioDelegate;
+            [g_activePlayers addObject:p];
+            g_playerById[@(iid)] = p;
+            [p play];
+        });
+        return PyLong_FromLong(iid);
+
+    } else if ([action isEqualToString:@"stop"] || [action isEqualToString:@"pause"] || [action isEqualToString:@"resume"]) {
+        int32_t iid = nargs > 1 ? (int32_t)PyLong_AsLong(PyTuple_GET_ITEM(args, 1)) : -1;
+        if (PyErr_Occurred()) return NULL;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (iid == -1) {
+                if ([action isEqualToString:@"stop"]) {
+                    for (AVAudioPlayer *p in g_activePlayers) [p stop];
+                    [g_activePlayers removeAllObjects];
+                    [g_playerById removeAllObjects];
+                } else if ([action isEqualToString:@"pause"]) {
+                    for (AVAudioPlayer *p in g_activePlayers) [p pause];
+                } else {
+                    for (AVAudioPlayer *p in g_activePlayers) [p play];
+                }
+            } else {
+                AVAudioPlayer *p = g_playerById[@(iid)];
+                if (!p) return;
+                if ([action isEqualToString:@"stop"]) {
+                    [p stop]; [g_activePlayers removeObject:p]; [g_playerById removeObjectForKey:@(iid)];
+                } else if ([action isEqualToString:@"pause"]) {
+                    [p pause];
+                } else {
+                    [p play];
+                }
+            }
+        });
+        Py_RETURN_NONE;
+
+    } else {
+        PyErr_Format(PyExc_ValueError, "audio: unknown action '%s'", action_c);
+        return NULL;
+    }
+}
 
 // load_audio(path) → int audio_id  (−1 on error)
 // Stores raw NSData so every play_audio call can spawn an independent AVAudioPlayer.
@@ -2099,7 +2282,6 @@ static PyObject *py_add_touch_handler(PyObject *self, PyObject *args) {
 }
 
 static PyMethodDef ios_bridge_methods[] = {
-    {"log_text",           py_log_text,           METH_VARARGS, "log_text(msg, tag='Plugin')"},
     {"add_tl_hook",        py_add_tl_hook,        METH_VARARGS, "add_tl_hook(tl_type, callback)"},
     {"has_hook",           py_has_hook,           METH_VARARGS, "has_hook(tl_type) -> bool"},
     {"run_on_main_thread", py_run_on_main_thread, METH_VARARGS, "run_on_main_thread(fn)"},
@@ -2131,8 +2313,7 @@ static PyMethodDef ios_bridge_methods[] = {
     {"plugin_has_settings",  py_plugin_has_settings,  METH_VARARGS, "plugin_has_settings(plugin_id) -> bool"},
     {"get_plugin_settings",  py_get_plugin_settings,  METH_VARARGS, "get_plugin_settings(plugin_id) -> dict|None"},
     {"show_plugin_settings", py_show_plugin_settings, METH_VARARGS, "show_plugin_settings(plugin_id)"},
-    {"suppress_entity_type",    py_suppress_entity_type,    METH_VARARGS, "suppress_entity_type(type_name, suppress=True)"},
-    {"suppress_attribute_type", py_suppress_attribute_type, METH_VARARGS, "suppress_attribute_type(type_name, suppress=True)"},
+    {"suppress",                py_suppress,                METH_VARARGS, "suppress(kind, type_name, active=True) — kind: \"entity\" or \"attribute\""},
     {"send_message",            py_send_message,            METH_VARARGS, "send_message(peer_id, text) — send a Telegram message as the current user"},
     {"send_reaction",           py_send_reaction,           METH_VARARGS, "send_reaction(peer_id, msg_id, emoticon) — add a reaction to a message"},
     {"get_device_info",         py_get_device_info,         METH_NOARGS,  "get_device_info() -> dict with battery_level, battery_state, app_version"},
@@ -2142,12 +2323,9 @@ static PyMethodDef ios_bridge_methods[] = {
     // BRIDGE_VERSION 4 — overlay / gesture / projectile / audio / plugin entry
     {"create_overlay",          py_create_overlay,          METH_VARARGS, "create_overlay(alpha=0.0) -> overlay_id — transparent interactive UIView over key window"},
     {"dismiss_overlay",         py_dismiss_overlay,         METH_VARARGS, "dismiss_overlay(overlay_id) — remove overlay with fade"},
-    {"add_tap_gesture",         py_add_tap_gesture,         METH_VARARGS, "add_tap_gesture(overlay_id, tap_count, callback) — tap_count=1 or 2"},
-    {"add_longpress_gesture",   py_add_longpress_gesture,   METH_VARARGS, "add_longpress_gesture(overlay_id, callback, min_duration=0.4) — callback(started: bool)"},
+    {"add_gesture",             py_add_gesture,             METH_VARARGS, "add_gesture(type, overlay_id, ...) — type: \"tap\"(overlay,count,cb) or \"longpress\"(overlay,cb,min_dur=0.4)"},
     {"show_projectile",         py_show_projectile,         METH_VARARGS, "show_projectile(overlay_id, emoji, x, y, size, vx, vy, duration=1.4)"},
-    {"load_audio",              py_load_audio,              METH_VARARGS, "load_audio(path) -> audio_id or -1"},
-    {"play_audio",              py_play_audio,              METH_VARARGS, "play_audio(audio_id, volume=1.0, rate=1.0) -> instance_id"},
-    {"audio_control",           py_audio_control,           METH_VARARGS, "audio_control(instance_id, action) — action: stop/pause/resume; instance_id=-1 targets all"},
+    {"audio",                   py_audio,                   METH_VARARGS, "audio(action, ...) — load/play/stop/pause/resume; see docstring"},
     {"register_plugin_entry",   py_register_plugin_entry,   METH_VARARGS, "register_plugin_entry(plugin_id, entry_type, item_id, title)"},
     // BRIDGE_VERSION 5 — show_splat, add_touch_handler
     {"show_splat",              py_show_splat,              METH_VARARGS, "show_splat(overlay_id, image_path, x, y, size) — show GIF/PNG at position, fade-in, auto-remove"},

@@ -14,9 +14,9 @@ import _ios_bridge
 def log(data) -> None:
     """Log data to EGLogger. Scalar types log as text; objects log as repr."""
     if isinstance(data, (str, int, float, bool, type(None))):
-        _ios_bridge.log_text(str(data))
+        _ios_bridge.log("Android", str(data))
     else:
-        _ios_bridge.log_text(f"<{type(data).__module__}.{type(data).__name__}>: {repr(data)}")
+        _ios_bridge.log("Android", f"<{type(data).__module__}.{type(data).__name__}>: {repr(data)}")
 
 
 # ---------------------------------------------------------------------------

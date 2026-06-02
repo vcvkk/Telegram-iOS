@@ -87,7 +87,7 @@ def suppress_entity_type(type_name: str, suppress: bool = True) -> None:
     Example: suppress_entity_type("Spoiler") strips text-spoiler formatting.
     """
     try:
-        _ios_bridge.suppress_entity_type(type_name, suppress)
+        _ios_bridge.suppress("entity", type_name, suppress)
     except AttributeError:
         pass
 
@@ -99,6 +99,6 @@ def suppress_attribute_type(type_name: str, suppress: bool = True) -> None:
     Example: suppress_attribute_type("MediaSpoilerMessageAttribute") auto-reveals media.
     """
     try:
-        _ios_bridge.suppress_attribute_type(type_name, suppress)
+        _ios_bridge.suppress("attribute", type_name, suppress)
     except AttributeError:
         pass
