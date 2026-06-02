@@ -827,15 +827,11 @@ public final class ChatListHeaderComponent: Component {
         }
         
         override public func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-            if let storyPeerListView = self.storyPeerList?.view {
-                if let result = storyPeerListView.hitTest(self.convert(point, to: storyPeerListView), with: event) {
-                    return result
-                }
-            }
-
             // MARK: exteraGram — direct routing for plugin button pill
-            // Bypasses GlassContextExtractableContainer intermediate containers that can
-            // intercept the touch before it reaches the actual NavigationButtonComponent.View.
+            // Must run BEFORE the storyPeerList check below: the plugin pill sits on the
+            // left side of the header, overlapping the story avatars row. storyPeerList's
+            // hitTest would otherwise intercept the tap (and only let it through in the
+            // rare gaps between avatars), so route the pill's touches to the button first.
             if let pluginContainer = self.pluginButtonsBackgroundContainer,
                !pluginContainer.isHidden,
                pluginContainer.alpha > 0.01,
@@ -844,6 +840,12 @@ public final class ChatListHeaderComponent: Component {
                let buttonView = self.primaryContentView?.pluginButtonView?.view {
                 let converted = self.convert(point, to: buttonView)
                 return buttonView.hitTest(converted, with: event) ?? buttonView
+            }
+
+            if let storyPeerListView = self.storyPeerList?.view {
+                if let result = storyPeerListView.hitTest(self.convert(point, to: storyPeerListView), with: event) {
+                    return result
+                }
             }
 
             for subview in self.subviews.reversed() {
