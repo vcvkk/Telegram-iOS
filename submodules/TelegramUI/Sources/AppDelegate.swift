@@ -412,6 +412,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         // MARK: exteraGram - crash catcher
         EGCrashCatcher.install()
 
+        // MARK: exteraGram — load plugin debug log breadcrumbs from previous session (must run before engine start)
+        PluginsController.shared.loadPluginDebugLogCrashBreadcrumbs()
+
         // MARK: exteraGram - startup diagnostic (writes to clipboard + Documents if stuck > 10s)
         EGStartupDiagnostics.shared.start()
 
@@ -2212,6 +2215,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     
     func applicationWillTerminate(_ application: UIApplication) {
         Logger.shared.log("App \(self.episodeId)", "terminating")
+        // MARK: exteraGram — mark clean exit so next launch skips crash breadcrumbs
+        PluginsController.shared.markPluginDebugLogCleanExit()
     }
     
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {

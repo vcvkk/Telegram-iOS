@@ -12,6 +12,7 @@ import EGPluginEngine
 @available(iOS 14.0, *)
 private final class PluginLogModel: ObservableObject {
     @Published var entries: [EGPluginDebugLog.Entry] = []
+    @Published var crashBreadcrumbs: [EGPluginDebugLog.Entry]? = nil
     private var observer: NSObjectProtocol?
 
     init() {
@@ -31,6 +32,7 @@ private final class PluginLogModel: ObservableObject {
 
     private func reload() {
         entries = EGPluginDebugLog.shared.entries.reversed()
+        crashBreadcrumbs = EGPluginDebugLog.shared.crashBreadcrumbs
     }
 
     func clear() { EGPluginDebugLog.shared.clear() }
@@ -56,6 +58,35 @@ private struct PluginLogsView: View {
                           initialized ? "YES ✓" : "NO ✗",
                           initialized ? .green : .red)
                 statusRow("Log entries", "\(model.entries.count)", .secondary)
+            }
+
+            // ── Crash breadcrumbs ────────────────────────────────────
+            if let breadcrumbs = model.crashBreadcrumbs, !breadcrumbs.isEmpty {
+                Section(header:
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("CRASH LOG — PREVIOUS SESSION")
+                            .foregroundColor(.orange)
+                    }
+                ) {
+                    ForEach(breadcrumbs.reversed()) { entry in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 4) {
+                                Text(entry.formattedTimestamp)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                Text("[\(entry.tag)]")
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundColor(.orange)
+                            }
+                            Text(entry.message)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
             }
 
             // ── Log stream ──────────────────────────────────────────

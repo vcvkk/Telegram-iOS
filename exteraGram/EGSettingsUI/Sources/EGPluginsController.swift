@@ -240,6 +240,20 @@ public final class PluginsController {
         }
     }
 
+    // MARK: - Debug log lifecycle
+
+    /// Call on app launch (before engine start) to load crash breadcrumbs from the
+    /// previous session's on-disk log if it didn't end cleanly.
+    public func loadPluginDebugLogCrashBreadcrumbs() {
+        EGPluginDebugLog.shared.loadCrashBreadcrumbs()
+    }
+
+    /// Call on graceful shutdown (applicationWillTerminate) to mark the log file
+    /// with a clean-exit sentinel so the next launch skips crash breadcrumbs.
+    public func markPluginDebugLogCleanExit() {
+        EGPluginDebugLog.shared.markCleanExit()
+    }
+
     // MARK: - Client info wiring (exposes account/user info to Python plugins)
 
     private var clientInfoDisposable: Disposable?
