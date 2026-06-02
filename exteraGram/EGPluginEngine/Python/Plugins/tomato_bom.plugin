@@ -1,7 +1,7 @@
 __id__          = "tomato_bom"
 __name__        = "🍅 Tomato Bom"
 __os__          = "ios"
-__version__     = "1.6"
+__version__     = "1.7"
 __author__      = "@oodze"
 __description__ = "Throw tomatoes at anyone! **Tap** to splat · **Hold** for machine-gun · **Double-tap** to close."
 __requirements__ = "Pillow"
@@ -46,7 +46,6 @@ _current_x         = 0.0
 _current_y         = 0.0
 _last_sound_t      = 0.0
 _touch_down        = False
-_pending_tap_timer = None   # deferred first-tap spawn (for double-tap disambiguation)
 
 # Cached asset paths (set after first successful download)
 _gif_path   = None
@@ -204,7 +203,7 @@ def _rapid_loop():
 
 def _on_touch(action, x, y):
     global _last_tap_time, _current_x, _current_y
-    global _rapid_active, _overlay_id, _touch_down, _pending_tap_timer
+    global _rapid_active, _overlay_id, _touch_down
 
     if action == 0:  # DOWN
         _touch_down = True
@@ -212,37 +211,23 @@ def _on_touch(action, x, y):
         _current_y = y
         now = time.time()
 
-        # Double-tap (< 0.3 s since last DOWN) → cancel pending first-tap spawn and close.
+        # Double-tap (< 0.3 s since last DOWN) → close overlay and stop all sounds.
         if now - _last_tap_time < 0.3:
-            if _pending_tap_timer is not None:
-                _pending_tap_timer.cancel()
-                _pending_tap_timer = None
             _rapid_active = False
             _touch_down = False
             oid = _overlay_id
             _overlay_id = None
             _last_tap_time = 0.0
-            # Stop all in-flight sounds immediately before dismissing.
             bridge.audio("stop", -1)
             if oid is not None:
                 bridge.dismiss_overlay(oid)
             return
 
         _last_tap_time = now
-        bridge.haptic_feedback("light")
 
-        # Defer the first-tap spawn by 0.3 s so a quick second tap can cancel it
-        # before any tomato appears. Rapid fire still starts immediately (sleeps 0.12 s
-        # before its first shot), so hold-to-fire feels instant.
-        lx, ly = x, y
-        def _deferred_spawn():
-            global _pending_tap_timer
-            _pending_tap_timer = None
-            if _overlay_id is None:
-                return
-            bridge.run_on_main_thread(lambda: _spawn_tomato(lx, ly))
-        _pending_tap_timer = threading.Timer(0.3, _deferred_spawn)
-        _pending_tap_timer.start()
+        # Spawn immediately at touch position, same as the original Android version.
+        _spawn_tomato(x, y)
+        bridge.haptic_feedback("light")
 
         # Start machine-gun immediately on hold (no long-press delay, matches Android)
         if not _rapid_active:
@@ -282,13 +267,12 @@ def _activate():
     threading.Thread(target=_async_activate, daemon=True).start()
 
 def _create_overlay():
-    global _overlay_id, _rapid_active, _last_tap_time, _touch_down, _pending_tap_timer
+    global _overlay_id, _rapid_active, _last_tap_time, _touch_down
     if _overlay_id is not None:
         return
-    _rapid_active      = False
-    _last_tap_time     = 0.0
-    _touch_down        = False
-    _pending_tap_timer = None
+    _rapid_active  = False
+    _last_tap_time = 0.0
+    _touch_down    = False
     oid = bridge.create_overlay(0.0)
     _overlay_id = oid
     bridge.add_touch_handler(oid, _on_touch)
@@ -317,12 +301,9 @@ def on_load(plugin):
     bridge.log("tomato_bom", "on_load complete")
 
 def on_unload(plugin):
-    global _overlay_id, _rapid_active, _audio_id, _pending_tap_timer
+    global _overlay_id, _rapid_active, _audio_id
     _rapid_active = False
     _touch_down = False
-    if _pending_tap_timer is not None:
-        _pending_tap_timer.cancel()
-        _pending_tap_timer = None
     if _overlay_id is not None:
         bridge.dismiss_overlay(_overlay_id)
         _overlay_id = None
