@@ -1,7 +1,7 @@
 __id__          = "tomato_bom"
 __name__        = "🍅 Tomato Bom"
 __os__          = "ios"
-__version__     = "1.4"
+__version__     = "1.5"
 __author__      = "@oodze"
 __description__ = "Throw tomatoes at anyone! **Tap** to splat · **Hold** for machine-gun · **Double-tap** to close."
 __requirements__ = "Pillow"
@@ -38,14 +38,15 @@ _GIF_URL   = "https://gitflic.ru/project/fdijdkjl/kjhkjh/blob/raw?file=ezgif-4d2
 _SOUND_URL = "https://gitflic.ru/project/fdijdkjl/kjhkjh/blob/raw?file=c5855692202fecf58526e46da71c34d3.mp3&inline=false&commit=b10d0e981c42998ed9180edda184d1852cd7362c"
 
 # ── runtime state ──────────────────────────────────────────────────────────────
-_overlay_id    = None
-_audio_id      = -1
-_rapid_active  = False
-_last_tap_time = 0.0
-_current_x     = 0.0
-_current_y     = 0.0
-_last_sound_t  = 0.0
-_touch_down    = False
+_overlay_id        = None
+_audio_id          = -1
+_rapid_active      = False
+_last_tap_time     = 0.0
+_current_x         = 0.0
+_current_y         = 0.0
+_last_sound_t      = 0.0
+_touch_down        = False
+_pending_tap_timer = None   # deferred first-tap spawn (for double-tap disambiguation)
 
 # Cached asset paths (set after first successful download)
 _gif_path   = None
@@ -203,7 +204,7 @@ def _rapid_loop():
 
 def _on_touch(action, x, y):
     global _last_tap_time, _current_x, _current_y
-    global _rapid_active, _overlay_id, _touch_down
+    global _rapid_active, _overlay_id, _touch_down, _pending_tap_timer
 
     if action == 0:  # DOWN
         _touch_down = True
@@ -211,8 +212,11 @@ def _on_touch(action, x, y):
         _current_y = y
         now = time.time()
 
-        # Double-tap detection (< 0.3s since last tap) → close overlay
+        # Double-tap (< 0.3 s since last DOWN) → cancel pending first-tap spawn and close.
         if now - _last_tap_time < 0.3:
+            if _pending_tap_timer is not None:
+                _pending_tap_timer.cancel()
+                _pending_tap_timer = None
             _rapid_active = False
             _touch_down = False
             oid = _overlay_id
@@ -223,10 +227,20 @@ def _on_touch(action, x, y):
             return
 
         _last_tap_time = now
-
-        # Splat immediately at touch position (already on main thread)
-        _spawn_tomato(x, y)
         bridge.haptic_feedback("light")
+
+        # Defer the first-tap spawn by 0.3 s so a quick second tap can cancel it
+        # before any tomato appears. Rapid fire still starts immediately (sleeps 0.12 s
+        # before its first shot), so hold-to-fire feels instant.
+        lx, ly = x, y
+        def _deferred_spawn():
+            global _pending_tap_timer
+            _pending_tap_timer = None
+            if _overlay_id is None:
+                return
+            bridge.run_on_main_thread(lambda: _spawn_tomato(lx, ly))
+        _pending_tap_timer = threading.Timer(0.3, _deferred_spawn)
+        _pending_tap_timer.start()
 
         # Start machine-gun immediately on hold (no long-press delay, matches Android)
         if not _rapid_active:
@@ -258,17 +272,21 @@ def _activate():
             return
         if _audio_id < 0 and _sound_path and os.path.exists(_sound_path):
             _audio_id = bridge.load_audio(_sound_path)
+        # Pre-warm GIF duration on this background thread so the first call from the
+        # main thread (_spawn_tomato) doesn't block the UI with Pillow frame-reading.
+        _compute_gif_duration()
         bridge.run_on_main_thread(_create_overlay)
 
     threading.Thread(target=_async_activate, daemon=True).start()
 
 def _create_overlay():
-    global _overlay_id, _rapid_active, _last_tap_time, _touch_down
+    global _overlay_id, _rapid_active, _last_tap_time, _touch_down, _pending_tap_timer
     if _overlay_id is not None:
         return
-    _rapid_active  = False
-    _last_tap_time = 0.0
-    _touch_down    = False
+    _rapid_active      = False
+    _last_tap_time     = 0.0
+    _touch_down        = False
+    _pending_tap_timer = None
     oid = bridge.create_overlay(0.0)
     _overlay_id = oid
     bridge.add_touch_handler(oid, _on_touch)
@@ -297,9 +315,12 @@ def on_load(plugin):
     bridge.log("tomato_bom", "on_load complete")
 
 def on_unload(plugin):
-    global _overlay_id, _rapid_active, _audio_id
+    global _overlay_id, _rapid_active, _audio_id, _pending_tap_timer
     _rapid_active = False
     _touch_down = False
+    if _pending_tap_timer is not None:
+        _pending_tap_timer.cancel()
+        _pending_tap_timer = None
     if _overlay_id is not None:
         bridge.dismiss_overlay(_overlay_id)
         _overlay_id = None
