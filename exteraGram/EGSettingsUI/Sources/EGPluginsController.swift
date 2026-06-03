@@ -318,7 +318,7 @@ public final class PluginsController {
         // Wire send_photo() / send_file() for plugins.
         EGPluginHooks.pluginSendPhotoHandler = { [weak context] peerId, filePath, replyMsgId in
             guard let ctx = context else { return }
-            let pid      = PeerId(rawValue: peerId)
+            let pid      = PeerId(peerId)
             let randomId = Int64.random(in: Int64.min...Int64.max)
             let url      = URL(fileURLWithPath: filePath)
             let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize.map(Int64.init) ?? nil
@@ -346,7 +346,7 @@ public final class PluginsController {
 
         EGPluginHooks.pluginSendFileHandler = { [weak context] peerId, filePath, fileName, replyMsgId in
             guard let ctx = context else { return }
-            let pid      = PeerId(rawValue: peerId)
+            let pid      = PeerId(peerId)
             let randomId = Int64.random(in: Int64.min...Int64.max)
             let url      = URL(fileURLWithPath: filePath)
             let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize.map(Int64.init) ?? nil

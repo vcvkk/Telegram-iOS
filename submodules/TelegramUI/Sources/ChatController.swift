@@ -10791,7 +10791,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
 
     private func egSnapshotMessage(reqPeerId: Int64, msgId: Int32, renderWidth: CGFloat,
                                     outPath: String, completion: @escaping (String?) -> Void) {
-        let targetPeerId = PeerId(rawValue: reqPeerId)
+        let targetPeerId = PeerId(reqPeerId)
         var foundNode: ChatMessageItemView?
         chatDisplayNode.historyNode.forEachItemNode { node in
             guard foundNode == nil,
