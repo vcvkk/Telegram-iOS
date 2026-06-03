@@ -7782,6 +7782,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         EGPluginHooks.fireAsync("chat.closed", params: self.chatLocation.peerId.map { ["peer_id": $0.id._internalGetInt64Value()] } ?? [:])
         EGPluginHooks.findMessageViewHandler = nil
         EGPluginHooks.snapshotMessageHandler = nil
+        EGPluginHooks.showQuotePreviewHandler = nil
 
         if #available(iOS 18.0, *) {
         } else {
@@ -10785,6 +10786,19 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             DispatchQueue.main.async { [weak self] in
                 self?.egSnapshotMessage(reqPeerId: reqPeerId, msgId: msgId,
                                         renderWidth: renderWidth, outPath: outPath, completion: completion)
+            }
+        }
+        EGPluginHooks.showQuotePreviewHandler = { [weak self] imagePath, pId, replyMsgId in
+            guard let self else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let screen = EGQuotePreviewScreen(
+                    imagePath: imagePath,
+                    peerId: pId,
+                    replyMsgId: replyMsgId,
+                    context: self.context
+                )
+                self.present(screen, in: .window(.root))
             }
         }
     }

@@ -99,6 +99,11 @@ NS_ASSUME_NONNULL_BEGIN
     void (^snapshotMessageHandler)(long long peerId, int32_t msgId, CGFloat width,
                                    NSString *outPath, void (^_Nullable completion)(NSString * _Nullable));
 
+/// Wired by EGPluginsEngineImpl: show the native glass-style quote-preview sheet for the given
+/// image file and message context. Routed via EGPluginHooks → ChatController → EGQuotePreviewScreen.
+@property (class, nonatomic, copy, nullable)
+    void (^showQuotePreviewHandler)(NSString *imagePath, long long peerId, int32_t replyMsgId);
+
 /// Must be called on the main thread before any plugin uses get_system_info / get_device_info.
 /// Enables UIDevice battery monitoring and caches immutable UIScreen dimensions so that
 /// the Python bridge functions can call them safely from background threads without dispatch_sync.

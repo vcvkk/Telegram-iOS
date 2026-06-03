@@ -68,6 +68,10 @@ public enum EGPluginHooks {
     /// outPath is the destination file path; completion(outPath) or completion(nil) called on main thread.
     public static var snapshotMessageHandler: ((Int64, Int32, CGFloat, String, @escaping (String?) -> Void) -> Void)?
 
+    /// Called from _ios_bridge.show_quote_preview(image_path, peer_id, reply_msg_id).
+    /// Wired by ChatController to present EGQuotePreviewScreen (native Telegram-style glass sheet).
+    public static var showQuotePreviewHandler: ((String, Int64, Int32) -> Void)?
+
     /// MessageTextEntity type names to suppress when storing incoming messages.
     /// Plugins insert/remove entries; TelegramCore checks the set at parse time.
     /// Example: "Spoiler" suppresses messageEntitySpoiler entities.
