@@ -375,6 +375,28 @@ class LinearLayout(View):
 
 
 # ---------------------------------------------------------------------------
+# ImageView — displays a PNG/JPEG from a file path
+# ---------------------------------------------------------------------------
+
+class ImageView(View):
+    def _default_spec(self):
+        return {
+            "kind":          "image_view",
+            "path":          "",
+            "layout_params": LayoutParams()._spec,
+            "padding":       [0, 0, 0, 0],
+        }
+
+    def setImagePath(self, path):
+        self._spec["path"] = str(path) if path else ""
+        return self
+
+    def setAdjustViewBounds(self, adjust):
+        self._spec["adjust_view_bounds"] = bool(adjust)
+        return self
+
+
+# ---------------------------------------------------------------------------
 # TextUtils (stub)
 # ---------------------------------------------------------------------------
 

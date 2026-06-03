@@ -631,6 +631,113 @@ static PyObject *py_show_dialog(PyObject *self, PyObject *args) {
     return PyUnicode_FromString(handle.UTF8String);
 }
 
+// show_bottom_sheet(spec) → handle  (BRIDGE_VERSION 12)
+// Presents a scrollable bottom sheet.  spec has the same shape as show_dialog
+// (keys: "view", "on_dismiss_id").  On iOS 15+ uses UISheetPresentationController
+// with medium+large detents and a drag handle; falls back to FormSheet on older OS.
+// dismiss_dialog(handle) works for bottom sheets too.
+static PyObject *py_show_bottom_sheet(PyObject *self, PyObject *args) {
+    PyObject *specObj = NULL;
+    if (!PyArg_ParseTuple(args, "O", &specObj)) return NULL;
+    id ns = py_to_ns(specObj);
+    if (![ns isKindOfClass:[NSDictionary class]]) {
+        PyErr_SetString(PyExc_TypeError, "show_bottom_sheet: spec must be a dict");
+        return NULL;
+    }
+    NSDictionary *spec = (NSDictionary *)ns;
+    NSDictionary *viewSpec = spec[@"view"];
+    NSString *handle = [[NSUUID UUID] UUIDString];
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!g_dialogs) g_dialogs = [NSMutableDictionary new];
+
+        UIView *content = [EGViewRenderer buildView:viewSpec];
+        if (!content) {
+            EGPluginDebugLog_appendCStr("BottomSheet", "show_bottom_sheet: empty content view");
+            return;
+        }
+
+        UIViewController *vc = [UIViewController new];
+        vc.view.backgroundColor = UIColor.systemBackgroundColor;
+
+        // Wrap in scroll view so content can scroll if taller than the sheet
+        UIScrollView *scrollView = [UIScrollView new];
+        scrollView.alwaysBounceVertical = NO;
+        scrollView.showsVerticalScrollIndicator = NO;
+        scrollView.translatesAutoresizingMaskIntoConstraints = NO;
+        [vc.view addSubview:scrollView];
+
+        content.translatesAutoresizingMaskIntoConstraints = NO;
+        [scrollView addSubview:content];
+
+        [NSLayoutConstraint activateConstraints:@[
+            [scrollView.leadingAnchor  constraintEqualToAnchor:vc.view.leadingAnchor],
+            [scrollView.trailingAnchor constraintEqualToAnchor:vc.view.trailingAnchor],
+            [scrollView.topAnchor      constraintEqualToAnchor:vc.view.topAnchor],
+            [scrollView.bottomAnchor   constraintEqualToAnchor:vc.view.bottomAnchor],
+
+            [content.leadingAnchor    constraintEqualToAnchor:scrollView.leadingAnchor],
+            [content.trailingAnchor   constraintEqualToAnchor:scrollView.trailingAnchor],
+            [content.topAnchor        constraintEqualToAnchor:scrollView.topAnchor],
+            [content.bottomAnchor     constraintEqualToAnchor:scrollView.bottomAnchor],
+            [content.widthAnchor      constraintEqualToAnchor:scrollView.widthAnchor],
+        ]];
+
+        // Presentation style
+        if (@available(iOS 15.0, *)) {
+            vc.modalPresentationStyle = UIModalPresentationPageSheet;
+            UISheetPresentationController *sheet = vc.sheetPresentationController;
+            if (sheet) {
+                sheet.detents = @[
+                    [UISheetPresentationControllerDetent mediumDetent],
+                    [UISheetPresentationControllerDetent largeDetent],
+                ];
+                sheet.prefersGrabberVisible = YES;
+                sheet.prefersScrollingExpandsWhenScrolledToEdge = YES;
+                sheet.preferredCornerRadius = 20.0;
+            }
+        } else {
+            vc.modalPresentationStyle = UIModalPresentationFormSheet;
+        }
+
+        // Dismiss callback (reuse EGDoneTarget — works with swipe-down too)
+        NSString *dismissId = spec[@"on_dismiss_id"] ?: @"";
+        EGDoneTarget *doneTarget = [EGDoneTarget new];
+        doneTarget.vc = vc;
+        doneTarget.dialogHandle = handle;
+        doneTarget.dismissCallbackId = dismissId;
+        objc_setAssociatedObject(vc, "EGDoneTarget", doneTarget, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+        // Find host VC
+        UIWindow *win = nil;
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                for (UIWindow *w in ((UIWindowScene *)scene).windows) {
+                    if (w.isKeyWindow) { win = w; break; }
+                }
+                if (win) break;
+            }
+        }
+        UIViewController *host = win.rootViewController;
+        while (host.presentedViewController && !host.presentedViewController.isBeingDismissed) {
+            host = host.presentedViewController;
+        }
+        if (!host) {
+            EGPluginDebugLog_appendCStr("BottomSheet", "show_bottom_sheet: no host VC found");
+            return;
+        }
+
+        g_dialogs[handle] = vc;
+        [host presentViewController:vc animated:YES completion:^{
+            vc.presentationController.delegate = doneTarget;
+        }];
+        EGPluginDebugLog_appendCStr("BottomSheet",
+            [[NSString stringWithFormat:@"show_bottom_sheet presented handle=%@", handle] UTF8String]);
+    });
+
+    return PyUnicode_FromString(handle.UTF8String);
+}
+
 // update_dialog(handle, view_spec) — replace the dialog's content view in place.
 // Used by plugins to refresh game/state UI without dismissing & re-presenting.
 static PyObject *py_update_dialog(PyObject *self, PyObject *args) {
@@ -2583,6 +2690,7 @@ static PyMethodDef ios_bridge_methods[] = {
     {"show_alert",         py_show_alert,         METH_VARARGS, "show_alert(title, message, button='OK')"},
     {"show_action_sheet",  py_show_action_sheet,  METH_VARARGS, "show_action_sheet(title, message, options, callback)"},
     {"show_dialog",        py_show_dialog,        METH_VARARGS, "show_dialog(spec) -> handle"},
+    {"show_bottom_sheet",  py_show_bottom_sheet,  METH_VARARGS, "show_bottom_sheet(spec) -> handle — bottom sheet with drag handle (iOS 15+)"},
     {"update_dialog",      py_update_dialog,      METH_VARARGS, "update_dialog(handle, view_spec)"},
     {"dismiss_dialog",     py_dismiss_dialog,     METH_VARARGS, "dismiss_dialog(handle)"},
     {"invoke_view_callback", py_invoke_view_callback, METH_VARARGS, "invoke_view_callback(handle)"},
@@ -2668,7 +2776,7 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     //   7 — preload_splat; show_splat background decode + cache; dismiss_overlay evicts cache
     //   8 — show_splat gains optional repeat_count and remove_after params
     //   9 — add_image_view, remove_view: plugin-controlled view lifecycle
-    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 9);
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 12);
     return m;
 }
 

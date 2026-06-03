@@ -1,18 +1,22 @@
 __id__           = "quotecreate"
 __name__         = "✏️ Quote"
 __os__           = "ios"
-__version__      = "2.0"
+__version__      = "3.0"
 __author__       = "@oodze"
-__description__  = "Pixel-perfect quote images from messages. Tap · Send as photo/file · Copy · Save · Share."
+__description__  = "Pixel-perfect quote images. Tap · Send as photo/file · Copy · Save · Share."
 
 import _ios_bridge as bridge
+import eg_widgets as _w
 import os
 import time
 
-_overlay_id = None
+_sheet_handle    = None
 _pending_peer_id = 0
 _pending_msg_id  = 0
+_pending_path    = None
 
+
+# ── helpers ──────────────────────────────────────────────────────────────────
 
 def _data_path(filename):
     d = bridge.get_plugin_data_dir(__id__)
@@ -20,69 +24,7 @@ def _data_path(filename):
     return os.path.join(d, filename)
 
 
-def _show_preview(image_path, peer_id, message_id):
-    global _overlay_id, _pending_peer_id, _pending_msg_id
-
-    if not image_path or not os.path.exists(image_path):
-        bridge.show_bulletin("✏️ Quote", "Не удалось создать изображение")
-        return
-
-    _pending_peer_id = peer_id
-    _pending_msg_id  = message_id
-
-    screen = bridge.get_screen_info()
-    scale  = screen.get("scale", 2.0) or 2.0
-    W = screen.get("width",  390) / scale
-    H = screen.get("height", 844) / scale
-
-    oid = bridge.create_overlay(0.82)
-    _overlay_id = oid
-
-    # Read image size without PIL — decode a minimal PNG header
-    iw, ih = _png_size(image_path)
-    if iw <= 0 or ih <= 0:
-        iw, ih = 300, 200
-
-    margin = 20
-    max_w = W - margin * 2
-    max_h = H * 0.60
-    s  = min(max_w / iw, max_h / ih, 1.0)
-    dw = int(iw * s)
-    x  = (W - dw) / 2
-    y  = H * 0.07
-
-    bridge.add_image_view(oid, image_path, x, y, dw, 1)
-
-    def on_action(idx, label):
-        global _overlay_id
-        bridge.dismiss_overlay(oid)
-        _overlay_id = None
-
-        if label == "Как фото":
-            bridge.send_photo(_pending_peer_id, image_path, _pending_msg_id)
-        elif label == "Как файл":
-            bridge.send_file(_pending_peer_id, image_path, "quote.png", _pending_msg_id)
-        elif label == "Копировать":
-            bridge.copy_image_to_clipboard(image_path)
-            bridge.show_bulletin("✏️ Quote", "Скопировано")
-        elif label == "В галерею":
-            def _cb(ok):
-                bridge.run_on_main_thread(lambda: bridge.show_bulletin(
-                    "✏️ Quote", "Сохранено" if ok else "Ошибка сохранения"))
-            bridge.save_image_to_photos(image_path, _cb)
-        elif label == "Поделиться":
-            bridge.show_share_sheet(image_path)
-        # "Отмена" — overlay already dismissed
-
-    bridge.show_action_sheet(
-        "✏️ Цитата", "",
-        ["Как фото", "Как файл", "Копировать", "В галерею", "Поделиться", "Отмена"],
-        on_action
-    )
-
-
 def _png_size(path):
-    """Read width/height from a PNG file without PIL (bytes 16-23 of IHDR chunk)."""
     try:
         with open(path, "rb") as f:
             header = f.read(24)
@@ -95,17 +37,209 @@ def _png_size(path):
     return 0, 0
 
 
+def _theme_argb(key, fallback=0xFFFFFFFF):
+    try:
+        r, g, b, a = bridge.get_theme_color(key)
+        return (int(a*255) << 24) | (int(r*255) << 16) | (int(g*255) << 8) | int(b*255)
+    except Exception:
+        return fallback
+
+
+def _is_light(argb):
+    r = (argb >> 16) & 0xFF
+    g = (argb >> 8) & 0xFF
+    b = argb & 0xFF
+    return (r * 299 + g * 587 + b * 114) >= 128000
+
+
+def _with_alpha(argb, alpha_0_1):
+    a = max(0, min(255, int(alpha_0_1 * 255)))
+    return (a << 24) | (argb & 0x00FFFFFF)
+
+
+def _btn_bg(fill, radius=18):
+    d = _w.GradientDrawable()
+    d.setColor(fill)
+    d.setCornerRadius(float(radius))
+    return d
+
+
+# ── bottom-sheet UI ──────────────────────────────────────────────────────────
+
+def _show_preview(image_path, peer_id, message_id):
+    global _sheet_handle, _pending_peer_id, _pending_msg_id, _pending_path
+
+    if not image_path or not os.path.exists(image_path):
+        bridge.show_bulletin("✏️ Quote", "Не удалось создать изображение")
+        return
+
+    _pending_peer_id = peer_id
+    _pending_msg_id  = message_id
+    _pending_path    = image_path
+
+    # Colors (adaptive: respects dark/light mode)
+    bg_color     = _theme_argb("background",    0xFF1C1C1E)
+    text_color   = _theme_argb("primaryText",   0xFFFFFFFF)
+    accent_color = _theme_argb("accent",        0xFF3478F6)
+    subtle_fill  = _with_alpha(text_color, 0.08)
+    subtle_text  = _with_alpha(text_color, 0.90)
+    accent_text  = 0xFF000000 if _is_light(accent_color) else 0xFFFFFFFF
+
+    LP = _w.LayoutParams
+    FILL = LP.MATCH_PARENT
+    WRAP = LP.WRAP_CONTENT
+
+    # ── root ─────────────────────────────────────────────────────────────
+    root = _w.LinearLayout()
+    root.setOrientation(_w.LinearLayout.VERTICAL)
+    root.setBackgroundColor(bg_color)
+    root.setPadding(16, 8, 16, 32)
+    root.setLayoutParams(LP(FILL, WRAP))
+
+    # ── header: "Цитата" ──────────────────────────────────────────────────
+    hdr = _w.LinearLayout()
+    hdr.setOrientation(_w.LinearLayout.HORIZONTAL)
+    hdr.setGravity(_w.Gravity.CENTER_VERTICAL)
+    lp_hdr = LP(FILL, WRAP)
+    lp_hdr.setMargins(0, 0, 0, 12)
+    hdr.setLayoutParams(lp_hdr)
+
+    title = _w.TextView()
+    title.setText("Цитата")
+    title.setTextSize(17)
+    title.setTextColor(text_color)
+    title.setTypeface(None, _w.Typeface.BOLD)
+    title.setLayoutParams(LP(0, WRAP, 1.0))
+    hdr.addView(title)
+
+    root.addView(hdr)
+
+    # ── preview card ──────────────────────────────────────────────────────
+    card = _w.LinearLayout()
+    card.setOrientation(_w.LinearLayout.VERTICAL)
+    card.setPadding(8, 8, 8, 8)
+    card_bg = _w.GradientDrawable()
+    card_bg.setColor(_with_alpha(text_color, 0.05))
+    card_bg.setCornerRadius(20.0)
+    card.setBackground(card_bg)
+    lp_card = LP(FILL, WRAP)
+    lp_card.setMargins(0, 0, 0, 14)
+    card.setLayoutParams(lp_card)
+
+    img = _w.ImageView()
+    img.setImagePath(image_path)
+    img.setAdjustViewBounds(True)
+    img.setLayoutParams(LP(FILL, WRAP))
+    card.addView(img)
+
+    root.addView(card)
+
+    # ── helpers to dismiss + act ──────────────────────────────────────────
+    def _dismiss():
+        global _sheet_handle
+        if _sheet_handle:
+            bridge.dismiss_dialog(_sheet_handle)
+            _sheet_handle = None
+
+    def _send_photo(*_):
+        path = _pending_path
+        pid  = _pending_peer_id
+        mid  = _pending_msg_id
+        _dismiss()
+        bridge.send_photo(pid, path, mid)
+
+    def _send_file(*_):
+        path = _pending_path
+        pid  = _pending_peer_id
+        mid  = _pending_msg_id
+        _dismiss()
+        bridge.send_file(pid, path, "quote.png", mid)
+
+    def _copy(*_):
+        _dismiss()
+        bridge.copy_image_to_clipboard(_pending_path)
+        bridge.show_bulletin("✏️ Quote", "Скопировано")
+
+    def _save(*_):
+        saved_path = _pending_path
+        _dismiss()
+        def _cb(ok):
+            bridge.run_on_main_thread(lambda: bridge.show_bulletin(
+                "✏️ Quote", "Сохранено" if ok else "Ошибка сохранения"))
+        bridge.save_image_to_photos(saved_path, _cb)
+
+    def _share(*_):
+        path = _pending_path
+        _dismiss()
+        bridge.show_share_sheet(path)
+
+    # ── primary button: "Как фото" ────────────────────────────────────────
+    btn_photo = _w.Button()
+    btn_photo.setText("Как фото")
+    btn_photo.setTextSize(16)
+    btn_photo.setTextColor(accent_text)
+    btn_photo.setBackground(_btn_bg(accent_color, 18))
+    lp_photo = LP(FILL, 52)
+    lp_photo.setMargins(0, 0, 0, 8)
+    btn_photo.setLayoutParams(lp_photo)
+    btn_photo.setOnClickListener(_send_photo)
+    root.addView(btn_photo)
+
+    # ── secondary row: PNG | Копировать ──────────────────────────────────
+    row2 = _w.LinearLayout()
+    row2.setOrientation(_w.LinearLayout.HORIZONTAL)
+    lp_r2 = LP(FILL, WRAP)
+    lp_r2.setMargins(0, 0, 0, 8)
+    row2.setLayoutParams(lp_r2)
+
+    def _make_btn(label, action, margin_right=0, margin_left=0):
+        b = _w.Button()
+        b.setText(label)
+        b.setTextSize(14)
+        b.setTextColor(subtle_text)
+        b.setBackground(_btn_bg(subtle_fill, 16))
+        lp = LP(0, 46, 1.0)
+        lp.setMargins(margin_left, 0, margin_right, 0)
+        b.setLayoutParams(lp)
+        b.setOnClickListener(action)
+        return b
+
+    row2.addView(_make_btn("Как файл",   _send_file,  margin_right=4))
+    row2.addView(_make_btn("Копировать", _copy,        margin_left=4))
+    root.addView(row2)
+
+    # ── utility row: В галерею | Поделиться ──────────────────────────────
+    row3 = _w.LinearLayout()
+    row3.setOrientation(_w.LinearLayout.HORIZONTAL)
+    row3.setLayoutParams(LP(FILL, WRAP))
+
+    row3.addView(_make_btn("В галерею",   _save,  margin_right=4))
+    row3.addView(_make_btn("Поделиться",  _share, margin_left=4))
+    root.addView(row3)
+
+    # ── build & present sheet ─────────────────────────────────────────────
+    def _on_dismiss(*_):
+        global _sheet_handle
+        _sheet_handle = None
+
+    spec = {
+        "view":          root._spec,
+        "on_dismiss_id": _w._register(_on_dismiss),
+    }
+    _sheet_handle = bridge.show_bottom_sheet(spec)
+
+
+# ── rendering ────────────────────────────────────────────────────────────────
+
 def _do_render(peer_id, msg_id):
     out_path = _data_path("quote_{}.png".format(int(time.time() * 1000)))
 
     def on_main():
-        # Live path: message node is already in the list hierarchy
         view_ptr = bridge.find_message_view(peer_id, msg_id)
         if view_ptr:
             path = bridge.snapshot_view(view_ptr, out_path, 0)
             _show_preview(path, peer_id, msg_id)
         else:
-            # Off-screen / async path
             def _cb(path):
                 bridge.run_on_main_thread(lambda: _show_preview(path, peer_id, msg_id))
             bridge.snapshot_message(peer_id, msg_id, out_path, 0, _cb)
@@ -113,32 +247,31 @@ def _do_render(peer_id, msg_id):
     bridge.run_on_main_thread(on_main)
 
 
+# ── hook ─────────────────────────────────────────────────────────────────────
+
 def _on_menu_tap(params):
     if params.get("entry_type") != "context_menu" or params.get("item_id") != "quote":
         return
-
     peer_id    = params.get("peer_id", 0)
     message_id = params.get("message_id", 0)
-
     if not peer_id or not message_id:
         bridge.show_bulletin("✏️ Quote", "Нет данных сообщения")
         return
-
     _do_render(peer_id, message_id)
 
 
 def on_load(plugin):
     bridge.register_plugin_entry(__id__, "context_menu", "quote", "✏️ Цитата")
     bridge.add_tl_hook("plugin.menu_item_tapped", _on_menu_tap)
-    bridge.log(__id__, "on_load complete (v2 — pixel-perfect)")
+    bridge.log(__id__, "on_load complete (v3 — bottom sheet)")
 
 
 def on_unload(plugin):
-    global _overlay_id
-    if _overlay_id is not None:
+    global _sheet_handle
+    if _sheet_handle is not None:
         try:
-            bridge.dismiss_overlay(_overlay_id)
+            bridge.dismiss_dialog(_sheet_handle)
         except Exception:
             pass
-        _overlay_id = None
+        _sheet_handle = None
     bridge.log(__id__, "on_unload complete")

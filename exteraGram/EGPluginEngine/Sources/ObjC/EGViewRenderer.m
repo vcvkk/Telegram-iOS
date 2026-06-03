@@ -68,6 +68,7 @@ static NSTextAlignment EG_TextAlignmentFromGravity(NSInteger gravity) {
     if ([kind isEqualToString:@"linear_layout"])      v = [self buildLinearLayout:spec];
     else if ([kind isEqualToString:@"text_view"])      v = [self buildTextView:spec];
     else if ([kind isEqualToString:@"button"])         v = [self buildButton:spec];
+    else if ([kind isEqualToString:@"image_view"])     v = [self buildImageView:spec];
     else if ([kind isEqualToString:@"space"])          v = [self buildSpace:spec];
     else                                               v = [self buildPlainView:spec];
 
@@ -186,6 +187,20 @@ static NSTextAlignment EG_TextAlignmentFromGravity(NSInteger gravity) {
     NSNumber *alpha = spec[@"alpha"];
     if (alpha)   btn.alpha = [alpha doubleValue];
     return btn;
+}
+
+// -- ImageView → UIImageView ------------------------------------------------
+
++ (UIView *)buildImageView:(NSDictionary *)spec {
+    UIImageView *iv = [UIImageView new];
+    NSString *path = spec[@"path"];
+    if (path.length > 0) {
+        UIImage *img = [UIImage imageWithContentsOfFile:path];
+        if (img) iv.image = img;
+    }
+    iv.contentMode = UIViewContentModeScaleAspectFit;
+    iv.clipsToBounds = YES;
+    return iv;
 }
 
 // -- Space → flexible UIView ------------------------------------------------
