@@ -286,6 +286,11 @@ final class PeerInfoHeaderNavigationButton: HighlightableButtonNode {
                 text = ""
                 accessibilityText = presentationData.strings.Story_Privacy_PostStory
                 icon = PresentationResourcesRootController.navigationPostStoryIcon(presentationData.theme)
+            case .plugin:
+                text = ""
+                accessibilityText = "Плагины"
+                icon = UIImage(bundleImageName: "msg_plugins")
+                isGestureEnabled = true
             case .sort:
                 text = ""
                 accessibilityText = presentationData.strings.Common_More

@@ -25,6 +25,7 @@ enum PeerInfoHeaderNavigationButtonKey {
     case qrCode
     case moreSearchSort
     case postStory
+    case plugin
 }
 
 struct PeerInfoHeaderNavigationButtonSpec: Hashable {
@@ -104,7 +105,7 @@ final class PeerInfoHeaderNavigationButtonContainerNode: SparseNode {
         self.updateBackgroundColors(transition: ComponentTransition(transition))
     }
     
-    func update(size: CGSize, presentationData: PresentationData, leftButtons: [PeerInfoHeaderNavigationButtonSpec], rightButtons: [PeerInfoHeaderNavigationButtonSpec], expandFraction: CGFloat, shouldAnimateIn: Bool, transition: ContainedViewLayoutTransition) {
+    func update(size: CGSize, presentationData: PresentationData, leftButtons: [PeerInfoHeaderNavigationButtonSpec], rightButtons: [PeerInfoHeaderNavigationButtonSpec], expandFraction: CGFloat, pluginButtonFraction: CGFloat? = nil, shouldAnimateIn: Bool, transition: ContainedViewLayoutTransition) {
         transition.updateFrame(view: self.backgroundContainer, frame: CGRect(origin: CGPoint(), size: size))
         
         let buttonHeight: CGFloat = 44.0
@@ -242,7 +243,12 @@ final class PeerInfoHeaderNavigationButtonContainerNode: SparseNode {
                 } else {
                     normalRightButtonsWidth += buttonSize.width
                 }
-                let alphaFactor: CGFloat = spec.isForExpandedView ? expandFraction : (1.0 - expandFraction)
+                let alphaFactor: CGFloat
+                if spec.key == .plugin, let override = pluginButtonFraction {
+                    alphaFactor = override
+                } else {
+                    alphaFactor = spec.isForExpandedView ? expandFraction : (1.0 - expandFraction)
+                }
                 if wasAdded {
                     buttonNode.updateContentsColor(contentsColor: spec.isForExpandedView ? expandedButtonContentsColor : normalButtonContentsColor, transition: .immediate)
                     
@@ -301,8 +307,13 @@ final class PeerInfoHeaderNavigationButtonContainerNode: SparseNode {
                         normalRightButtonsWidth += buttonSize.width
                     }
                     transition.updateFrameAdditiveToCenter(node: buttonNode, frame: buttonFrame)
-                    let alphaFactor: CGFloat = spec.isForExpandedView ? expandFraction : (1.0 - expandFraction)
-                    
+                    let alphaFactor: CGFloat
+                    if spec.key == .plugin, let override = pluginButtonFraction {
+                        alphaFactor = override
+                    } else {
+                        alphaFactor = spec.isForExpandedView ? expandFraction : (1.0 - expandFraction)
+                    }
+
                     var buttonTransition = transition
                     if case let .animated(duration, curve) = buttonTransition, alphaFactor == 0.0 {
                         buttonTransition = .animated(duration: duration * 0.25, curve: curve)

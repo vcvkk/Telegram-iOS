@@ -107,6 +107,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     private(set) var isAvatarExpanded: Bool
     var skipCollapseCompletion = false
     var ignoreCollapse = false
+    private(set) var innerButtonsTransitionFraction: CGFloat = 0.0
     
     let avatarClippingNode: SparseNode
     let avatarListNode: PeerInfoAvatarListNode
@@ -162,6 +163,8 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     let usernameNode: MultiScaleTextNode
     var actionButtonNodes: [PeerInfoHeaderButtonKey: PeerInfoHeaderActionButtonNode] = [:]
     var buttonNodes: [PeerInfoHeaderButtonKey: PeerInfoHeaderButtonNode] = [:]
+    private var profilePluginButtonNode: HighlightableButtonNode?
+    var onProfilePluginButtonTapped: ((UIView, ContextGesture?) -> Void)?
     let headerEdgeEffectContainer: UIView
     let headerEdgeEffectView: EdgeEffectView
     var navigationTitle: String?
@@ -426,6 +429,12 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     
     @objc private func subtitleBackgroundPressed() {
         self.navigateToForum?()
+    }
+
+    @objc private func profilePluginButtonPressed() {
+        if let btn = self.profilePluginButtonNode {
+            self.onProfilePluginButtonTapped?(btn.view, nil)
+        }
     }
     
     func invokeDisplayPremiumIntro() {
@@ -2336,6 +2345,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         let innerButtonsTransitionDistance: CGFloat = navigationHeight + panelWithAvatarHeight - innerButtonsTransitionStepDistance - innerButtonsTransitionStepInset
         let innerButtonsContentOffset = max(0.0, contentOffset - innerButtonsTransitionDistance)
         let innerButtonsTransitionFraction = max(0.0, min(1.0, innerButtonsContentOffset / innerButtonsTransitionStepDistance))
+        self.innerButtonsTransitionFraction = innerButtonsTransitionFraction
         
         let buttonsTransitionFraction: CGFloat = 1.0 - max(0.0, min(1.0, buttonsTransitionDistance / buttonsTransitionDistanceNorm))
         
@@ -2526,6 +2536,36 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
         }
         
+        // MARK: exteraGram — own-profile plugin body button
+        let showBodyPluginButton = self.isMyProfile && !EGPluginHooks.registeredMenuItems.filter({ $0.entryType == "profile" }).isEmpty
+        if showBodyPluginButton {
+            let btn: HighlightableButtonNode
+            if let existing = self.profilePluginButtonNode {
+                btn = existing
+            } else {
+                btn = HighlightableButtonNode()
+                if let img = UIImage(bundleImageName: "msg_plugins") {
+                    btn.setImage(img, for: [])
+                }
+                let pluginGesture = ContextGesture()
+                pluginGesture.activated = { [weak self, weak btn] g, _ in
+                    guard let self, let btn else { return }
+                    self.onProfilePluginButtonTapped?(btn.view, g)
+                }
+                btn.view.addGestureRecognizer(pluginGesture)
+                btn.addTarget(self, action: #selector(self.profilePluginButtonPressed), forControlEvents: .touchUpInside)
+                self.profilePluginButtonNode = btn
+                self.buttonsContainerNode.addSubnode(btn)
+            }
+            let btnSize = CGSize(width: 36.0, height: 36.0)
+            let btnFrame = CGRect(x: width - buttonSideInset - btnSize.width, y: 8.0, width: btnSize.width, height: btnSize.height)
+            transition.updateFrame(node: btn, frame: btnFrame)
+            transition.updateAlpha(node: btn, alpha: buttonsTransitionFraction * (1.0 - innerButtonsTransitionFraction))
+        } else if let btn = self.profilePluginButtonNode {
+            btn.removeFromSupernode()
+            self.profilePluginButtonNode = nil
+        }
+
         let resolvedRegularHeight: CGFloat
         if self.isAvatarExpanded {
             resolvedRegularHeight = expandedAvatarListSize.height

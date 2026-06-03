@@ -2071,6 +2071,9 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 }
             case .qrCode:
                 strongSelf.openQrCode()
+            case .plugin:
+                guard let source else { return }
+                strongSelf.displayPluginContextMenu(source: source, gesture: gesture)
             case .postStory:
                 var sourceFrame: CGRect?
                 if let source {
@@ -2400,6 +2403,30 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     return
                 }
                 self.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: self.context, chatLocation: .peer(EnginePeer(peer))))
+            }
+
+            self.headerNode.onProfilePluginButtonTapped = { [weak self] sourceView, gesture in
+                guard let self else { return }
+                let entries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "profile" }
+                guard !entries.isEmpty, let controller = self.controller else { return }
+                var items: [ContextMenuItem] = []
+                for entry in entries {
+                    let pluginId = entry.pluginId; let entryType = entry.entryType; let itemId = entry.itemId; let iconName = entry.iconName
+                    items.append(.action(ContextMenuActionItem(
+                        text: entry.title,
+                        icon: { (theme: PresentationTheme) in
+                            guard let name = iconName else { return nil }
+                            return generateTintedImage(image: UIImage(bundleImageName: name), color: theme.contextMenu.primaryColor)
+                        },
+                        action: { _, f in f(.default); EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId) }
+                    )))
+                }
+                let contextController = makeContextController(
+                    presentationData: self.presentationData,
+                    source: .reference(PeerInfoContextReferenceContentSource(controller: controller, sourceView: sourceView)),
+                    items: .single(ContextController.Items(content: .list(items))),
+                    gesture: gesture)
+                controller.presentInGlobalOverlay(contextController)
             }
             
             if [Namespaces.Peer.CloudGroup, Namespaces.Peer.CloudChannel].contains(peerId.namespace) {
@@ -5858,12 +5885,19 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 leftNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .cancel, isForExpandedView: false))
                 rightNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .done, isForExpandedView: false))
             } else {
+                let profilePluginEntries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "profile" }
                 if self.isSettings {
                     leftNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .qrCode, isForExpandedView: false))
                     if EGSimpleSettings.shared.hideTabBar { leftNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .back, isForExpandedView: false)) }
                     rightNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .edit, isForExpandedView: false))
+                    if !profilePluginEntries.isEmpty {
+                        rightNavigationButtons.insert(PeerInfoHeaderNavigationButtonSpec(key: .plugin, isForExpandedView: false), at: 0)
+                    }
                 } else if self.isMyProfile {
                     rightNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .edit, isForExpandedView: false))
+                    if !profilePluginEntries.isEmpty {
+                        rightNavigationButtons.insert(PeerInfoHeaderNavigationButtonSpec(key: .plugin, isForExpandedView: false), at: 0)
+                    }
                 } else if peerInfoCanEdit(peer: self.data?.peer, chatLocation: self.chatLocation, threadData: self.data?.threadData, cachedData: self.data?.cachedData, isContact: self.data?.isContact) {
                     rightNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .edit, isForExpandedView: false))
                 }
@@ -5927,7 +5961,8 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     leftNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .back, isForExpandedView: true))
                 }
             }
-            self.headerNode.navigationButtonContainer.update(size: CGSize(width: layout.size.width - layout.safeInsets.left * 2.0, height: navigationBarHeight), presentationData: self.presentationData, leftButtons: leftNavigationButtons, rightButtons: rightNavigationButtons, expandFraction: effectiveAreaExpansionFraction, shouldAnimateIn: animateHeader, transition: transition)
+            let pluginButtonFraction: CGFloat? = self.isMyProfile ? self.headerNode.innerButtonsTransitionFraction : nil
+            self.headerNode.navigationButtonContainer.update(size: CGSize(width: layout.size.width - layout.safeInsets.left * 2.0, height: navigationBarHeight), presentationData: self.presentationData, leftButtons: leftNavigationButtons, rightButtons: rightNavigationButtons, expandFraction: effectiveAreaExpansionFraction, pluginButtonFraction: pluginButtonFraction, shouldAnimateIn: animateHeader, transition: transition)
         }
     }
     
