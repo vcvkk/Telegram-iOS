@@ -5,6 +5,7 @@ __version__      = "2.0"
 __author__       = "@oodze"
 __description__  = "Pixel-perfect quote images from messages. Tap · Send as photo/file · Copy · Save · Share."
 
+import _ios_bridge as bridge
 import os
 import time
 
