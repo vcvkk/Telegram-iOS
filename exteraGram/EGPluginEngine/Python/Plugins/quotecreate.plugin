@@ -1,161 +1,54 @@
 __id__           = "quotecreate"
 __name__         = "✏️ Quote"
 __os__           = "ios"
-__version__      = "1.0"
+__version__      = "2.0"
 __author__       = "@oodze"
-__description__  = "Create quote images from messages. Tap · Send as photo/file · Copy · Save."
-__requirements__ = "Pillow"
+__description__  = "Pixel-perfect quote images from messages. Tap · Send as photo/file · Copy · Save · Share."
 
 import os
 import time
-import threading
 
 _overlay_id = None
+_pending_peer_id = 0
+_pending_msg_id  = 0
 
 
-def _render_quote(sender_name, text, date_str, data_dir):
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError:
-        bridge.log(__id__, "Pillow not available — cannot render quote")
-        return None
-
-    W       = 600
-    PADDING = 24
-    LINE_SPACING = 6
-    NAME_COLOR  = (100, 181, 246)
-    TEXT_COLOR  = (255, 255, 255)
-    DATE_COLOR  = (150, 150, 150)
-    BG_COLOR    = (33, 33, 33)
-    ACCENT_COLOR = (100, 181, 246)
-    ACCENT_W     = 4
-    RADIUS       = 16
-
-    def _load_font(size, bold=False):
-        candidates = [
-            "/System/Library/Fonts/SFProText-Semibold.otf" if bold else "/System/Library/Fonts/SFProText-Regular.otf",
-            "/System/Library/Fonts/HelveticaNeue.ttc",
-            "/System/Library/Fonts/Arial.ttf",
-        ]
-        for path in candidates:
-            if os.path.exists(path):
-                try:
-                    return ImageFont.truetype(path, size)
-                except Exception:
-                    pass
-        return ImageFont.load_default()
-
-    font_name = _load_font(15, bold=True)
-    font_text = _load_font(13)
-    font_date = _load_font(11)
-
-    inner_w = W - PADDING * 2 - ACCENT_W - 8
-
-    # Wrap text
-    def wrap_text(txt, font, max_w):
-        words = txt.split()
-        lines = []
-        current = ""
-        tmp = Image.new("RGB", (1, 1))
-        draw = ImageDraw.Draw(tmp)
-        for word in words:
-            test = (current + " " + word).strip()
-            bb = draw.textbbox((0, 0), test, font=font)
-            if bb[2] - bb[0] <= max_w:
-                current = test
-            else:
-                if current:
-                    lines.append(current)
-                current = word
-        if current:
-            lines.append(current)
-        return lines if lines else [""]
-
-    text_lines = wrap_text(text, font_text, inner_w)
-
-    # Measure heights
-    tmp = Image.new("RGB", (1, 1))
-    draw = ImageDraw.Draw(tmp)
-    name_bb   = draw.textbbox((0, 0), sender_name, font=font_name)
-    name_h    = name_bb[3] - name_bb[1]
-    text_line_h = 0
-    for ln in text_lines:
-        bb = draw.textbbox((0, 0), ln, font=font_text)
-        text_line_h = max(text_line_h, bb[3] - bb[1])
-    date_bb = draw.textbbox((0, 0), date_str, font=font_date)
-    date_h  = date_bb[3] - date_bb[1]
-
-    text_block_h = len(text_lines) * (text_line_h + LINE_SPACING) - LINE_SPACING
-    H = PADDING + name_h + 8 + text_block_h + 8 + date_h + PADDING
-
-    img  = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    # Background rounded rect
-    draw.rounded_rectangle([(0, 0), (W - 1, H - 1)], radius=RADIUS, fill=BG_COLOR)
-
-    # Left accent bar
-    ax = PADDING
-    draw.rectangle([(ax, PADDING // 2), (ax + ACCENT_W, H - PADDING // 2)], fill=ACCENT_COLOR)
-
-    # Text origin
-    tx = PADDING + ACCENT_W + 8
-    ty = PADDING
-
-    # Sender name
-    draw.text((tx, ty), sender_name, font=font_name, fill=NAME_COLOR)
-    ty += name_h + 8
-
-    # Message lines
-    for ln in text_lines:
-        draw.text((tx, ty), ln, font=font_text, fill=TEXT_COLOR)
-        ty += text_line_h + LINE_SPACING
-    ty -= LINE_SPACING
-    ty += 8
-
-    # Timestamp (right-aligned)
-    date_bb2 = draw.textbbox((0, 0), date_str, font=font_date)
-    date_w = date_bb2[2] - date_bb2[0]
-    draw.text((W - PADDING - date_w, ty), date_str, font=font_date, fill=DATE_COLOR)
-
-    # Save
-    os.makedirs(data_dir, exist_ok=True)
-    out_path = os.path.join(data_dir, "quote_{}.png".format(int(time.time() * 1000)))
-    img.save(out_path, "PNG")
-    bridge.log(__id__, "Rendered quote to {}".format(out_path))
-    return out_path
+def _data_path(filename):
+    d = bridge.get_plugin_data_dir(__id__)
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, filename)
 
 
 def _show_preview(image_path, peer_id, message_id):
-    global _overlay_id
+    global _overlay_id, _pending_peer_id, _pending_msg_id
+
+    if not image_path or not os.path.exists(image_path):
+        bridge.show_bulletin("✏️ Quote", "Не удалось создать изображение")
+        return
+
+    _pending_peer_id = peer_id
+    _pending_msg_id  = message_id
 
     screen = bridge.get_screen_info()
-    W = screen.get("width", 390)
-    H = screen.get("height", 844)
-    scale = screen.get("scale", 2.0)
-    if scale and scale > 0:
-        W = W / scale
-        H = H / scale
+    scale  = screen.get("scale", 2.0) or 2.0
+    W = screen.get("width",  390) / scale
+    H = screen.get("height", 844) / scale
 
-    oid = bridge.create_overlay(0.80)
+    oid = bridge.create_overlay(0.82)
     _overlay_id = oid
 
-    try:
-        from PIL import Image
-        img = Image.open(image_path)
-        iw, ih = img.size
-        img.close()
-    except Exception:
-        iw, ih = 600, 200
+    # Read image size without PIL — decode a minimal PNG header
+    iw, ih = _png_size(image_path)
+    if iw <= 0 or ih <= 0:
+        iw, ih = 300, 200
 
     margin = 20
     max_w = W - margin * 2
-    max_h = H * 0.55
-    s = min(max_w / iw, max_h / ih)
+    max_h = H * 0.60
+    s  = min(max_w / iw, max_h / ih, 1.0)
     dw = int(iw * s)
-    dh = int(ih * s)
-    x = (W - dw) / 2
-    y = H * 0.08
+    x  = (W - dw) / 2
+    y  = H * 0.07
 
     bridge.add_image_view(oid, image_path, x, y, dw, 1)
 
@@ -165,9 +58,9 @@ def _show_preview(image_path, peer_id, message_id):
         _overlay_id = None
 
         if label == "Как фото":
-            bridge.send_photo(peer_id, image_path, message_id)
+            bridge.send_photo(_pending_peer_id, image_path, _pending_msg_id)
         elif label == "Как файл":
-            bridge.send_file(peer_id, image_path, "quote.png", message_id)
+            bridge.send_file(_pending_peer_id, image_path, "quote.png", _pending_msg_id)
         elif label == "Копировать":
             bridge.copy_image_to_clipboard(image_path)
             bridge.show_bulletin("✏️ Quote", "Скопировано")
@@ -178,7 +71,7 @@ def _show_preview(image_path, peer_id, message_id):
             bridge.save_image_to_photos(image_path, _cb)
         elif label == "Поделиться":
             bridge.show_share_sheet(image_path)
-        # "Отмена" → overlay already dismissed
+        # "Отмена" — overlay already dismissed
 
     bridge.show_action_sheet(
         "✏️ Цитата", "",
@@ -187,43 +80,64 @@ def _show_preview(image_path, peer_id, message_id):
     )
 
 
+def _png_size(path):
+    """Read width/height from a PNG file without PIL (bytes 16-23 of IHDR chunk)."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(24)
+        if len(header) >= 24 and header[:8] == b'\x89PNG\r\n\x1a\n':
+            import struct
+            w, h = struct.unpack(">II", header[16:24])
+            return w, h
+    except Exception:
+        pass
+    return 0, 0
+
+
+def _do_render(peer_id, msg_id):
+    out_path = _data_path("quote_{}.png".format(int(time.time() * 1000)))
+
+    def on_main():
+        # Live path: message node is already in the list hierarchy
+        view_ptr = bridge.find_message_view(peer_id, msg_id)
+        if view_ptr:
+            path = bridge.snapshot_view(view_ptr, out_path, 0)
+            _show_preview(path, peer_id, msg_id)
+        else:
+            # Off-screen / async path
+            def _cb(path):
+                bridge.run_on_main_thread(lambda: _show_preview(path, peer_id, msg_id))
+            bridge.snapshot_message(peer_id, msg_id, out_path, 0, _cb)
+
+    bridge.run_on_main_thread(on_main)
+
+
 def _on_menu_tap(params):
     if params.get("entry_type") != "context_menu" or params.get("item_id") != "quote":
         return
 
-    peer_id     = params.get("peer_id", 0)
-    message_id  = params.get("message_id", 0)
-    text        = params.get("text", "")
-    sender_name = params.get("sender_name", "")
-    date_ts     = params.get("date", 0)
+    peer_id    = params.get("peer_id", 0)
+    message_id = params.get("message_id", 0)
 
-    import datetime
-    try:
-        date_str = datetime.datetime.fromtimestamp(date_ts).strftime("%H:%M")
-    except Exception:
-        date_str = ""
+    if not peer_id or not message_id:
+        bridge.show_bulletin("✏️ Quote", "Нет данных сообщения")
+        return
 
-    data_dir = bridge.get_plugin_data_dir(__id__)
-
-    def _render_and_show():
-        path = _render_quote(sender_name, text, date_str, data_dir)
-        if path:
-            bridge.run_on_main_thread(lambda: _show_preview(path, peer_id, message_id))
-        else:
-            bridge.run_on_main_thread(lambda: bridge.show_bulletin("✏️ Quote", "Ошибка рендеринга"))
-
-    threading.Thread(target=_render_and_show, daemon=True).start()
+    _do_render(peer_id, message_id)
 
 
 def on_load(plugin):
     bridge.register_plugin_entry(__id__, "context_menu", "quote", "✏️ Цитата")
     bridge.add_tl_hook("plugin.menu_item_tapped", _on_menu_tap)
-    bridge.log(__id__, "on_load complete")
+    bridge.log(__id__, "on_load complete (v2 — pixel-perfect)")
 
 
 def on_unload(plugin):
     global _overlay_id
     if _overlay_id is not None:
-        bridge.dismiss_overlay(_overlay_id)
+        try:
+            bridge.dismiss_overlay(_overlay_id)
+        except Exception:
+            pass
         _overlay_id = None
     bridge.log(__id__, "on_unload complete")

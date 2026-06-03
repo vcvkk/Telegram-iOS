@@ -60,6 +60,14 @@ public enum EGPluginHooks {
     /// Called from _ios_bridge.send_file(peer_id, file_path, file_name, reply_msg_id) — plugin-initiated file send.
     public static var pluginSendFileHandler: ((Int64, String, String, Int32?) -> Void)?
 
+    /// Wired by ChatController: find a loaded ChatMessageItemView node for (peerId, msgId).
+    /// Returns the raw UIView pointer as UInt, or 0 if not found. Must be called on main thread.
+    public static var findMessageViewHandler: ((Int64, Int32) -> UInt)?
+
+    /// Wired by ChatController: async pixel-perfect snapshot of a message bubble to a PNG file.
+    /// outPath is the destination file path; completion(outPath) or completion(nil) called on main thread.
+    public static var snapshotMessageHandler: ((Int64, Int32, CGFloat, String, @escaping (String?) -> Void) -> Void)?
+
     /// MessageTextEntity type names to suppress when storing incoming messages.
     /// Plugins insert/remove entries; TelegramCore checks the set at parse time.
     /// Example: "Spoiler" suppresses messageEntitySpoiler entities.

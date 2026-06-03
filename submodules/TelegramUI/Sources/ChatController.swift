@@ -106,6 +106,7 @@ import ChatMessageItem
 import ChatMessageItemImpl
 import ChatMessageItemView
 import ChatMessageItemCommon
+import ChatHistoryEntry
 import ChatMessageAnimatedStickerItemNode
 import ChatMessageBubbleItemNode
 import ChatNavigationButton
@@ -7308,6 +7309,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
 
         self.didAppear = true
         EGPluginHooks.fireAsync("chat.opened", params: self.chatLocation.peerId.map { ["peer_id": $0.id._internalGetInt64Value()] } ?? [:])
+        self.egWirePluginSnapshotHandlers()
         
         self.chatDisplayNode.historyNode.experimentalSnapScrollToItem = false
         self.chatDisplayNode.historyNode.canReadHistory.set(self.computedCanReadHistoryPromise.get())
@@ -7778,6 +7780,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     @objc dynamic override public func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         EGPluginHooks.fireAsync("chat.closed", params: self.chatLocation.peerId.map { ["peer_id": $0.id._internalGetInt64Value()] } ?? [:])
+        EGPluginHooks.findMessageViewHandler = nil
+        EGPluginHooks.snapshotMessageHandler = nil
 
         if #available(iOS 18.0, *) {
         } else {
@@ -10756,5 +10760,119 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     
     public var contentContainerNode: ASDisplayNode {
         return self.chatDisplayNode.contentContainerNode
+    }
+
+    // MARK: exteraGram — plugin pixel-perfect message rendering
+
+    private func egWirePluginSnapshotHandlers() {
+        let peerId = self.chatLocation.peerId?.toInt64() ?? 0
+        EGPluginHooks.findMessageViewHandler = { [weak self] reqPeerId, msgId in
+            guard let self = self, reqPeerId == peerId else { return 0 }
+            var found: UIView?
+            self.chatDisplayNode.historyNode.forEachItemNode { node in
+                guard found == nil,
+                      let view = node as? ChatMessageItemView,
+                      let item = view.item,
+                      item.message.id.id == msgId,
+                      item.message.id.peerId.toInt64() == reqPeerId else { return }
+                found = view.view
+            }
+            guard let v = found else { return 0 }
+            return UInt(bitPattern: Unmanaged.passUnretained(v).toOpaque())
+        }
+        EGPluginHooks.snapshotMessageHandler = { [weak self] reqPeerId, msgId, renderWidth, outPath, completion in
+            guard let self = self, reqPeerId == peerId else { completion(nil); return }
+            DispatchQueue.main.async { [weak self] in
+                self?.egSnapshotMessage(reqPeerId: reqPeerId, msgId: msgId,
+                                        renderWidth: renderWidth, outPath: outPath, completion: completion)
+            }
+        }
+    }
+
+    private func egSnapshotMessage(reqPeerId: Int64, msgId: Int32, renderWidth: CGFloat,
+                                    outPath: String, completion: @escaping (String?) -> Void) {
+        let targetPeerId = PeerId(rawValue: reqPeerId)
+        var foundNode: ChatMessageItemView?
+        chatDisplayNode.historyNode.forEachItemNode { node in
+            guard foundNode == nil,
+                  let view = node as? ChatMessageItemView,
+                  let item = view.item,
+                  item.message.id.id == msgId,
+                  item.message.id.peerId == targetPeerId else { return }
+            foundNode = view
+        }
+        if let node = foundNode {
+            egRenderViewToPNG(node.view, outPath: outPath, completion: completion)
+        } else {
+            let targetId = MessageId(peerId: targetPeerId, namespace: Namespaces.Message.Cloud, id: msgId)
+            let w = renderWidth > 0 ? renderWidth : view.bounds.width
+            egRenderMessageOffScreen(targetId: targetId, width: w, outPath: outPath, completion: completion)
+        }
+    }
+
+    private func egRenderViewToPNG(_ view: UIView, outPath: String, completion: @escaping (String?) -> Void) {
+        let bounds = view.bounds
+        guard bounds.width > 0, bounds.height > 0 else { completion(nil); return }
+        let renderer = UIGraphicsImageRenderer(size: bounds.size)
+        let image = renderer.image { _ in view.drawHierarchy(in: bounds, afterScreenUpdates: false) }
+        guard let data = image.pngData() else { completion(nil); return }
+        do {
+            try data.write(to: URL(fileURLWithPath: outPath), options: .atomic)
+            completion(outPath)
+        } catch {
+            completion(nil)
+        }
+    }
+
+    private func egRenderMessageOffScreen(targetId: MessageId, width: CGFloat, outPath: String,
+                                           completion: @escaping (String?) -> Void) {
+        let _ = (context.account.postbox.transaction { transaction -> Message? in
+            transaction.getMessage(targetId)
+        } |> deliverOnMainQueue).startStandalone(next: { [weak self] message in
+            guard let self = self, let message = message else { completion(nil); return }
+            guard let controllerInteraction = self.controllerInteraction else { completion(nil); return }
+            let pd = self.presentationData
+            let chatPD = ChatPresentationData(
+                theme: ChatPresentationThemeData(theme: pd.theme, wallpaper: pd.chatWallpaper),
+                fontSize: pd.chatFontSize,
+                strings: pd.strings,
+                dateTimeFormat: pd.dateTimeFormat,
+                nameDisplayOrder: pd.nameDisplayOrder,
+                disableAnimations: true,
+                largeEmoji: pd.largeEmoji,
+                chatBubbleCorners: pd.chatBubbleCorners
+            )
+            let associatedData = ChatMessageItemAssociatedData(
+                automaticDownloadPeerType: .contact,
+                automaticDownloadPeerId: nil,
+                automaticDownloadNetworkType: .cellular,
+                availableReactions: nil,
+                availableMessageEffects: nil,
+                savedMessageTags: nil,
+                defaultReaction: nil,
+                areStarReactionsEnabled: false,
+                isPremium: false,
+                accountPeer: nil
+            )
+            let item = ChatMessageItemImpl(
+                presentationData: chatPD,
+                context: self.context,
+                chatLocation: self.chatLocation,
+                associatedData: associatedData,
+                controllerInteraction: controllerInteraction,
+                content: .message(message: message, read: true, selection: .none,
+                                  attributes: ChatMessageEntryAttributes(), location: nil)
+            )
+            let node = ChatMessageBubbleItemNode(rotated: false)
+            let layout = node.asyncLayout()
+            let params = ListViewItemLayoutParams(width: width, leftInset: 0, rightInset: 0,
+                                                  availableHeight: 10_000, isStandalone: true)
+            let (nodeLayout, apply) = layout(item, params, .none, .none,
+                                             ChatMessageHeaderSpec(hasDate: false, hasTopic: false))
+            node.frame = CGRect(origin: .zero, size: nodeLayout.size)
+            apply(.None, ListViewItemApply(isOnScreen: false), false)
+            node.recursivelyEnsureDisplaySynchronously(true)
+            self.egRenderViewToPNG(node.view, outPath: outPath, completion: completion)
+        })
     }
 }

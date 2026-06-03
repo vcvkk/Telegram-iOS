@@ -89,6 +89,16 @@ NS_ASSUME_NONNULL_BEGIN
 /// Called from _ios_bridge.send_file(peer_id, file_path[, file_name[, reply_msg_id]]).
 @property (class, nonatomic, copy, nullable) void (^sendFileHandler)(long long peerId, NSString *filePath, NSString *fileName, NSNumber * _Nullable replyMsgId);
 
+/// Wired by EGPluginsEngineImpl: returns raw UIView pointer (as uint64) for a loaded message node,
+/// or 0 if the node is not currently in the list memory. Must be called on main thread.
+@property (class, nonatomic, copy, nullable) uint64_t (^findMessageViewHandler)(long long peerId, int32_t msgId);
+
+/// Wired by EGPluginsEngineImpl: async pixel-perfect snapshot of a message bubble to outPath.
+/// completion is called on the main thread with outPath, or nil on failure.
+@property (class, nonatomic, copy, nullable)
+    void (^snapshotMessageHandler)(long long peerId, int32_t msgId, CGFloat width,
+                                   NSString *outPath, void (^_Nullable completion)(NSString * _Nullable));
+
 /// Must be called on the main thread before any plugin uses get_system_info / get_device_info.
 /// Enables UIDevice battery monitoring and caches immutable UIScreen dimensions so that
 /// the Python bridge functions can call them safely from background threads without dispatch_sync.

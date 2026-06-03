@@ -93,6 +93,10 @@ static void (^g_registerMenuItemHandler)(NSString *, NSString *, NSString *, NSS
 static void (^g_sendPhotoHandler)(long long, NSString *, NSNumber * _Nullable) = nil;
 // Wired by EGPluginsEngineImpl: lets plugins send a document file as a Telegram message
 static void (^g_sendFileHandler)(long long, NSString *, NSString *, NSNumber * _Nullable) = nil;
+// Wired by EGPluginsEngineImpl: returns raw UIView pointer for a loaded message node (0 if absent)
+static uint64_t (^g_findMessageViewHandler)(long long, int32_t) = nil;
+// Wired by EGPluginsEngineImpl: async pixel-perfect snapshot of message bubble to file
+static void (^g_snapshotMessageHandler)(long long, int32_t, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)) = nil;
 
 // ---------------------------------------------------------------------------
 // Overlay system storage (BRIDGE_VERSION 4)
@@ -2406,6 +2410,172 @@ static PyObject *py_add_touch_handler(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
+// ---------------------------------------------------------------------------
+// BRIDGE_VERSION 11 — pixel-perfect message rendering
+// ---------------------------------------------------------------------------
+
+// find_message_view(peer_id: int, msg_id: int) → view_ptr: int or 0
+// Returns the raw UIView pointer for the loaded ChatMessageItemView node, or 0 if absent.
+// MUST be called inside run_on_main_thread; using dispatch_sync here would deadlock.
+static PyObject *py_find_message_view(PyObject *self, PyObject *args) {
+    long long peerId = 0; int msgId = 0;
+    if (!PyArg_ParseTuple(args, "Li", &peerId, &msgId)) return NULL;
+    __block uint64_t ptr = 0;
+    void (^work)(void) = ^{
+        if (g_findMessageViewHandler) ptr = g_findMessageViewHandler(peerId, (int32_t)msgId);
+    };
+    if ([NSThread isMainThread]) {
+        work();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), work);
+    }
+    return PyLong_FromUnsignedLongLong(ptr);
+}
+
+// snapshot_view(view_ptr: int, out_path: str[, padding: float = 0]) → str | None
+// Renders the UIView at view_ptr (returned by find_message_view) to a PNG file.
+// Must be called on main thread (same constraint as find_message_view).
+static PyObject *py_snapshot_view(PyObject *self, PyObject *args) {
+    unsigned long long ptr = 0; const char *outPath = ""; double padding = 0.0;
+    if (!PyArg_ParseTuple(args, "Ks|d", &ptr, &outPath, &padding)) return NULL;
+    if (!ptr) Py_RETURN_NONE;
+    UIView *view = (__bridge UIView *)(void *)(uintptr_t)ptr;
+    NSString *nsOut = [NSString stringWithUTF8String:outPath];
+    __block BOOL ok = NO;
+    void (^work)(void) = ^{
+        CGRect bounds = view.bounds;
+        if (bounds.size.width <= 0 || bounds.size.height <= 0) return;
+        CGSize size = CGSizeMake(bounds.size.width + padding * 2, bounds.size.height + padding * 2);
+        UIGraphicsImageRendererFormat *fmt = [UIGraphicsImageRendererFormat defaultFormat];
+        fmt.scale = [UIScreen mainScreen].scale;
+        UIGraphicsImageRenderer *r = [[UIGraphicsImageRenderer alloc] initWithSize:size format:fmt];
+        UIImage *img = [r imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+            CGContextTranslateCTM(ctx.CGContext, padding, padding);
+            [view drawViewHierarchyInRect:bounds afterScreenUpdates:NO];
+        }];
+        NSData *data = UIImagePNGRepresentation(img);
+        ok = data ? [data writeToFile:nsOut atomically:YES] : NO;
+    };
+    if ([NSThread isMainThread]) {
+        work();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), work);
+    }
+    if (!ok) Py_RETURN_NONE;
+    return PyUnicode_FromString(outPath);
+}
+
+// snapshot_message(peer_id: int, msg_id: int, out_path: str[, width: float = 0, callback: callable = None]) → None
+// Async: delegates to g_snapshotMessageHandler (ChatController). Calls callback(path_or_None) on main thread.
+static PyObject *py_snapshot_message(PyObject *self, PyObject *args) {
+    long long peerId = 0; int msgId = 0; const char *outPath = "";
+    double width = 0.0; PyObject *cb = Py_None;
+    if (!PyArg_ParseTuple(args, "Lis|dO", &peerId, &msgId, &outPath, &width, &cb)) return NULL;
+    if (cb != Py_None && !PyCallable_Check(cb)) {
+        PyErr_SetString(PyExc_TypeError, "callback must be callable or None"); return NULL;
+    }
+    if (cb != Py_None) Py_INCREF(cb);
+    PyObject *cbRef = (cb != Py_None) ? cb : NULL;
+    NSString *nsOut = [NSString stringWithUTF8String:outPath];
+    void (^completion)(NSString * _Nullable) = ^(NSString * _Nullable result) {
+        if (cbRef) {
+            PyGILState_STATE gs = PyGILState_Ensure();
+            PyObject *arg = result ? PyUnicode_FromString(result.UTF8String) : Py_None;
+            if (!result) Py_INCREF(Py_None);
+            PyObject *res = PyObject_CallFunctionObjArgs(cbRef, arg, NULL);
+            if (res) Py_DECREF(res); else PyErr_Clear();
+            Py_DECREF(arg);
+            Py_DECREF(cbRef);
+            PyGILState_Release(gs);
+        }
+    };
+    if (g_snapshotMessageHandler) {
+        g_snapshotMessageHandler(peerId, (int32_t)msgId, (CGFloat)width, nsOut, completion);
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(nil); });
+        EGPluginDebugLog_appendCStr("Bridge", "snapshot_message: handler NIL — ChatController not active?");
+    }
+    Py_RETURN_NONE;
+}
+
+// composite_images(paths: list, out_path: str[, gap: float = 2, padding: float = 16, bg: str = "#1a1a1a"]) → str
+// Stacks PNG images vertically, fills background, saves to out_path. Thread-safe (pure CGContext).
+static PyObject *py_composite_images(PyObject *self, PyObject *args) {
+    PyObject *pathList = NULL; const char *outPath = "";
+    double gap = 2.0, padding = 16.0; const char *bgHex = "#1a1a1a";
+    if (!PyArg_ParseTuple(args, "Os|dds", &pathList, &outPath, &gap, &padding, &bgHex)) return NULL;
+    if (!PySequence_Check(pathList)) {
+        PyErr_SetString(PyExc_TypeError, "paths must be a sequence"); return NULL;
+    }
+    Py_ssize_t n = PySequence_Size(pathList);
+    if (n <= 0) Py_RETURN_NONE;
+
+    NSMutableArray<NSString *> *paths = [NSMutableArray arrayWithCapacity:(NSUInteger)n];
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *itm = PySequence_GetItem(pathList, i);
+        if (!itm) continue;
+        const char *p = PyUnicode_AsUTF8(itm);
+        if (p) [paths addObject:[NSString stringWithUTF8String:p]];
+        Py_DECREF(itm);
+    }
+
+    // Parse #rrggbb background
+    NSString *bgStr = [NSString stringWithUTF8String:bgHex];
+    if ([bgStr hasPrefix:@"#"]) bgStr = [bgStr substringFromIndex:1];
+    unsigned int bgRGB = 0;
+    [[NSScanner scannerWithString:bgStr] scanHexInt:&bgRGB];
+    CGFloat bgR = ((bgRGB >> 16) & 0xFF) / 255.0;
+    CGFloat bgG = ((bgRGB >> 8) & 0xFF) / 255.0;
+    CGFloat bgB = (bgRGB & 0xFF) / 255.0;
+
+    // Load images (UIImage imageWithContentsOfFile is thread-safe)
+    NSMutableArray<UIImage *> *images = [NSMutableArray array];
+    CGFloat maxW = 0, totalH = padding * 2;
+    for (NSString *path in paths) {
+        UIImage *img = [UIImage imageWithContentsOfFile:path];
+        if (!img) continue;
+        [images addObject:img];
+        if (img.size.width > maxW) maxW = img.size.width;
+        totalH += img.size.height;
+    }
+    if (images.count == 0) Py_RETURN_NONE;
+    if (images.count > 1) totalH += gap * (images.count - 1);
+
+    CGFloat W = maxW + padding * 2;
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx = CGBitmapContextCreate(NULL, (size_t)W, (size_t)totalH, 8, 0, cs,
+        kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst);
+    CGColorSpaceRelease(cs);
+    if (!ctx) Py_RETURN_NONE;
+
+    CGContextSetRGBFillColor(ctx, bgR, bgG, bgB, 1.0);
+    CGContextFillRect(ctx, CGRectMake(0, 0, W, totalH));
+
+    CGFloat y = padding;
+    for (UIImage *img in images) {
+        CGFloat x = padding + (maxW - img.size.width) / 2.0;
+        // CG coordinate origin is bottom-left — flip to match UIKit top-left
+        CGContextSaveGState(ctx);
+        CGContextTranslateCTM(ctx, 0, totalH);
+        CGContextScaleCTM(ctx, 1.0, -1.0);
+        CGContextDrawImage(ctx, CGRectMake(x, totalH - y - img.size.height, img.size.width, img.size.height), img.CGImage);
+        CGContextRestoreGState(ctx);
+        y += img.size.height + gap;
+    }
+
+    CGImageRef cgImg = CGBitmapContextCreateImage(ctx);
+    CGContextRelease(ctx);
+    if (!cgImg) Py_RETURN_NONE;
+
+    NSString *nsOut = [NSString stringWithUTF8String:outPath];
+    UIImage *result = [UIImage imageWithCGImage:cgImg scale:1.0 orientation:UIImageOrientationUp];
+    CGImageRelease(cgImg);
+    NSData *data = UIImagePNGRepresentation(result);
+    BOOL ok = data ? [data writeToFile:nsOut atomically:YES] : NO;
+    if (!ok) Py_RETURN_NONE;
+    return PyUnicode_FromString(outPath);
+}
+
 static PyMethodDef ios_bridge_methods[] = {
     {"add_tl_hook",        py_add_tl_hook,        METH_VARARGS, "add_tl_hook(tl_type, callback)"},
     {"has_hook",           py_has_hook,           METH_VARARGS, "has_hook(tl_type) -> bool"},
@@ -2464,11 +2634,16 @@ static PyMethodDef ios_bridge_methods[] = {
     {"add_image_view",          py_add_image_view,          METH_VARARGS, "add_image_view(overlay_id, path, x, y, size[, repeat_count=0]) -> view_id — create animated image view, no auto-removal"},
     {"remove_view",             py_remove_view,             METH_VARARGS, "remove_view(view_id[, fade=0.2]) — fade out and remove a view created by add_image_view"},
     // BRIDGE_VERSION 10 — copy_image_to_clipboard, save_image_to_photos, show_share_sheet, send_photo, send_file
-    {"copy_image_to_clipboard", py_copy_image_to_clipboard, METH_VARARGS, "copy_image_to_clipboard(path) — copy image file to UIPasteboard"},
+    {"copy_image_to_clipboard",  py_copy_image_to_clipboard,  METH_VARARGS, "copy_image_to_clipboard(path) — copy image file to UIPasteboard"},
     {"save_image_to_photos",    py_save_image_to_photos,    METH_VARARGS, "save_image_to_photos(path, callback) — save image to photo library; callback(success: bool)"},
     {"show_share_sheet",        py_show_share_sheet,        METH_VARARGS, "show_share_sheet(path) — present UIActivityViewController for file at path"},
     {"send_photo",              py_send_photo,              METH_VARARGS, "send_photo(peer_id, file_path[, reply_msg_id]) — send image file as Telegram message"},
     {"send_file",               py_send_file,               METH_VARARGS, "send_file(peer_id, file_path[, file_name[, reply_msg_id]]) — send document file as Telegram message"},
+    // BRIDGE_VERSION 11 — pixel-perfect message rendering
+    {"find_message_view",  py_find_message_view,  METH_VARARGS, "find_message_view(peer_id, msg_id) → view_ptr:int or 0 — must be on main thread"},
+    {"snapshot_view",      py_snapshot_view,      METH_VARARGS, "snapshot_view(view_ptr, out_path[, padding=0]) → path or None — must be on main thread"},
+    {"snapshot_message",   py_snapshot_message,   METH_VARARGS, "snapshot_message(peer_id, msg_id, out_path[, width=0, callback=None]) — async PNG capture"},
+    {"composite_images",   py_composite_images,   METH_VARARGS, "composite_images(paths, out_path[, gap=2, padding=16, bg='#1a1a1a']) → path — thread-safe"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -2610,6 +2785,12 @@ static id py_to_ns(PyObject *obj) {
 
 + (void (^)(long long, NSString *, NSString *, NSNumber * _Nullable))sendFileHandler { return g_sendFileHandler; }
 + (void)setSendFileHandler:(void (^)(long long, NSString *, NSString *, NSNumber * _Nullable))b { g_sendFileHandler = [b copy]; }
+
++ (uint64_t (^)(long long, int32_t))findMessageViewHandler { return g_findMessageViewHandler; }
++ (void)setFindMessageViewHandler:(uint64_t (^)(long long, int32_t))b { g_findMessageViewHandler = [b copy]; }
+
++ (void (^)(long long, int32_t, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)))snapshotMessageHandler { return g_snapshotMessageHandler; }
++ (void)setSnapshotMessageHandler:(void (^)(long long, int32_t, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)))b { g_snapshotMessageHandler = [b copy]; }
 
 + (void)prepareUIKitCaches {
     // Must be called on the main thread once before plugins query system info.
