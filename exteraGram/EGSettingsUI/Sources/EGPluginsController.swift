@@ -315,12 +315,76 @@ public final class PluginsController {
             ).startStandalone()
         }
 
-        // Wire plugin menu item tap → Python event bus
-        EGPluginHooks.pluginMenuItemTappedHandler = { pluginId, entryType, itemId in
-            EGTLHookBridge.shared.dispatchTLHookAsync(
-                "plugin.menu_item_tapped",
-                snapshot: ["plugin_id": pluginId, "entry_type": entryType, "item_id": itemId]
-            )
+        // Wire send_photo() / send_file() for plugins.
+        EGPluginHooks.pluginSendPhotoHandler = { [weak context] peerId, filePath, replyMsgId in
+            guard let ctx = context else { return }
+            let pid      = PeerId(rawValue: peerId)
+            let randomId = Int64.random(in: Int64.min...Int64.max)
+            let url      = URL(fileURLWithPath: filePath)
+            let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize.map(Int64.init) ?? nil
+            let resource = LocalFileReferenceMediaResource(
+                localFilePath: filePath, randomId: randomId, size: fileSize)
+            let file = TelegramMediaFile(
+                fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: randomId),
+                partialReference: nil, resource: resource,
+                previewRepresentations: [], videoThumbnails: [],
+                immediateThumbnailData: nil,
+                mimeType: "image/jpeg",
+                size: fileSize, attributes: [],
+                alternativeRepresentations: [])
+            let _ = enqueueMessages(
+                account: ctx.account, peerId: pid,
+                messages: [.message(
+                    text: "", attributes: [], inlineStickers: [:],
+                    mediaReference: .standalone(media: file),
+                    threadId: nil, replyToMessageId: nil, replyToStoryId: nil,
+                    localGroupingKey: nil, correlationId: nil,
+                    bubbleUpEmojiOrStickersets: []
+                )]
+            ).startStandalone()
+        }
+
+        EGPluginHooks.pluginSendFileHandler = { [weak context] peerId, filePath, fileName, replyMsgId in
+            guard let ctx = context else { return }
+            let pid      = PeerId(rawValue: peerId)
+            let randomId = Int64.random(in: Int64.min...Int64.max)
+            let url      = URL(fileURLWithPath: filePath)
+            let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize.map(Int64.init) ?? nil
+            let name     = fileName.isEmpty ? (url.lastPathComponent.isEmpty ? "file.png" : url.lastPathComponent) : fileName
+            let resource = LocalFileReferenceMediaResource(
+                localFilePath: filePath, randomId: randomId, size: fileSize)
+            let file = TelegramMediaFile(
+                fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: randomId),
+                partialReference: nil, resource: resource,
+                previewRepresentations: [], videoThumbnails: [],
+                immediateThumbnailData: nil,
+                mimeType: "image/png",
+                size: fileSize, attributes: [.FileName(fileName: name)],
+                alternativeRepresentations: [])
+            let _ = enqueueMessages(
+                account: ctx.account, peerId: pid,
+                messages: [.message(
+                    text: "", attributes: [], inlineStickers: [:],
+                    mediaReference: .standalone(media: file),
+                    threadId: nil, replyToMessageId: nil, replyToStoryId: nil,
+                    localGroupingKey: nil, correlationId: nil,
+                    bubbleUpEmojiOrStickersets: []
+                )]
+            ).startStandalone()
+        }
+
+        // Wire plugin menu item tap → Python event bus.
+        // For context_menu entries the optional context dict carries message data.
+        EGPluginHooks.pluginMenuItemTappedHandler = { pluginId, entryType, itemId, msgContext in
+            var snapshot: [String: Any] = [
+                "plugin_id": pluginId,
+                "entry_type": entryType,
+                "item_id": itemId
+            ]
+            if let ctx = msgContext {
+                for (k, v) in ctx { snapshot[k] = v }
+            }
+            EGTLHookBridge.shared.dispatchTLHookAsync("plugin.menu_item_tapped", snapshot: snapshot)
         }
     }
 
@@ -1238,7 +1302,7 @@ private struct EGPluginsView: View {
                                 nav.pushViewController(settingsVC, animated: true)
                             },
                             onLaunch: EGPluginHooks.registeredMenuItems.contains(where: { $0.pluginId == plugin.id }) ? {
-                                EGPluginHooks.pluginMenuItemTappedHandler?(plugin.id, "chatlist", "open")
+                                EGPluginHooks.pluginMenuItemTappedHandler?(plugin.id, "chatlist", "open", nil)
                             } : nil
                         )
                     }

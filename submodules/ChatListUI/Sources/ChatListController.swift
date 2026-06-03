@@ -3980,7 +3980,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 },
                 action: { _, f in
                     f(.dismissWithoutContent)
-                    EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                    EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId, nil)
                 }
             )))
         }
@@ -6379,7 +6379,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                         },
                         action: { _, f in
                             f(.dismissWithoutContent)
-                            EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                            EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId, nil)
                         }
                     )))
                 }

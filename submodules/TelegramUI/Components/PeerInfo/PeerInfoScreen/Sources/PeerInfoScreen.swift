@@ -2418,7 +2418,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                             guard let name = iconName else { return nil }
                             return generateTintedImage(image: UIImage(bundleImageName: name), color: theme.contextMenu.primaryColor)
                         },
-                        action: { _, f in f(.default); EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId) }
+                        action: { _, f in f(.default); EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId, nil) }
                     )))
                 }
                 let contextController = makeContextController(

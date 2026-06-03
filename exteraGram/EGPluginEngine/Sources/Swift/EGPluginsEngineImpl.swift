@@ -88,6 +88,12 @@ public final class EGPluginsEngineImpl {
             EGPythonBridge.sendReactionHandler = { peerId, msgId, emoticon in
                 EGPluginHooks.pluginSendReactionHandler?(peerId, msgId, emoticon)
             }
+            EGPythonBridge.sendPhotoHandler = { peerId, filePath, replyMsgId in
+                EGPluginHooks.pluginSendPhotoHandler?(peerId, filePath, replyMsgId?.int32Value)
+            }
+            EGPythonBridge.sendFileHandler = { peerId, filePath, fileName, replyMsgId in
+                EGPluginHooks.pluginSendFileHandler?(peerId, filePath, fileName, replyMsgId?.int32Value)
+            }
             // Wire register_plugin_entry() → EGPluginHooks.registeredMenuItems
             EGPythonBridge.registerMenuItemHandler = { pluginId, entryType, itemId, title, iconName in
                 let item = EGPluginMenuItem(pluginId: pluginId, entryType: entryType,
@@ -134,6 +140,8 @@ public final class EGPluginsEngineImpl {
             EGPluginHooks.messageInterceptHook = nil
             EGPythonBridge.sendMessageHandler = nil
             EGPythonBridge.sendReactionHandler = nil
+            EGPythonBridge.sendPhotoHandler = nil
+            EGPythonBridge.sendFileHandler = nil
             EGPythonBridge.registerMenuItemHandler = nil
             EGPluginHooks.registeredMenuItems.removeAll()
             for id in pluginIds {

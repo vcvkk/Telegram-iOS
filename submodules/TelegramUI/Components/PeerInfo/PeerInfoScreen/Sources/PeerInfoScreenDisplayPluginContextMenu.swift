@@ -32,7 +32,7 @@ extension PeerInfoScreenNode {
                 },
                 action: { _, f in
                     f(.default)
-                    EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                    EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId, nil)
                 }
             )))
         }

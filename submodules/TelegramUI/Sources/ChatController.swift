@@ -5648,7 +5648,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                     },
                                     action: { _, f2 in
                                         f2(.dismissWithoutContent)
-                                        EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                                        EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId, nil)
                                     }
                                 )))
                             }
@@ -5921,7 +5921,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                     },
                                     action: { _, f2 in
                                         f2(.dismissWithoutContent)
-                                        EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                                        EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId, nil)
                                     }
                                 )))
                             }

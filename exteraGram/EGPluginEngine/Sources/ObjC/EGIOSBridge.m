@@ -3,6 +3,7 @@
 #import "EGIOSBridge.h"
 #import "EGViewRenderer.h"
 #import <UIKit/UIKit.h>
+#import <Photos/Photos.h>
 #import <AVFoundation/AVFoundation.h>
 #import <ImageIO/ImageIO.h>
 #import <netinet/in.h>
@@ -88,6 +89,10 @@ static void (^g_sendMessageHandler)(long long, NSString *) = nil;
 static void (^g_sendReactionHandler)(long long, int32_t, NSString *) = nil;
 // Wired by EGPluginsEngineImpl: register a plugin menu entry in the iOS UI
 static void (^g_registerMenuItemHandler)(NSString *, NSString *, NSString *, NSString *, NSString * _Nullable) = nil;
+// Wired by EGPluginsEngineImpl: lets plugins send a photo file as a Telegram message
+static void (^g_sendPhotoHandler)(long long, NSString *, NSNumber * _Nullable) = nil;
+// Wired by EGPluginsEngineImpl: lets plugins send a document file as a Telegram message
+static void (^g_sendFileHandler)(long long, NSString *, NSString *, NSNumber * _Nullable) = nil;
 
 // ---------------------------------------------------------------------------
 // Overlay system storage (BRIDGE_VERSION 4)
@@ -1301,6 +1306,126 @@ static PyObject *py_send_reaction(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
+// copy_image_to_clipboard(path: str) → None
+// Loads a PNG/JPEG from path and puts it on UIPasteboard.generalPasteboard.
+static PyObject *py_copy_image_to_clipboard(PyObject *self, PyObject *args) {
+    const char *path = "";
+    if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
+    NSString *nsPath = [NSString stringWithUTF8String:path];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIImage *img = [UIImage imageWithContentsOfFile:nsPath];
+        if (img) {
+            [UIPasteboard generalPasteboard].image = img;
+            EGPluginDebugLog_appendCStr("Bridge", "copy_image_to_clipboard: done");
+        } else {
+            EGPluginDebugLog_appendCStr("Bridge", "copy_image_to_clipboard: image load failed");
+        }
+    });
+    Py_RETURN_NONE;
+}
+
+// save_image_to_photos(path: str, callback: callable) → None
+// Saves image at path to the photo library. callback(success: bool) called on main thread.
+static PyObject *py_save_image_to_photos(PyObject *self, PyObject *args) {
+    const char *path = "";
+    PyObject *cb = Py_None;
+    if (!PyArg_ParseTuple(args, "sO", &path, &cb)) return NULL;
+    if (cb != Py_None && !PyCallable_Check(cb)) {
+        PyErr_SetString(PyExc_TypeError, "callback must be callable or None"); return NULL;
+    }
+    NSString *nsPath = [NSString stringWithUTF8String:path];
+    if (cb != Py_None) Py_INCREF(cb);
+    PyObject *cbRef = (cb != Py_None) ? cb : NULL;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSURL *fileURL = [NSURL fileURLWithPath:nsPath];
+        [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+            [PHAssetChangeRequest creationRequestForAssetFromImageAtFileURL:fileURL];
+        } completionHandler:^(BOOL success, NSError *error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (cbRef) {
+                    PyGILState_STATE gs = PyGILState_Ensure();
+                    PyObject *res = PyObject_CallFunction(cbRef, "O", success ? Py_True : Py_False);
+                    if (res) Py_DECREF(res); else PyErr_Clear();
+                    Py_DECREF(cbRef);
+                    PyGILState_Release(gs);
+                }
+                EGPluginDebugLog_appendCStr("Bridge", success ? "save_image_to_photos: saved" : "save_image_to_photos: failed");
+            });
+        }];
+    });
+    Py_RETURN_NONE;
+}
+
+// show_share_sheet(path: str) → None
+// Presents a UIActivityViewController for sharing the file at path.
+static PyObject *py_show_share_sheet(PyObject *self, PyObject *args) {
+    const char *path = "";
+    if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
+    NSString *nsPath = [NSString stringWithUTF8String:path];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSURL *fileURL = [NSURL fileURLWithPath:nsPath];
+        UIActivityViewController *ac = [[UIActivityViewController alloc]
+            initWithActivityItems:@[fileURL] applicationActivities:nil];
+        UIWindow *kw = nil;
+        for (UIScene *sc in [UIApplication sharedApplication].connectedScenes) {
+            if ([sc isKindOfClass:[UIWindowScene class]]) {
+                UIWindowScene *ws = (UIWindowScene *)sc;
+                for (UIWindow *w in ws.windows) {
+                    if (w.isKeyWindow) { kw = w; break; }
+                }
+                if (kw) break;
+            }
+        }
+        UIViewController *root = kw.rootViewController;
+        while (root.presentedViewController) root = root.presentedViewController;
+        if (root) [root presentViewController:ac animated:YES completion:nil];
+        EGPluginDebugLog_appendCStr("Bridge", "show_share_sheet: presented");
+    });
+    Py_RETURN_NONE;
+}
+
+// send_photo(peer_id: int, file_path: str[, reply_msg_id: int]) → None
+// Calls g_sendPhotoHandler wired by EGPluginsEngineImpl → EGPluginHooks.pluginSendPhotoHandler.
+static PyObject *py_send_photo(PyObject *self, PyObject *args) {
+    long long peerId = 0;
+    const char *filePath = "";
+    int replyMsgId = 0;
+    if (!PyArg_ParseTuple(args, "Ls|i", &peerId, &filePath, &replyMsgId)) return NULL;
+    void (^h)(long long, NSString *, NSNumber * _Nullable) = g_sendPhotoHandler;
+    if (h) {
+        NSString *nsPath   = [NSString stringWithUTF8String:filePath];
+        NSNumber *replyNum = replyMsgId > 0 ? @(replyMsgId) : nil;
+        h(peerId, nsPath, replyNum);
+        EGPluginDebugLog_appendCStr("Bridge", [[NSString stringWithFormat:
+            @"send_photo: peer=%lld path=%s reply=%d", peerId, filePath, replyMsgId] UTF8String]);
+    } else {
+        EGPluginDebugLog_appendCStr("Bridge", "send_photo: handler NIL — not wired yet?");
+    }
+    Py_RETURN_NONE;
+}
+
+// send_file(peer_id: int, file_path: str[, file_name: str[, reply_msg_id: int]]) → None
+// Calls g_sendFileHandler wired by EGPluginsEngineImpl → EGPluginHooks.pluginSendFileHandler.
+static PyObject *py_send_file(PyObject *self, PyObject *args) {
+    long long peerId = 0;
+    const char *filePath = "";
+    const char *fileName = "";
+    int replyMsgId = 0;
+    if (!PyArg_ParseTuple(args, "Ls|si", &peerId, &filePath, &fileName, &replyMsgId)) return NULL;
+    void (^h)(long long, NSString *, NSString *, NSNumber * _Nullable) = g_sendFileHandler;
+    if (h) {
+        NSString *nsPath   = [NSString stringWithUTF8String:filePath];
+        NSString *nsName   = [NSString stringWithUTF8String:fileName];
+        NSNumber *replyNum = replyMsgId > 0 ? @(replyMsgId) : nil;
+        h(peerId, nsPath, nsName, replyNum);
+        EGPluginDebugLog_appendCStr("Bridge", [[NSString stringWithFormat:
+            @"send_file: peer=%lld name=%s reply=%d", peerId, fileName, replyMsgId] UTF8String]);
+    } else {
+        EGPluginDebugLog_appendCStr("Bridge", "send_file: handler NIL — not wired yet?");
+    }
+    Py_RETURN_NONE;
+}
+
 // get_device_info() -> dict
 // Returns: battery_level (float, -1 if unknown), battery_state (str), app_version (str).
 // Safe to call from any thread — battery monitoring must have been enabled on main thread
@@ -2338,6 +2463,12 @@ static PyMethodDef ios_bridge_methods[] = {
     // BRIDGE_VERSION 9 — add_image_view, remove_view (low-level; plugin owns removal timing)
     {"add_image_view",          py_add_image_view,          METH_VARARGS, "add_image_view(overlay_id, path, x, y, size[, repeat_count=0]) -> view_id — create animated image view, no auto-removal"},
     {"remove_view",             py_remove_view,             METH_VARARGS, "remove_view(view_id[, fade=0.2]) — fade out and remove a view created by add_image_view"},
+    // BRIDGE_VERSION 10 — copy_image_to_clipboard, save_image_to_photos, show_share_sheet, send_photo, send_file
+    {"copy_image_to_clipboard", py_copy_image_to_clipboard, METH_VARARGS, "copy_image_to_clipboard(path) — copy image file to UIPasteboard"},
+    {"save_image_to_photos",    py_save_image_to_photos,    METH_VARARGS, "save_image_to_photos(path, callback) — save image to photo library; callback(success: bool)"},
+    {"show_share_sheet",        py_show_share_sheet,        METH_VARARGS, "show_share_sheet(path) — present UIActivityViewController for file at path"},
+    {"send_photo",              py_send_photo,              METH_VARARGS, "send_photo(peer_id, file_path[, reply_msg_id]) — send image file as Telegram message"},
+    {"send_file",               py_send_file,               METH_VARARGS, "send_file(peer_id, file_path[, file_name[, reply_msg_id]]) — send document file as Telegram message"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -2473,6 +2604,12 @@ static id py_to_ns(PyObject *obj) {
 
 + (void (^)(NSString *, NSString *, NSString *, NSString *, NSString * _Nullable))registerMenuItemHandler { return g_registerMenuItemHandler; }
 + (void)setRegisterMenuItemHandler:(void (^)(NSString *, NSString *, NSString *, NSString *, NSString * _Nullable))b { g_registerMenuItemHandler = [b copy]; }
+
++ (void (^)(long long, NSString *, NSNumber * _Nullable))sendPhotoHandler { return g_sendPhotoHandler; }
++ (void)setSendPhotoHandler:(void (^)(long long, NSString *, NSNumber * _Nullable))b { g_sendPhotoHandler = [b copy]; }
+
++ (void (^)(long long, NSString *, NSString *, NSNumber * _Nullable))sendFileHandler { return g_sendFileHandler; }
++ (void)setSendFileHandler:(void (^)(long long, NSString *, NSString *, NSNumber * _Nullable))b { g_sendFileHandler = [b copy]; }
 
 + (void)prepareUIKitCaches {
     // Must be called on the main thread once before plugins query system info.

@@ -54,6 +54,12 @@ public enum EGPluginHooks {
     /// Wired by PluginsController.wireClientInfo to updateMessageReactionsInteractively.
     public static var pluginSendReactionHandler: ((Int64, Int32, String) -> Void)?
 
+    /// Called from _ios_bridge.send_photo(peer_id, file_path, reply_msg_id) — plugin-initiated photo send.
+    public static var pluginSendPhotoHandler: ((Int64, String, Int32?) -> Void)?
+
+    /// Called from _ios_bridge.send_file(peer_id, file_path, file_name, reply_msg_id) — plugin-initiated file send.
+    public static var pluginSendFileHandler: ((Int64, String, String, Int32?) -> Void)?
+
     /// MessageTextEntity type names to suppress when storing incoming messages.
     /// Plugins insert/remove entries; TelegramCore checks the set at parse time.
     /// Example: "Spoiler" suppresses messageEntitySpoiler entities.
@@ -94,7 +100,9 @@ public enum EGPluginHooks {
 
     /// Called when a plugin's registered menu item is tapped in the iOS UI.
     /// Fires "plugin.menu_item_tapped" into Python via EGTLHookBridge.
-    public static var pluginMenuItemTappedHandler: ((String, String, String) -> Void)?
+    /// The optional context dict carries message data (peer_id, message_id, text, sender_name, date)
+    /// for context_menu entries; nil for chatlist/profile entries.
+    public static var pluginMenuItemTappedHandler: ((String, String, String, [String: Any]?) -> Void)?
 }
 
 // MARK: - Event bus event catalogue (for plugin documentation)

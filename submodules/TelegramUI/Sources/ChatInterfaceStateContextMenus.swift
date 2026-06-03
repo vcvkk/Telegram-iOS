@@ -2483,7 +2483,43 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 actions.removeAll()
             }
         }
-        
+
+        // MARK: exteraGram — plugin context_menu entries (per-message)
+        let msgPluginEntries = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "context_menu" }
+        if !msgPluginEntries.isEmpty, let firstMsg = messages.first {
+            let peerIdInt   = firstMsg.id.peerId.toInt64()
+            let msgIdInt    = Int(firstMsg.id.id)
+            let msgText     = firstMsg.text
+            let senderName  = firstMsg.author?.debugDisplayTitle ?? ""
+            let senderIdInt = firstMsg.author?.id.toInt64() ?? 0
+            let ts          = Int(firstMsg.timestamp)
+            actions.append(.separator)
+            for entry in msgPluginEntries {
+                let pluginId  = entry.pluginId
+                let entryType = entry.entryType
+                let itemId    = entry.itemId
+                let iconName  = entry.iconName
+                actions.append(.action(ContextMenuActionItem(
+                    text: entry.title,
+                    icon: { (theme: PresentationTheme) in
+                        guard let name = iconName else { return nil }
+                        return generateTintedImage(image: UIImage(bundleImageName: name), color: theme.actionSheet.primaryTextColor)
+                    },
+                    action: { _, f in
+                        f(.dismissWithoutContent)
+                        EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId, [
+                            "peer_id":     peerIdInt,
+                            "message_id":  msgIdInt,
+                            "text":        msgText,
+                            "sender_name": senderName,
+                            "sender_id":   senderIdInt,
+                            "date":        ts
+                        ])
+                    }
+                )))
+            }
+        }
+
         return ContextController.Items(content: .list(actions), tip: nil)
     }
 }

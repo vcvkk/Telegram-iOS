@@ -81,6 +81,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// entry_type: "chatlist" | "context_menu" | "profile"; icon_name is optional (nil = no icon)
 @property (class, nonatomic, copy, nullable) void (^registerMenuItemHandler)(NSString *pluginId, NSString *entryType, NSString *itemId, NSString *title, NSString * _Nullable iconName);
 
+/// Wired by EGPluginsEngineImpl: (peerId, filePath, replyMsgId) → enqueueMessages with photo media.
+/// Called from _ios_bridge.send_photo(peer_id, file_path[, reply_msg_id]).
+@property (class, nonatomic, copy, nullable) void (^sendPhotoHandler)(long long peerId, NSString *filePath, NSNumber * _Nullable replyMsgId);
+
+/// Wired by EGPluginsEngineImpl: (peerId, filePath, fileName, replyMsgId) → enqueueMessages with file media.
+/// Called from _ios_bridge.send_file(peer_id, file_path[, file_name[, reply_msg_id]]).
+@property (class, nonatomic, copy, nullable) void (^sendFileHandler)(long long peerId, NSString *filePath, NSString *fileName, NSNumber * _Nullable replyMsgId);
+
 /// Must be called on the main thread before any plugin uses get_system_info / get_device_info.
 /// Enables UIDevice battery monitoring and caches immutable UIScreen dimensions so that
 /// the Python bridge functions can call them safely from background threads without dispatch_sync.

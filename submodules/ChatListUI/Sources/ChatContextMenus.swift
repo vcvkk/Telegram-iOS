@@ -596,7 +596,7 @@ func chatContextMenuItems(context: AccountContext, peerId: PeerId, promoInfo: Ch
                                 },
                                 action: { _, f2 in
                                     f2(.dismissWithoutContent)
-                                    EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                                    EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId, nil)
                                 }
                             )))
                         }
@@ -1012,7 +1012,7 @@ public func chatForumTopicMenuItems(context: AccountContext, peerId: PeerId, thr
                     },
                     action: { _, f2 in
                         f2(.dismissWithoutContent)
-                        EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId)
+                        EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId, nil)
                     }
                 )))
             }
