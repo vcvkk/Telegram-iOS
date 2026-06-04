@@ -99,6 +99,10 @@ NS_ASSUME_NONNULL_BEGIN
     void (^snapshotMessageHandler)(long long peerId, int32_t msgId, CGFloat width,
                                    NSString *outPath, void (^_Nullable completion)(NSString * _Nullable));
 
+/// Wired by ChatController: synchronously snapshots the chat wallpaper to outPath as PNG.
+/// Called on main thread. Returns YES on success.
+@property (class, nonatomic, copy, nullable) BOOL (^getWallpaperImageHandler)(NSString *outPath);
+
 /// Must be called on the main thread before any plugin uses get_system_info / get_device_info.
 /// Enables UIDevice battery monitoring and caches immutable UIScreen dimensions so that
 /// the Python bridge functions can call them safely from background threads without dispatch_sync.

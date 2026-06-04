@@ -97,6 +97,8 @@ static void (^g_sendFileHandler)(long long, NSString *, NSString *, NSNumber * _
 static uint64_t (^g_findMessageViewHandler)(long long, int32_t) = nil;
 // Wired by EGPluginsEngineImpl: async pixel-perfect snapshot of message bubble to file
 static void (^g_snapshotMessageHandler)(long long, int32_t, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)) = nil;
+// Wired by ChatController: synchronously snapshots the chat wallpaper to a PNG file
+static BOOL (^g_getWallpaperImageHandler)(NSString *) = nil;
 
 // ---------------------------------------------------------------------------
 // Overlay system storage (BRIDGE_VERSION 4)
@@ -631,14 +633,18 @@ static PyObject *py_show_dialog(PyObject *self, PyObject *args) {
     return PyUnicode_FromString(handle.UTF8String);
 }
 
-// show_bottom_sheet(spec) → handle  (BRIDGE_VERSION 12)
+// show_bottom_sheet(spec[, style="system"]) → handle  (BRIDGE_VERSION 13)
 // Presents a scrollable bottom sheet.  spec has the same shape as show_dialog
 // (keys: "view", "on_dismiss_id").  On iOS 15+ uses UISheetPresentationController
-// with medium+large detents and a drag handle; falls back to FormSheet on older OS.
+// with a drag handle; falls back to FormSheet on older OS.
+// style: "system" (default, 20pt radius, white bg, medium+large detents)
+//        "glass"  (38pt radius, action-sheet bg, large detent only — matches Telegram sheet style)
 // dismiss_dialog(handle) works for bottom sheets too.
 static PyObject *py_show_bottom_sheet(PyObject *self, PyObject *args) {
     PyObject *specObj = NULL;
-    if (!PyArg_ParseTuple(args, "O", &specObj)) return NULL;
+    const char *style = "system";
+    if (!PyArg_ParseTuple(args, "O|s", &specObj, &style)) return NULL;
+    BOOL useGlass = (strcmp(style, "glass") == 0);
     id ns = py_to_ns(specObj);
     if (![ns isKindOfClass:[NSDictionary class]]) {
         PyErr_SetString(PyExc_TypeError, "show_bottom_sheet: spec must be a dict");
@@ -658,13 +664,16 @@ static PyObject *py_show_bottom_sheet(PyObject *self, PyObject *args) {
         }
 
         UIViewController *vc = [UIViewController new];
-        vc.view.backgroundColor = UIColor.systemBackgroundColor;
+        vc.view.backgroundColor = useGlass
+            ? UIColor.secondarySystemGroupedBackgroundColor
+            : UIColor.systemBackgroundColor;
 
         // Wrap in scroll view so content can scroll if taller than the sheet
         UIScrollView *scrollView = [UIScrollView new];
         scrollView.alwaysBounceVertical = NO;
         scrollView.showsVerticalScrollIndicator = NO;
         scrollView.translatesAutoresizingMaskIntoConstraints = NO;
+        if (useGlass) scrollView.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
         [vc.view addSubview:scrollView];
 
         content.translatesAutoresizingMaskIntoConstraints = NO;
@@ -688,13 +697,18 @@ static PyObject *py_show_bottom_sheet(PyObject *self, PyObject *args) {
             vc.modalPresentationStyle = UIModalPresentationPageSheet;
             UISheetPresentationController *sheet = vc.sheetPresentationController;
             if (sheet) {
-                sheet.detents = @[
-                    [UISheetPresentationControllerDetent mediumDetent],
-                    [UISheetPresentationControllerDetent largeDetent],
-                ];
+                if (useGlass) {
+                    sheet.detents = @[[UISheetPresentationControllerDetent largeDetent]];
+                    sheet.preferredCornerRadius = 38.0;
+                } else {
+                    sheet.detents = @[
+                        [UISheetPresentationControllerDetent mediumDetent],
+                        [UISheetPresentationControllerDetent largeDetent],
+                    ];
+                    sheet.preferredCornerRadius = 20.0;
+                }
                 sheet.prefersGrabberVisible = YES;
                 sheet.prefersScrollingExpandsWhenScrolledToEdge = YES;
-                sheet.preferredCornerRadius = 20.0;
             }
         } else {
             vc.modalPresentationStyle = UIModalPresentationFormSheet;
@@ -2605,12 +2619,33 @@ static PyObject *py_snapshot_message(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
-// composite_images(paths: list, out_path: str[, gap: float = 2, padding: float = 16, bg: str = "#1a1a1a"]) → str
+// get_wallpaper_image(out_path: str) → str | None  (BRIDGE_VERSION 13)
+// Snapshots the chat wallpaper background to out_path as PNG.
+// Must be called from the main thread (or via run_on_main_thread).
+// Returns out_path on success, None on failure or if no ChatController is active.
+static PyObject *py_get_wallpaper_image(PyObject *self, PyObject *args) {
+    const char *outPath = "";
+    if (!PyArg_ParseTuple(args, "s", &outPath)) return NULL;
+    NSString *nsPath = [NSString stringWithUTF8String:outPath];
+    __block BOOL ok = NO;
+    if ([NSThread isMainThread]) {
+        if (g_getWallpaperImageHandler) ok = g_getWallpaperImageHandler(nsPath);
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            if (g_getWallpaperImageHandler) ok = g_getWallpaperImageHandler(nsPath);
+        });
+    }
+    if (!ok) Py_RETURN_NONE;
+    return PyUnicode_FromString(outPath);
+}
+
+// composite_images(paths: list, out_path: str[, gap: float = 2, padding: float = 16, bg: str = "#1a1a1a"[, wallpaper_path: str = ""]]) → str
 // Stacks PNG images vertically, fills background, saves to out_path. Thread-safe (pure CGContext).
+// wallpaper_path: if non-empty, loads that PNG and draws it aspect-fill as the canvas background.
 static PyObject *py_composite_images(PyObject *self, PyObject *args) {
     PyObject *pathList = NULL; const char *outPath = "";
-    double gap = 2.0, padding = 16.0; const char *bgHex = "#1a1a1a";
-    if (!PyArg_ParseTuple(args, "Os|dds", &pathList, &outPath, &gap, &padding, &bgHex)) return NULL;
+    double gap = 2.0, padding = 16.0; const char *bgHex = "#1a1a1a"; const char *wallpaperPath = "";
+    if (!PyArg_ParseTuple(args, "Os|ddss", &pathList, &outPath, &gap, &padding, &bgHex, &wallpaperPath)) return NULL;
     if (!PySequence_Check(pathList)) {
         PyErr_SetString(PyExc_TypeError, "paths must be a sequence"); return NULL;
     }
@@ -2655,8 +2690,29 @@ static PyObject *py_composite_images(PyObject *self, PyObject *args) {
     CGColorSpaceRelease(cs);
     if (!ctx) Py_RETURN_NONE;
 
-    CGContextSetRGBFillColor(ctx, bgR, bgG, bgB, 1.0);
-    CGContextFillRect(ctx, CGRectMake(0, 0, W, totalH));
+    // Draw background: wallpaper (aspect-fill) or solid color
+    BOOL drewWallpaper = NO;
+    if (strlen(wallpaperPath) > 0) {
+        UIImage *wp = [UIImage imageWithContentsOfFile:[NSString stringWithUTF8String:wallpaperPath]];
+        if (wp && wp.CGImage) {
+            CGFloat wpW = wp.size.width, wpH = wp.size.height;
+            CGFloat scaleX = W / wpW, scaleY = totalH / wpH;
+            CGFloat scale = (scaleX > scaleY) ? scaleX : scaleY;
+            CGFloat drawW = wpW * scale, drawH = wpH * scale;
+            CGFloat drawX = (W - drawW) / 2.0, drawY = (totalH - drawH) / 2.0;
+            // CG origin is bottom-left — flip to UIKit top-left
+            CGContextSaveGState(ctx);
+            CGContextTranslateCTM(ctx, 0, totalH);
+            CGContextScaleCTM(ctx, 1.0, -1.0);
+            CGContextDrawImage(ctx, CGRectMake(drawX, totalH - drawY - drawH, drawW, drawH), wp.CGImage);
+            CGContextRestoreGState(ctx);
+            drewWallpaper = YES;
+        }
+    }
+    if (!drewWallpaper) {
+        CGContextSetRGBFillColor(ctx, bgR, bgG, bgB, 1.0);
+        CGContextFillRect(ctx, CGRectMake(0, 0, W, totalH));
+    }
 
     CGFloat y = padding;
     for (UIImage *img in images) {
@@ -2690,7 +2746,7 @@ static PyMethodDef ios_bridge_methods[] = {
     {"show_alert",         py_show_alert,         METH_VARARGS, "show_alert(title, message, button='OK')"},
     {"show_action_sheet",  py_show_action_sheet,  METH_VARARGS, "show_action_sheet(title, message, options, callback)"},
     {"show_dialog",        py_show_dialog,        METH_VARARGS, "show_dialog(spec) -> handle"},
-    {"show_bottom_sheet",  py_show_bottom_sheet,  METH_VARARGS, "show_bottom_sheet(spec) -> handle — bottom sheet with drag handle (iOS 15+)"},
+    {"show_bottom_sheet",  py_show_bottom_sheet,  METH_VARARGS, "show_bottom_sheet(spec[, style='system']) -> handle — bottom sheet; style: 'system' or 'glass'"},
     {"update_dialog",      py_update_dialog,      METH_VARARGS, "update_dialog(handle, view_spec)"},
     {"dismiss_dialog",     py_dismiss_dialog,     METH_VARARGS, "dismiss_dialog(handle)"},
     {"invoke_view_callback", py_invoke_view_callback, METH_VARARGS, "invoke_view_callback(handle)"},
@@ -2751,7 +2807,9 @@ static PyMethodDef ios_bridge_methods[] = {
     {"find_message_view",  py_find_message_view,  METH_VARARGS, "find_message_view(peer_id, msg_id) → view_ptr:int or 0 — must be on main thread"},
     {"snapshot_view",      py_snapshot_view,      METH_VARARGS, "snapshot_view(view_ptr, out_path[, padding=0]) → path or None — must be on main thread"},
     {"snapshot_message",   py_snapshot_message,   METH_VARARGS, "snapshot_message(peer_id, msg_id, out_path[, width=0, callback=None]) — async PNG capture"},
-    {"composite_images",   py_composite_images,   METH_VARARGS, "composite_images(paths, out_path[, gap=2, padding=16, bg='#1a1a1a']) → path — thread-safe"},
+    {"composite_images",   py_composite_images,   METH_VARARGS, "composite_images(paths, out_path[, gap=2, padding=16, bg='#1a1a1a'[, wallpaper_path='']]) → path — thread-safe"},
+    // BRIDGE_VERSION 13 — get_wallpaper_image; show_bottom_sheet gains optional style arg; composite_images gains wallpaper_path
+    {"get_wallpaper_image", py_get_wallpaper_image, METH_VARARGS, "get_wallpaper_image(out_path) → path or None — snapshot chat wallpaper PNG; call on main thread"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -2776,7 +2834,11 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     //   7 — preload_splat; show_splat background decode + cache; dismiss_overlay evicts cache
     //   8 — show_splat gains optional repeat_count and remove_after params
     //   9 — add_image_view, remove_view: plugin-controlled view lifecycle
-    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 12);
+    //  10 — copy_image_to_clipboard, save_image_to_photos, show_share_sheet, send_photo, send_file
+    //  11 — find_message_view, snapshot_view, snapshot_message, composite_images
+    //  12 — show_bottom_sheet, show_bulletin, get_connection_state, register_plugin_entry icon
+    //  13 — get_wallpaper_image; show_bottom_sheet style arg ("glass"); composite_images wallpaper_path
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 13);
     return m;
 }
 
@@ -2899,6 +2961,9 @@ static id py_to_ns(PyObject *obj) {
 
 + (void (^)(long long, int32_t, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)))snapshotMessageHandler { return g_snapshotMessageHandler; }
 + (void)setSnapshotMessageHandler:(void (^)(long long, int32_t, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)))b { g_snapshotMessageHandler = [b copy]; }
+
++ (BOOL (^)(NSString *))getWallpaperImageHandler { return g_getWallpaperImageHandler; }
++ (void)setGetWallpaperImageHandler:(BOOL (^)(NSString *))b { g_getWallpaperImageHandler = [b copy]; }
 
 + (void)prepareUIKitCaches {
     // Must be called on the main thread once before plugins query system info.

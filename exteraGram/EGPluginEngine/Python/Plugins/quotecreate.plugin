@@ -1,7 +1,7 @@
 __id__           = "quotecreate"
 __name__         = "✏️ Quote"
 __os__           = "ios"
-__version__      = "4.0"
+__version__      = "5.0"
 __author__       = "@oodze"
 __description__  = "Pixel-perfect quote images from the message selection toolbar."
 
@@ -27,12 +27,12 @@ def _show_preview(composite_path, peer_id, first_msg_id):
 
     root = w.LinearLayout()
     root.setOrientation("vertical")
-    root._spec["padding"] = [16, 16, 16, 16]
+    root._spec["padding"] = [0, 0, 0, 16]
     root._spec["layout_params"] = {"width": -1, "height": -2, "weight": 0, "margins": [0, 0, 0, 0]}
 
     img_view = w.ImageView()
     img_view.setImagePath(composite_path)
-    img_view._spec["layout_params"] = {"width": -1, "height": 320, "weight": 0, "margins": [0, 0, 0, 16]}
+    img_view._spec["layout_params"] = {"width": -1, "height": 320, "weight": 0, "margins": [0, 0, 0, 12]}
     root.addView(img_view)
 
     def _btn(title, action):
@@ -50,7 +50,7 @@ def _show_preview(composite_path, peer_id, first_msg_id):
     root.addView(_btn("В галерею",   "save"))
     root.addView(_btn("Поделиться",  "share"))
 
-    _sheet_handle[0] = bridge.show_bottom_sheet({"view": root._spec})
+    _sheet_handle[0] = bridge.show_bottom_sheet({"view": root._spec}, "glass")
 
 
 def _handle_action(action, path, peer_id, reply_id):
@@ -82,13 +82,23 @@ def _do_render_multiple(peer_id, message_ids):
         if not ordered:
             bridge.show_bulletin("✏️ Quote", "Не удалось создать изображение")
             return
-        if len(ordered) == 1:
+
+        ts = int(time.time() * 1000)
+
+        # Get wallpaper snapshot from ChatController
+        wp_path = _data_path("wp_{}.png".format(ts))
+        wp = bridge.get_wallpaper_image(wp_path)
+
+        if len(ordered) == 1 and not wp:
             composite = ordered[0]
         else:
-            ts = int(time.time() * 1000)
             composite = bridge.composite_images(
-                ordered, _data_path("composite_{}.png".format(ts)), 2, 0, "#1a1a1a"
+                ordered,
+                _data_path("composite_{}.png".format(ts)),
+                2, 16, "#1a1a1a",
+                wp or ""
             )
+
         bridge.run_on_main_thread(lambda: _show_preview(composite, peer_id, sorted_ids[0]))
 
     for msg_id in sorted_ids:
@@ -124,7 +134,7 @@ def _on_selection_tap(params):
 
 def on_load(plugin):
     bridge.add_tl_hook("plugin.selection_action_tapped", _on_selection_tap)
-    bridge.log(__id__, "on_load complete (v4 — selection toolbar)")
+    bridge.log(__id__, "on_load complete (v5 — wallpaper + glass sheet)")
 
 
 def on_unload(plugin):

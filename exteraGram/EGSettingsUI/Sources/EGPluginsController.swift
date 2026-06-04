@@ -320,23 +320,20 @@ public final class PluginsController {
             guard let ctx = context else { return }
             let pid      = PeerId(peerId)
             let randomId = Int64.random(in: Int64.min...Int64.max)
-            let url      = URL(fileURLWithPath: filePath)
-            let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize.map(Int64.init) ?? nil
-            let resource = LocalFileReferenceMediaResource(
-                localFilePath: filePath, randomId: randomId, size: fileSize)
-            let file = TelegramMediaFile(
-                fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: randomId),
-                partialReference: nil, resource: resource,
-                previewRepresentations: [], videoThumbnails: [],
-                immediateThumbnailData: nil,
-                mimeType: "image/jpeg",
-                size: fileSize, attributes: [],
-                alternativeRepresentations: [])
+            let dims     = UIImage(contentsOfFile: filePath)?.size ?? CGSize(width: 1, height: 1)
+            let resource = LocalFileReferenceMediaResource(localFilePath: filePath, randomId: randomId)
+            let rep      = TelegramMediaImageRepresentation(
+                dimensions: PixelDimensions(dims), resource: resource,
+                progressiveSizes: [], immediateThumbnailData: nil, hasVideo: false, isPersonal: false)
+            let media    = TelegramMediaImage(
+                imageId: MediaId(namespace: Namespaces.Media.LocalImage, id: randomId),
+                representations: [rep], immediateThumbnailData: nil,
+                reference: nil, partialReference: nil, flags: [])
             let _ = enqueueMessages(
                 account: ctx.account, peerId: pid,
                 messages: [.message(
                     text: "", attributes: [], inlineStickers: [:],
-                    mediaReference: .standalone(media: file),
+                    mediaReference: .standalone(media: media),
                     threadId: nil, replyToMessageId: nil, replyToStoryId: nil,
                     localGroupingKey: nil, correlationId: nil,
                     bubbleUpEmojiOrStickersets: []

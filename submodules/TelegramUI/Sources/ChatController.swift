@@ -7783,6 +7783,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         EGPluginHooks.findMessageViewHandler = nil
         EGPluginHooks.snapshotMessageHandler = nil
         EGPluginHooks.quoteSelectionHandler = nil
+        EGPluginHooks.getWallpaperImageHandler = nil
 
         if #available(iOS 18.0, *) {
         } else {
@@ -10776,7 +10777,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                       let item = view.item,
                       item.message.id.id == msgId,
                       item.message.id.peerId.toInt64() == reqPeerId else { return }
-                found = view.view
+                // Use contentNode to exclude the selection checkmark and 42pt shift
+                if let bubble = node as? ChatMessageBubbleItemNode {
+                    found = bubble.mainContextSourceNode.contentNode.view
+                } else {
+                    found = view.view
+                }
             }
             guard let v = found else { return 0 }
             return UInt(bitPattern: Unmanaged.passUnretained(v).toOpaque())
@@ -10791,6 +10797,16 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         EGPluginHooks.quoteSelectionHandler = { peerId, messageIds in
             EGPluginHooks.fireAsync("plugin.selection_action_tapped",
                                     params: ["peer_id": peerId, "message_ids": messageIds.map { Int($0) }])
+        }
+        EGPluginHooks.getWallpaperImageHandler = { [weak self] outPath in
+            guard let self = self else { return false }
+            let bgView = self.chatDisplayNode.backgroundNode.view
+            let size = bgView.bounds.size
+            guard size.width > 0, size.height > 0 else { return false }
+            let renderer = UIGraphicsImageRenderer(size: size)
+            let img = renderer.image { _ in bgView.drawHierarchy(in: bgView.bounds, afterScreenUpdates: false) }
+            guard let data = img.pngData() else { return false }
+            return (try? data.write(to: URL(fileURLWithPath: outPath), options: .atomic)) != nil
         }
     }
 
@@ -10807,7 +10823,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             foundNode = view
         }
         if let node = foundNode {
-            egRenderViewToPNG(node.view, outPath: outPath, completion: completion)
+            // Snapshot contentNode to exclude the selection checkmark and 42pt left shift
+            if let bubble = node as? ChatMessageBubbleItemNode {
+                egRenderViewToPNG(bubble.mainContextSourceNode.contentNode.view, outPath: outPath, completion: completion)
+            } else {
+                egRenderViewToPNG(node.view, outPath: outPath, completion: completion)
+            }
         } else {
             let targetId = MessageId(peerId: targetPeerId, namespace: Namespaces.Message.Cloud, id: msgId)
             let w = renderWidth > 0 ? renderWidth : view.bounds.width
@@ -10877,7 +10898,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             node.frame = CGRect(origin: .zero, size: nodeLayout.size)
             apply(.None, ListViewItemApply(isOnScreen: false), false)
             node.recursivelyEnsureDisplaySynchronously(true)
-            self.egRenderViewToPNG(node.view, outPath: outPath, completion: completion)
+            self.egRenderViewToPNG(node.mainContextSourceNode.contentNode.view, outPath: outPath, completion: completion)
         })
     }
 }

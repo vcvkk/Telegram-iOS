@@ -102,6 +102,9 @@ public final class EGPluginsEngineImpl {
                     completion?(path)
                 }
             }
+            EGPythonBridge.getWallpaperImageHandler = { outPath in
+                return EGPluginHooks.getWallpaperImageHandler?(outPath) ?? false
+            }
             // Wire register_plugin_entry() → EGPluginHooks.registeredMenuItems
             EGPythonBridge.registerMenuItemHandler = { pluginId, entryType, itemId, title, iconName in
                 let item = EGPluginMenuItem(pluginId: pluginId, entryType: entryType,
@@ -152,6 +155,8 @@ public final class EGPluginsEngineImpl {
             EGPythonBridge.sendFileHandler = nil
             EGPythonBridge.findMessageViewHandler = nil
             EGPythonBridge.snapshotMessageHandler = nil
+            EGPythonBridge.getWallpaperImageHandler = nil
+            EGPluginHooks.getWallpaperImageHandler = nil
             EGPythonBridge.registerMenuItemHandler = nil
             EGPluginHooks.registeredMenuItems.removeAll()
             for id in pluginIds {

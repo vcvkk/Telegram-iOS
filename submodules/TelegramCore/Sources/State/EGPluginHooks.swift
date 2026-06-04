@@ -72,6 +72,10 @@ public enum EGPluginHooks {
     /// (peerId, messageIds): peer and sorted selected message IDs. Handler fires plugin.selection_action_tapped.
     public static var quoteSelectionHandler: ((Int64, [Int32]) -> Void)?
 
+    /// Wired by ChatController: snapshots the chat wallpaper background to outPath as PNG.
+    /// Called synchronously on main thread by py_get_wallpaper_image. Returns true on success.
+    public static var getWallpaperImageHandler: ((String) -> Bool)?
+
     /// MessageTextEntity type names to suppress when storing incoming messages.
     /// Plugins insert/remove entries; TelegramCore checks the set at parse time.
     /// Example: "Spoiler" suppresses messageEntitySpoiler entities.
