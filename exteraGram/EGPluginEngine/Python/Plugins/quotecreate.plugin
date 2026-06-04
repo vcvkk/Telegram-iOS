@@ -1,7 +1,7 @@
 __id__           = "quotecreate"
 __name__         = "✏️ Quote"
 __os__           = "ios"
-__version__      = "5.0"
+__version__      = "6.0"
 __author__       = "@oodze"
 __description__  = "Pixel-perfect quote images from the message selection toolbar."
 
@@ -38,7 +38,16 @@ def _show_preview(composite_path, peer_id, first_msg_id):
     def _btn(title, action):
         btn = w.Button()
         btn.setText(title)
-        btn._spec["layout_params"] = {"width": -1, "height": 48, "weight": 0, "margins": [0, 4, 0, 4]}
+        btn._spec["text_size"] = 17
+        btn._spec["typeface"] = "medium"
+        btn._spec["text_color"] = "#FFFFFF"
+        btn._spec["background_drawable"] = {
+            "color": "#FFFFFF18",
+            "corner_radius": 12.0,
+            "stroke_width": 0.33,
+            "stroke_color": "#FFFFFF30"
+        }
+        btn._spec["layout_params"] = {"width": -1, "height": 50, "weight": 0, "margins": [16, 5, 16, 5]}
         btn.setOnClickListener(
             lambda a=action: _handle_action(a, composite_path, peer_id, first_msg_id)
         )
@@ -85,7 +94,6 @@ def _do_render_multiple(peer_id, message_ids):
 
         ts = int(time.time() * 1000)
 
-        # Get wallpaper snapshot from ChatController
         wp_path = _data_path("wp_{}.png".format(ts))
         wp = bridge.get_wallpaper_image(wp_path)
 
@@ -102,22 +110,16 @@ def _do_render_multiple(peer_id, message_ids):
         bridge.run_on_main_thread(lambda: _show_preview(composite, peer_id, sorted_ids[0]))
 
     for msg_id in sorted_ids:
-        view_ptr = bridge.find_message_view(peer_id, msg_id)
-        if view_ptr:
-            ts = int(time.time() * 1000)
-            p = bridge.snapshot_view(view_ptr, _data_path("q_{}_{}.png".format(msg_id, ts)), 0)
-            results[msg_id] = p
-        else:
-            pending[0] += 1
-            out = _data_path("q_{}_{}.png".format(msg_id, int(time.time() * 1000)))
+        pending[0] += 1
+        out = _data_path("q_{}_{}.png".format(msg_id, int(time.time() * 1000)))
 
-            def _cb(path, mid=msg_id):
-                results[mid] = path
-                pending[0] -= 1
-                if pending[0] == 0:
-                    _finish()
+        def _cb(path, mid=msg_id):
+            results[mid] = path
+            pending[0] -= 1
+            if pending[0] == 0:
+                _finish()
 
-            bridge.snapshot_message(peer_id, msg_id, out, 390, _cb)
+        bridge.snapshot_message(peer_id, msg_id, out, 390, _cb)
 
     if pending[0] == 0:
         _finish()
@@ -134,7 +136,7 @@ def _on_selection_tap(params):
 
 def on_load(plugin):
     bridge.add_tl_hook("plugin.selection_action_tapped", _on_selection_tap)
-    bridge.log(__id__, "on_load complete (v5 — wallpaper + glass sheet)")
+    bridge.log(__id__, "on_load complete (v6 — layer.render + styled buttons)")
 
 
 def on_unload(plugin):

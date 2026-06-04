@@ -171,7 +171,8 @@ static NSTextAlignment EG_TextAlignmentFromGravity(NSInteger gravity) {
 // -- Button → UIButton ------------------------------------------------------
 
 + (UIView *)buildButton:(NSDictionary *)spec {
-    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+    BOOL hasBackground = [spec[@"background_drawable"] isKindOfClass:[NSDictionary class]];
+    UIButton *btn = [UIButton buttonWithType:hasBackground ? UIButtonTypeCustom : UIButtonTypeSystem];
     [btn setTitle:(spec[@"text"] ?: @"") forState:UIControlStateNormal];
     CGFloat size = [spec[@"text_size"] doubleValue]; if (size <= 0) size = 14;
     NSString *face = spec[@"typeface"] ?: @"bold";

@@ -698,7 +698,23 @@ static PyObject *py_show_bottom_sheet(PyObject *self, PyObject *args) {
             UISheetPresentationController *sheet = vc.sheetPresentationController;
             if (sheet) {
                 if (useGlass) {
-                    sheet.detents = @[[UISheetPresentationControllerDetent largeDetent]];
+                    if (@available(iOS 16.0, *)) {
+                        UIView *capturedContent = content;
+                        UISheetPresentationControllerDetent *fit = [UISheetPresentationControllerDetent
+                            customDetentWithIdentifier:@"fitContent"
+                            resolver:^CGFloat(id<UISheetPresentationControllerDetentResolvingContext> ctx) {
+                                CGFloat h = [capturedContent systemLayoutSizeFittingSize:
+                                    CGSizeMake(UIScreen.mainScreen.bounds.width, CGFLOAT_MAX)].height;
+                                if (h <= 0) h = 400;
+                                return MIN(h + 72, ctx.maximumDetentValue * 0.9);
+                            }];
+                        sheet.detents = @[fit];
+                    } else {
+                        sheet.detents = @[
+                            [UISheetPresentationControllerDetent mediumDetent],
+                            [UISheetPresentationControllerDetent largeDetent],
+                        ];
+                    }
                     sheet.preferredCornerRadius = 38.0;
                 } else {
                     sheet.detents = @[
@@ -712,6 +728,25 @@ static PyObject *py_show_bottom_sheet(PyObject *self, PyObject *args) {
             }
         } else {
             vc.modalPresentationStyle = UIModalPresentationFormSheet;
+        }
+
+        // Close button for glass style
+        if (useGlass) {
+            UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+            [closeBtn setTitle:@"✕" forState:UIControlStateNormal];
+            closeBtn.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
+            closeBtn.translatesAutoresizingMaskIntoConstraints = NO;
+            [vc.view addSubview:closeBtn];
+            [NSLayoutConstraint activateConstraints:@[
+                [closeBtn.leadingAnchor constraintEqualToAnchor:vc.view.leadingAnchor constant:16],
+                [closeBtn.topAnchor constraintEqualToAnchor:vc.view.safeAreaLayoutGuide.topAnchor constant:12],
+            ]];
+            __weak UIViewController *weakVC = vc;
+            if (@available(iOS 14.0, *)) {
+                [closeBtn addAction:[UIAction actionWithTitle:@"" image:nil identifier:nil
+                    handler:^(UIAction *a){ [weakVC dismissViewControllerAnimated:YES completion:nil]; }]
+                    forControlEvents:UIControlEventTouchUpInside];
+            }
         }
 
         // Dismiss callback (reuse EGDoneTarget — works with swipe-down too)
