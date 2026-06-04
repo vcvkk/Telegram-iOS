@@ -210,6 +210,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     // MARK: exteraGram
     private let cloudButton: GlassButtonView
     private let forwardHideNamesButton: GlassButtonView
+    private let quoteButton: GlassButtonView
     //
     private let shareButton: GlassButtonView
     private let tagButton: GlassButtonView
@@ -265,6 +266,11 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.forwardHideNamesButton.image = generateTintedImage(image: UIImage(bundleImageName: "Avatar/AnonymousSenderIcon"), color: theme.chat.inputPanel.panelControlAccentColor, customSize: CGSize(width: 28.0, height: 28.0))
         self.forwardHideNamesButton.isAccessibilityElement = true
         self.forwardHideNamesButton.accessibilityLabel = "Hide Sender Name"
+
+        self.quoteButton = GlassButtonView()
+        self.quoteButton.image = UIImage(systemName: "quote.bubble")
+        self.quoteButton.isAccessibilityElement = true
+        self.quoteButton.accessibilityLabel = "Quote"
         //
         
         self.shareButton = GlassButtonView()
@@ -291,6 +297,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.view.addSubview(self.forwardButton)
         self.view.addSubview(self.cloudButton) // MARK: exteraGram
         self.view.addSubview(self.forwardHideNamesButton) // MARK: exteraGram
+        self.view.addSubview(self.quoteButton) // MARK: exteraGram
         self.view.addSubview(self.shareButton)
         self.view.addSubview(self.tagButton)
         self.view.addSubview(self.tagEditButton)
@@ -302,6 +309,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         // MARK: exteraGram
         self.cloudButton.isImplicitlyDisabled = true
         self.forwardHideNamesButton.isImplicitlyDisabled = true
+        self.quoteButton.isImplicitlyDisabled = true
         //
         
         self.deleteButton.button.addTarget(self, action: #selector(self.deleteButtonPressed), for: .touchUpInside)
@@ -310,6 +318,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         // MARK: exteraGram
         self.cloudButton.button.addTarget(self, action: #selector(self.cloudButtonPressed), for: .touchUpInside)
         self.forwardHideNamesButton.button.addTarget(self, action: #selector(self.forwardHideNamesButtonPressed), for: .touchUpInside)
+        self.quoteButton.button.addTarget(self, action: #selector(self.quoteButtonPressed), for: .touchUpInside)
         //
         self.shareButton.button.addTarget(self, action: #selector(self.shareButtonPressed), for: .touchUpInside)
         self.tagButton.button.addTarget(self, action: #selector(self.tagButtonPressed), for: .touchUpInside)
@@ -325,6 +334,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         // MARK: exteraGram
         self.cloudButton.isEnabled = self.forwardButton.isEnabled
         self.forwardHideNamesButton.isEnabled = self.forwardButton.isEnabled
+        self.quoteButton.isEnabled = self.forwardButton.isEnabled
         //
         
         if self.selectedMessages.isEmpty {
@@ -393,7 +403,12 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.interfaceInteraction?.forwardSelectedMessages("hideNames")
         }
     }
-    
+
+    @objc private func quoteButtonPressed() {
+        self.interfaceInteraction?.forwardSelectedMessages("quote")
+    }
+    //
+
     @objc private func shareButtonPressed() {
         if let _ = self.presentationInterfaceState?.renderedPeer?.peer as? TelegramSecretChat {
             return
@@ -548,6 +563,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             // MARK: exteraGram
             self.cloudButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
             self.forwardHideNamesButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
+            self.quoteButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
             
             if self.peerMedia {
                 self.deleteButton.isEnabled = !actions.options.intersection([.deleteLocally, .deleteGlobally]).isEmpty
@@ -590,6 +606,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             // MARK: exteraGram
             self.cloudButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
             self.forwardHideNamesButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
+            self.quoteButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
         }
         
         if self.reportButton.isHidden || (self.peerMedia && self.deleteButton.isHidden && self.reportButton.isHidden) {
@@ -675,6 +692,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.shareButton,
             self.cloudButton,
             self.forwardHideNamesButton,
+            self.quoteButton,
             self.forwardButton
         ].filter { !$0.isHidden }
         //

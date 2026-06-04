@@ -1,11 +1,12 @@
 __id__           = "quotecreate"
 __name__         = "✏️ Quote"
 __os__           = "ios"
-__version__      = "3.0"
+__version__      = "4.0"
 __author__       = "@oodze"
-__description__  = "Pixel-perfect quote images. Tap · Send as photo/file · Copy · Save · Share."
+__description__  = "Pixel-perfect quote images from the message selection toolbar."
 
 import _ios_bridge as bridge
+import eg_widgets as w
 import os
 import time
 
@@ -16,44 +17,114 @@ def _data_path(filename):
     return os.path.join(d, filename)
 
 
-def _show_preview(image_path, peer_id, message_id):
-    if not image_path or not os.path.exists(image_path):
+_sheet_handle = [None]
+
+
+def _show_preview(composite_path, peer_id, first_msg_id):
+    if not composite_path or not os.path.exists(composite_path):
         bridge.show_bulletin("✏️ Quote", "Не удалось создать изображение")
         return
-    bridge.show_quote_preview(image_path, peer_id, message_id)
+
+    root = w.LinearLayout()
+    root.setOrientation("vertical")
+    root._spec["padding"] = [16, 16, 16, 16]
+    root._spec["layout_params"] = {"width": -1, "height": -2, "weight": 0, "margins": [0, 0, 0, 0]}
+
+    img_view = w.ImageView()
+    img_view.setImagePath(composite_path)
+    img_view._spec["layout_params"] = {"width": -1, "height": 320, "weight": 0, "margins": [0, 0, 0, 16]}
+    root.addView(img_view)
+
+    def _btn(title, action):
+        btn = w.Button()
+        btn.setText(title)
+        btn._spec["layout_params"] = {"width": -1, "height": 48, "weight": 0, "margins": [0, 4, 0, 4]}
+        btn.setOnClickListener(
+            lambda a=action: _handle_action(a, composite_path, peer_id, first_msg_id)
+        )
+        return btn
+
+    root.addView(_btn("Как фото",    "send_photo"))
+    root.addView(_btn("Как файл",    "send_file"))
+    root.addView(_btn("Копировать",  "copy"))
+    root.addView(_btn("В галерею",   "save"))
+    root.addView(_btn("Поделиться",  "share"))
+
+    _sheet_handle[0] = bridge.show_bottom_sheet({"view": root._spec})
 
 
-def _do_render(peer_id, msg_id):
-    out_path = _data_path("quote_{}.png".format(int(time.time() * 1000)))
+def _handle_action(action, path, peer_id, reply_id):
+    h = _sheet_handle[0]
+    if h:
+        bridge.dismiss_dialog(h)
+        _sheet_handle[0] = None
+    if action == "send_photo":
+        bridge.send_photo(peer_id, path, reply_id)
+    elif action == "send_file":
+        bridge.send_file(peer_id, path, "quote.png", reply_id)
+    elif action == "copy":
+        bridge.copy_image_to_clipboard(path)
+    elif action == "save":
+        bridge.save_image_to_photos(path, lambda ok: (
+            bridge.show_bulletin("✏️ Quote", "Не удалось сохранить") if not ok else None
+        ))
+    elif action == "share":
+        bridge.show_share_sheet(path)
 
-    def on_main():
+
+def _do_render_multiple(peer_id, message_ids):
+    sorted_ids = sorted(message_ids)
+    results = {}
+    pending = [0]
+
+    def _finish():
+        ordered = [results[mid] for mid in sorted_ids if results.get(mid)]
+        if not ordered:
+            bridge.show_bulletin("✏️ Quote", "Не удалось создать изображение")
+            return
+        if len(ordered) == 1:
+            composite = ordered[0]
+        else:
+            ts = int(time.time() * 1000)
+            composite = bridge.composite_images(
+                ordered, _data_path("composite_{}.png".format(ts)), 2, 0, "#1a1a1a"
+            )
+        bridge.run_on_main_thread(lambda: _show_preview(composite, peer_id, sorted_ids[0]))
+
+    for msg_id in sorted_ids:
         view_ptr = bridge.find_message_view(peer_id, msg_id)
         if view_ptr:
-            path = bridge.snapshot_view(view_ptr, out_path, 0)
-            _show_preview(path, peer_id, msg_id)
+            ts = int(time.time() * 1000)
+            p = bridge.snapshot_view(view_ptr, _data_path("q_{}_{}.png".format(msg_id, ts)), 0)
+            results[msg_id] = p
         else:
-            def _cb(path):
-                bridge.run_on_main_thread(lambda: _show_preview(path, peer_id, msg_id))
-            bridge.snapshot_message(peer_id, msg_id, out_path, 0, _cb)
+            pending[0] += 1
+            out = _data_path("q_{}_{}.png".format(msg_id, int(time.time() * 1000)))
 
-    bridge.run_on_main_thread(on_main)
+            def _cb(path, mid=msg_id):
+                results[mid] = path
+                pending[0] -= 1
+                if pending[0] == 0:
+                    _finish()
+
+            bridge.snapshot_message(peer_id, msg_id, out, 390, _cb)
+
+    if pending[0] == 0:
+        _finish()
 
 
-def _on_menu_tap(params):
-    if params.get("entry_type") != "context_menu" or params.get("item_id") != "quote":
+def _on_selection_tap(params):
+    peer_id     = params.get("peer_id", 0)
+    message_ids = params.get("message_ids", [])
+    if not peer_id or not message_ids:
+        bridge.show_bulletin("✏️ Quote", "Нет данных сообщений")
         return
-    peer_id    = params.get("peer_id", 0)
-    message_id = params.get("message_id", 0)
-    if not peer_id or not message_id:
-        bridge.show_bulletin("✏️ Quote", "Нет данных сообщения")
-        return
-    _do_render(peer_id, message_id)
+    bridge.run_on_main_thread(lambda: _do_render_multiple(peer_id, message_ids))
 
 
 def on_load(plugin):
-    bridge.register_plugin_entry(__id__, "context_menu", "quote", "✏️ Цитата")
-    bridge.add_tl_hook("plugin.menu_item_tapped", _on_menu_tap)
-    bridge.log(__id__, "on_load complete (v3 — native sheet)")
+    bridge.add_tl_hook("plugin.selection_action_tapped", _on_selection_tap)
+    bridge.log(__id__, "on_load complete (v4 — selection toolbar)")
 
 
 def on_unload(plugin):

@@ -102,9 +102,6 @@ public final class EGPluginsEngineImpl {
                     completion?(path)
                 }
             }
-            EGPythonBridge.showQuotePreviewHandler = { imagePath, peerId, replyMsgId in
-                EGPluginHooks.showQuotePreviewHandler?(imagePath, peerId, replyMsgId)
-            }
             // Wire register_plugin_entry() → EGPluginHooks.registeredMenuItems
             EGPythonBridge.registerMenuItemHandler = { pluginId, entryType, itemId, title, iconName in
                 let item = EGPluginMenuItem(pluginId: pluginId, entryType: entryType,
@@ -155,7 +152,6 @@ public final class EGPluginsEngineImpl {
             EGPythonBridge.sendFileHandler = nil
             EGPythonBridge.findMessageViewHandler = nil
             EGPythonBridge.snapshotMessageHandler = nil
-            EGPythonBridge.showQuotePreviewHandler = nil
             EGPythonBridge.registerMenuItemHandler = nil
             EGPluginHooks.registeredMenuItems.removeAll()
             for id in pluginIds {

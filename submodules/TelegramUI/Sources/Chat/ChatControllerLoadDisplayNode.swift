@@ -2031,6 +2031,8 @@ extension ChatControllerImpl {
                             strongSelf.forwardMessagesToCloud(messageIds: forwardMessageIds, removeNames: false, openCloud: false, resetCurrent: true)
                         case "hideNames":
                             strongSelf.forwardMessages(forceHideNames: true, messageIds: forwardMessageIds, options: ChatInterfaceForwardOptionsState(hideNames: true, hideCaptions: false, unhideNamesOnCaptionChange: false))
+                        case "quote":
+                            EGPluginHooks.quoteSelectionHandler?(forwardMessageIds)
                         default:
                             strongSelf.forwardMessages(messageIds: forwardMessageIds)
                         }

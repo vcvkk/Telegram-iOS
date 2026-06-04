@@ -97,8 +97,6 @@ static void (^g_sendFileHandler)(long long, NSString *, NSString *, NSNumber * _
 static uint64_t (^g_findMessageViewHandler)(long long, int32_t) = nil;
 // Wired by EGPluginsEngineImpl: async pixel-perfect snapshot of message bubble to file
 static void (^g_snapshotMessageHandler)(long long, int32_t, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)) = nil;
-// Wired by EGPluginsEngineImpl: present native glass-style quote preview sheet
-static void (^g_showQuotePreviewHandler)(NSString *, long long, int32_t) = nil;
 
 // ---------------------------------------------------------------------------
 // Overlay system storage (BRIDGE_VERSION 4)
@@ -2685,21 +2683,6 @@ static PyObject *py_composite_images(PyObject *self, PyObject *args) {
     return PyUnicode_FromString(outPath);
 }
 
-// BRIDGE_VERSION 12 — native glass-style quote preview sheet
-// show_quote_preview(image_path, peer_id[, reply_msg_id=0])
-// Calls g_showQuotePreviewHandler on main thread → EGPluginHooks → ChatController → EGQuotePreviewScreen.
-static PyObject *py_show_quote_preview(PyObject *self, PyObject *args) {
-    const char *imagePath = "";
-    long long peerId = 0;
-    int replyMsgId = 0;
-    if (!PyArg_ParseTuple(args, "sL|i", &imagePath, &peerId, &replyMsgId)) return NULL;
-    NSString *nsPath = [NSString stringWithUTF8String:imagePath];
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (g_showQuotePreviewHandler) g_showQuotePreviewHandler(nsPath, peerId, (int32_t)replyMsgId);
-    });
-    Py_RETURN_NONE;
-}
-
 static PyMethodDef ios_bridge_methods[] = {
     {"add_tl_hook",        py_add_tl_hook,        METH_VARARGS, "add_tl_hook(tl_type, callback)"},
     {"has_hook",           py_has_hook,           METH_VARARGS, "has_hook(tl_type) -> bool"},
@@ -2769,8 +2752,6 @@ static PyMethodDef ios_bridge_methods[] = {
     {"snapshot_view",      py_snapshot_view,      METH_VARARGS, "snapshot_view(view_ptr, out_path[, padding=0]) → path or None — must be on main thread"},
     {"snapshot_message",   py_snapshot_message,   METH_VARARGS, "snapshot_message(peer_id, msg_id, out_path[, width=0, callback=None]) — async PNG capture"},
     {"composite_images",   py_composite_images,   METH_VARARGS, "composite_images(paths, out_path[, gap=2, padding=16, bg='#1a1a1a']) → path — thread-safe"},
-    // BRIDGE_VERSION 12 — native Telegram glass-style quote preview sheet
-    {"show_quote_preview", py_show_quote_preview, METH_VARARGS, "show_quote_preview(image_path, peer_id, reply_msg_id=0) — present EGQuotePreviewScreen"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -2918,8 +2899,6 @@ static id py_to_ns(PyObject *obj) {
 
 + (void (^)(long long, int32_t, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)))snapshotMessageHandler { return g_snapshotMessageHandler; }
 + (void)setSnapshotMessageHandler:(void (^)(long long, int32_t, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)))b { g_snapshotMessageHandler = [b copy]; }
-+ (void (^)(NSString *, long long, int32_t))showQuotePreviewHandler { return g_showQuotePreviewHandler; }
-+ (void)setShowQuotePreviewHandler:(void (^)(NSString *, long long, int32_t))b { g_showQuotePreviewHandler = [b copy]; }
 
 + (void)prepareUIKitCaches {
     // Must be called on the main thread once before plugins query system info.

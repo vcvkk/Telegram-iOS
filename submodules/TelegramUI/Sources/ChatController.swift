@@ -7782,7 +7782,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         EGPluginHooks.fireAsync("chat.closed", params: self.chatLocation.peerId.map { ["peer_id": $0.id._internalGetInt64Value()] } ?? [:])
         EGPluginHooks.findMessageViewHandler = nil
         EGPluginHooks.snapshotMessageHandler = nil
-        EGPluginHooks.showQuotePreviewHandler = nil
+        EGPluginHooks.quoteSelectionHandler = nil
 
         if #available(iOS 18.0, *) {
         } else {
@@ -10788,18 +10788,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                         renderWidth: renderWidth, outPath: outPath, completion: completion)
             }
         }
-        EGPluginHooks.showQuotePreviewHandler = { [weak self] imagePath, pId, replyMsgId in
-            guard let self else { return }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                let screen = EGQuotePreviewScreen(
-                    imagePath: imagePath,
-                    peerId: pId,
-                    replyMsgId: replyMsgId,
-                    context: self.context
-                )
-                self.present(screen, in: .window(.root))
-            }
+        EGPluginHooks.quoteSelectionHandler = { messageIds in
+            guard let first = messageIds.first else { return }
+            let pId = first.peerId.toInt64()
+            let ids = messageIds.map { Int($0.id) }
+            EGPluginHooks.fireAsync("plugin.selection_action_tapped",
+                                    params: ["peer_id": pId, "message_ids": ids])
         }
     }
 
