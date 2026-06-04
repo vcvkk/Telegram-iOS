@@ -702,9 +702,9 @@ static PyObject *py_show_bottom_sheet(PyObject *self, PyObject *args) {
                         UIView *capturedContent = content;
                         UISheetPresentationControllerDetent *fit = [UISheetPresentationControllerDetent
                             customDetentWithIdentifier:@"fitContent"
-                            resolver:^CGFloat(id<UISheetPresentationControllerDetentResolvingContext> ctx) {
+                            resolver:^CGFloat(id<UISheetPresentationControllerDetentResolutionContext> ctx) {
                                 CGFloat h = [capturedContent systemLayoutSizeFittingSize:
-                                    CGSizeMake(UIScreen.mainScreen.bounds.width, CGFLOAT_MAX)].height;
+                                    CGSizeMake(UIScreen.mainScreen.bounds.size.width, CGFLOAT_MAX)].height;
                                 if (h <= 0) h = 400;
                                 return MIN(h + 72, ctx.maximumDetentValue * 0.9);
                             }];
