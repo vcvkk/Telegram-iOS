@@ -10788,12 +10788,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                         renderWidth: renderWidth, outPath: outPath, completion: completion)
             }
         }
-        EGPluginHooks.quoteSelectionHandler = { messageIds in
-            guard let first = messageIds.first else { return }
-            let pId = first.peerId.toInt64()
-            let ids = messageIds.map { Int($0.id) }
+        EGPluginHooks.quoteSelectionHandler = { peerId, messageIds in
             EGPluginHooks.fireAsync("plugin.selection_action_tapped",
-                                    params: ["peer_id": pId, "message_ids": ids])
+                                    params: ["peer_id": peerId, "message_ids": messageIds.map { Int($0) }])
         }
     }
 

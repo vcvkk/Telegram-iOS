@@ -69,8 +69,8 @@ public enum EGPluginHooks {
     public static var snapshotMessageHandler: ((Int64, Int32, CGFloat, String, @escaping (String?) -> Void) -> Void)?
 
     /// Wired by ChatController: called when the quote toolbar button is tapped in selection mode.
-    /// messageIds: sorted selected MessageIds. Handler fires plugin.selection_action_tapped TL hook.
-    public static var quoteSelectionHandler: (([MessageId]) -> Void)?
+    /// (peerId, messageIds): peer and sorted selected message IDs. Handler fires plugin.selection_action_tapped.
+    public static var quoteSelectionHandler: ((Int64, [Int32]) -> Void)?
 
     /// MessageTextEntity type names to suppress when storing incoming messages.
     /// Plugins insert/remove entries; TelegramCore checks the set at parse time.

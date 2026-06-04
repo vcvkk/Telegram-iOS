@@ -2032,7 +2032,11 @@ extension ChatControllerImpl {
                         case "hideNames":
                             strongSelf.forwardMessages(forceHideNames: true, messageIds: forwardMessageIds, options: ChatInterfaceForwardOptionsState(hideNames: true, hideCaptions: false, unhideNamesOnCaptionChange: false))
                         case "quote":
-                            EGPluginHooks.quoteSelectionHandler?(forwardMessageIds)
+                            if let firstId = forwardMessageIds.first {
+                                let peerId = firstId.peerId.toInt64()
+                                let msgIds = forwardMessageIds.map { Int32($0.id) }
+                                EGPluginHooks.quoteSelectionHandler?(peerId, msgIds)
+                            }
                         default:
                             strongSelf.forwardMessages(messageIds: forwardMessageIds)
                         }
