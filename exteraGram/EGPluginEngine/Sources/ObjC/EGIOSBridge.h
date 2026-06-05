@@ -114,9 +114,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (class, nonatomic, copy, nullable) NSDictionary * _Nonnull (^getMessageInfoHandler)(long long peerId, int32_t msgId);
 
 /// Wired by EGPluginsEngineImpl: present a native Telegram sheet hosting the given content view.
-/// The argument is the raw UIView pointer (uintptr_t). Returns YES if presented; on NO the caller
-/// falls back to the UIKit sheet. Must be called on the main thread.
-@property (class, nonatomic, copy, nullable) BOOL (^presentNativeSheetHandler)(uintptr_t contentViewPtr);
+/// The argument is the raw UIView pointer (uintptr_t). Returns the presented screen's pointer
+/// (uintptr_t) for later dismissal, or 0 if not presented (caller falls back to UIKit).
+/// Must be called on the main thread.
+@property (class, nonatomic, copy, nullable) uintptr_t (^presentNativeSheetHandler)(uintptr_t contentViewPtr);
 
 /// Must be called on the main thread before any plugin uses get_system_info / get_device_info.
 /// Enables UIDevice battery monitoring and caches immutable UIScreen dimensions so that

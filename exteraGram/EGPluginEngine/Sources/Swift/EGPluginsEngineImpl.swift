@@ -117,7 +117,7 @@ public final class EGPluginsEngineImpl {
                 return info as NSDictionary
             }
             EGPythonBridge.presentNativeSheetHandler = { ptr in
-                return EGPluginHooks.presentNativeSheetHandler?(UInt(ptr)) ?? false
+                return UInt(EGPluginHooks.presentNativeSheetHandler?(UInt(ptr)) ?? 0)
             }
             // Wire register_plugin_entry() → EGPluginHooks.registeredMenuItems
             EGPythonBridge.registerMenuItemHandler = { pluginId, entryType, itemId, title, iconName in

@@ -44,6 +44,9 @@ import RaiseToListen
 import UrlHandling
 import AvatarNode
 import AppBundle
+import ComponentFlow
+import ViewControllerComponent
+import SheetComponent
 import LocalizedPeerData
 import PhoneNumberFormat
 import SettingsUI
@@ -10809,6 +10812,17 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             guard let self = self, reqPeerId == peerId else { return [:] }
             return self.egGetMessageInfo(peerId: reqPeerId, msgId: msgId)
         }
+        EGPluginHooks.presentNativeSheetHandler = { [weak self] contentPtr in
+            guard let self = self else { return 0 }
+            guard let raw = UnsafeRawPointer(bitPattern: contentPtr) else { return 0 }
+            let contentView = Unmanaged<UIView>.fromOpaque(raw).takeUnretainedValue()
+            guard let navigationController = self.navigationController as? NavigationController else { return 0 }
+            let screen = EGNativeSheetScreen(context: self.context,
+                                             contentView: contentView,
+                                             theme: self.presentationData.theme)
+            navigationController.pushViewController(screen)
+            return UInt(bitPattern: Unmanaged.passUnretained(screen).toOpaque())
+        }
     }
 
     /// Snapshot the live chat wallpaper background to a UIImage.
@@ -10956,5 +10970,180 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             node.recursivelyEnsureDisplaySynchronously(true)
             self.egRenderViewToPNG(node.view, outPath: outPath, completion: completion)
         })
+    }
+}
+
+// MARK: exteraGram — generic native bottom sheet hosting a plugin-rendered UIView
+
+/// Hosts an externally-built UIView inside a native sheet, with a glass close button at top-left.
+private final class EGNativeSheetContentComponent: Component {
+    typealias EnvironmentType = ViewControllerComponentContainer.Environment
+
+    let contentView: UIView
+    let theme: PresentationTheme
+    let dismiss: () -> Void
+
+    init(contentView: UIView, theme: PresentationTheme, dismiss: @escaping () -> Void) {
+        self.contentView = contentView
+        self.theme = theme
+        self.dismiss = dismiss
+    }
+
+    static func ==(lhs: EGNativeSheetContentComponent, rhs: EGNativeSheetContentComponent) -> Bool {
+        return lhs.contentView === rhs.contentView
+    }
+
+    final class View: UIView {
+        private var hostedView: UIView?
+        private var closeButton: UIButton?
+        private var dismissAction: (() -> Void)?
+
+        @objc private func closePressed() {
+            self.dismissAction?()
+        }
+
+        func update(component: EGNativeSheetContentComponent, availableSize: CGSize, transition: ComponentTransition) -> CGSize {
+            self.dismissAction = component.dismiss
+
+            let closeDiameter: CGFloat = 30.0
+            let closeButton: UIButton
+            if let existing = self.closeButton {
+                closeButton = existing
+            } else {
+                let button = UIButton(type: .system)
+                let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+                blur.isUserInteractionEnabled = false
+                blur.clipsToBounds = true
+                blur.layer.cornerRadius = closeDiameter / 2.0
+                button.insertSubview(blur, at: 0)
+                button.setImage(UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12.0, weight: .semibold)), for: .normal)
+                button.addTarget(self, action: #selector(self.closePressed), for: .touchUpInside)
+                self.addSubview(button)
+                self.closeButton = button
+                closeButton = button
+            }
+            closeButton.tintColor = component.theme.list.itemSecondaryTextColor
+            closeButton.frame = CGRect(x: 16.0, y: 14.0, width: closeDiameter, height: closeDiameter)
+            if let blur = closeButton.subviews.first as? UIVisualEffectView {
+                blur.frame = CGRect(origin: .zero, size: CGSize(width: closeDiameter, height: closeDiameter))
+            }
+
+            if self.hostedView !== component.contentView {
+                self.hostedView?.removeFromSuperview()
+                self.addSubview(component.contentView)
+                self.hostedView = component.contentView
+            }
+
+            let topInset: CGFloat = 56.0
+            let contentWidth = availableSize.width
+            let fitting = component.contentView.systemLayoutSizeFitting(
+                CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                withHorizontalFittingPriority: .required,
+                verticalFittingPriority: .fittingSizeLevel)
+            let contentHeight = max(1.0, fitting.height)
+            component.contentView.frame = CGRect(x: 0.0, y: topInset, width: contentWidth, height: contentHeight)
+
+            return CGSize(width: availableSize.width, height: topInset + contentHeight)
+        }
+    }
+
+    func makeView() -> View {
+        return View()
+    }
+
+    func update(view: View, availableSize: CGSize, state: EmptyComponentState, environment: Environment<EnvironmentType>, transition: ComponentTransition) -> CGSize {
+        return view.update(component: self, availableSize: availableSize, transition: transition)
+    }
+}
+
+private final class EGNativeSheetWrapperComponent: CombinedComponent {
+    typealias EnvironmentType = ViewControllerComponentContainer.Environment
+
+    let contentView: UIView
+    let theme: PresentationTheme
+
+    init(contentView: UIView, theme: PresentationTheme) {
+        self.contentView = contentView
+        self.theme = theme
+    }
+
+    static func ==(lhs: EGNativeSheetWrapperComponent, rhs: EGNativeSheetWrapperComponent) -> Bool {
+        return lhs.contentView === rhs.contentView
+    }
+
+    static var body: Body {
+        let sheet = Child(SheetComponent<EnvironmentType>.self)
+        let animateOut = StoredActionSlot(Action<Void>.self)
+
+        return { context in
+            let env = context.environment[EnvironmentType.self]
+            let controller = env.controller
+
+            let dismiss: (Bool) -> Void = { animated in
+                if animated {
+                    animateOut.invoke(Action { _ in
+                        (controller() as? EGNativeSheetScreen)?.dismiss(completion: nil)
+                    })
+                } else {
+                    (controller() as? EGNativeSheetScreen)?.dismiss(completion: nil)
+                }
+            }
+
+            let sheet = sheet.update(
+                component: SheetComponent<EnvironmentType>(
+                    content: AnyComponent<EnvironmentType>(EGNativeSheetContentComponent(
+                        contentView: context.component.contentView,
+                        theme: context.component.theme,
+                        dismiss: { dismiss(true) }
+                    )),
+                    style: .glass,
+                    backgroundColor: .color(context.component.theme.actionSheet.opaqueItemBackgroundColor),
+                    followContentSizeChanges: true,
+                    clipsContent: true,
+                    animateOut: animateOut
+                ),
+                environment: {
+                    env
+                    SheetComponentEnvironment(
+                        metrics: env.metrics,
+                        deviceMetrics: env.deviceMetrics,
+                        isDisplaying: env.value.isVisible,
+                        isCentered: env.metrics.widthClass == .regular,
+                        hasInputHeight: !env.inputHeight.isZero,
+                        regularMetricsSize: CGSize(width: 430.0, height: 900.0),
+                        dismiss: { animated in dismiss(animated) }
+                    )
+                },
+                availableSize: context.availableSize,
+                transition: context.transition
+            )
+            context.add(sheet
+                .position(CGPoint(x: context.availableSize.width / 2.0, y: context.availableSize.height / 2.0))
+            )
+
+            return context.availableSize
+        }
+    }
+}
+
+final class EGNativeSheetScreen: ViewControllerComponentContainer {
+    init(context: AccountContext, contentView: UIView, theme: PresentationTheme) {
+        super.init(
+            context: context,
+            component: EGNativeSheetWrapperComponent(contentView: contentView, theme: theme),
+            navigationBarAppearance: .none,
+            statusBarStyle: .ignore,
+            theme: .default
+        )
+        self.navigationPresentation = .flatModal
+    }
+
+    required init(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    /// Invoked by py_dismiss_dialog (via performSelector) so plugins can close the sheet.
+    @objc func egDismiss() {
+        self.dismiss(completion: nil)
     }
 }

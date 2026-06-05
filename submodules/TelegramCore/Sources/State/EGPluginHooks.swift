@@ -85,9 +85,9 @@ public enum EGPluginHooks {
     public static var getMessageInfoHandler: ((Int64, Int32) -> [String: Any])?
 
     /// Wired by ChatController: present a native Telegram sheet hosting the given content view.
-    /// The argument is the raw UIView pointer (as UInt, same convention as findMessageViewHandler).
-    /// Returns true if presented (ObjC falls back to a UIKit sheet when this is nil/false).
-    public static var presentNativeSheetHandler: ((UInt) -> Bool)?
+    /// The argument is the raw UIView pointer (as UInt). Returns the presented screen's pointer
+    /// (as UInt) so ObjC can dismiss it later, or 0 if not presented (ObjC then falls back to UIKit).
+    public static var presentNativeSheetHandler: ((UInt) -> UInt)?
 
     /// MessageTextEntity type names to suppress when storing incoming messages.
     /// Plugins insert/remove entries; TelegramCore checks the set at parse time.

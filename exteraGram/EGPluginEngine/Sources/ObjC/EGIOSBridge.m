@@ -15,6 +15,7 @@
 #import <sys/time.h>
 #import <os/log.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <ZipArchive/ZipArchive.h>
 #import <SystemConfiguration/SystemConfiguration.h>
 
@@ -103,8 +104,8 @@ static BOOL (^g_getWallpaperImageHandler)(NSString *) = nil;
 static void (^g_getPeerAvatarHandler)(long long, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)) = nil;
 // Wired by ChatController: return basic metadata for a message
 static NSDictionary * (^g_getMessageInfoHandler)(long long, int32_t) = nil;
-// Wired by ChatController: present a native Telegram sheet hosting a content view
-static BOOL (^g_presentNativeSheetHandler)(uintptr_t) = nil;
+// Wired by ChatController: present a native Telegram sheet hosting a content view (returns screen ptr)
+static uintptr_t (^g_presentNativeSheetHandler)(uintptr_t) = nil;
 
 // ---------------------------------------------------------------------------
 // Overlay system storage (BRIDGE_VERSION 4)
@@ -643,14 +644,16 @@ static PyObject *py_show_dialog(PyObject *self, PyObject *args) {
 // Presents a scrollable bottom sheet.  spec has the same shape as show_dialog
 // (keys: "view", "on_dismiss_id").  On iOS 15+ uses UISheetPresentationController
 // with a drag handle; falls back to FormSheet on older OS.
-// style: "system" (default, 20pt radius, white bg, medium+large detents)
-//        "glass"  (38pt radius, action-sheet bg, large detent only — matches Telegram sheet style)
+// style: "native" (default — native Telegram glass sheet, opaque, content-height, ✕ close button)
+//        "system" (20pt radius, system bg, medium+large detents — UIKit fallback)
+//        "glass"  (38pt radius, action-sheet bg — UIKit fallback)
 // dismiss_dialog(handle) works for bottom sheets too.
 static PyObject *py_show_bottom_sheet(PyObject *self, PyObject *args) {
     PyObject *specObj = NULL;
-    const char *style = "system";
+    const char *style = "native";
     if (!PyArg_ParseTuple(args, "O|s", &specObj, &style)) return NULL;
     BOOL useGlass = (strcmp(style, "glass") == 0);
+    BOOL useNative = (strcmp(style, "native") == 0);
     id ns = py_to_ns(specObj);
     if (![ns isKindOfClass:[NSDictionary class]]) {
         PyErr_SetString(PyExc_TypeError, "show_bottom_sheet: spec must be a dict");
@@ -667,6 +670,20 @@ static PyObject *py_show_bottom_sheet(PyObject *self, PyObject *args) {
         if (!content) {
             EGPluginDebugLog_appendCStr("BottomSheet", "show_bottom_sheet: empty content view");
             return;
+        }
+
+        // Native Telegram sheet (default): hand the content view to ChatController.
+        if (useNative && g_presentNativeSheetHandler) {
+            uintptr_t screenPtr = g_presentNativeSheetHandler((uintptr_t)content);
+            if (screenPtr != 0) {
+                g_dialogs[handle] = (__bridge id)(void *)screenPtr;
+                EGPluginDebugLog_appendCStr("BottomSheet", "show_bottom_sheet: native sheet presented");
+                return;
+            }
+            // Handler unavailable (no active chat) — fall back to the UIKit glass sheet.
+            useGlass = YES;
+        } else if (useNative) {
+            useGlass = YES;
         }
 
         UIViewController *vc = [UIViewController new];
@@ -837,9 +854,14 @@ static PyObject *py_dismiss_dialog(PyObject *self, PyObject *args) {
     if (!PyArg_ParseTuple(args, "s", &handle)) return NULL;
     NSString *h = [NSString stringWithUTF8String:handle];
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *vc = g_dialogs[h];
+        id vc = g_dialogs[h];
         if (vc) {
-            [vc dismissViewControllerAnimated:YES completion:nil];
+            // Native EGNativeSheetScreen exposes -egDismiss; UIKit sheets use the standard path.
+            if ([vc respondsToSelector:@selector(egDismiss)]) {
+                ((void (*)(id, SEL))objc_msgSend)(vc, @selector(egDismiss));
+            } else if ([vc isKindOfClass:[UIViewController class]]) {
+                [(UIViewController *)vc dismissViewControllerAnimated:YES completion:nil];
+            }
             [g_dialogs removeObjectForKey:h];
         }
     });
@@ -3102,8 +3124,8 @@ static id py_to_ns(PyObject *obj) {
 + (NSDictionary * (^)(long long, int32_t))getMessageInfoHandler { return g_getMessageInfoHandler; }
 + (void)setGetMessageInfoHandler:(NSDictionary * (^)(long long, int32_t))b { g_getMessageInfoHandler = [b copy]; }
 
-+ (BOOL (^)(uintptr_t))presentNativeSheetHandler { return g_presentNativeSheetHandler; }
-+ (void)setPresentNativeSheetHandler:(BOOL (^)(uintptr_t))b { g_presentNativeSheetHandler = [b copy]; }
++ (uintptr_t (^)(uintptr_t))presentNativeSheetHandler { return g_presentNativeSheetHandler; }
++ (void)setPresentNativeSheetHandler:(uintptr_t (^)(uintptr_t))b { g_presentNativeSheetHandler = [b copy]; }
 
 + (void)prepareUIKitCaches {
     // Must be called on the main thread once before plugins query system info.

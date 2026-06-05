@@ -60,7 +60,7 @@ def _show_preview(composite_path, peer_id, first_msg_id):
     root.addView(_btn("В галерею",   "save"))
     root.addView(_btn("Поделиться",  "share"))
 
-    _sheet_handle[0] = bridge.show_bottom_sheet({"view": root._spec}, "glass")
+    _sheet_handle[0] = bridge.show_bottom_sheet({"view": root._spec})
 
 
 def _handle_action(action, path, peer_id, reply_id):
