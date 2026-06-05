@@ -84,6 +84,12 @@ public enum EGPluginHooks {
     /// (author_id: Int64, is_outgoing: Bool, sender_name: String, timestamp: Int). Main thread.
     public static var getMessageInfoHandler: ((Int64, Int32) -> [String: Any])?
 
+    /// Wired by ChatController: return full data for a message as a rich dict
+    /// (id, peer_id, timestamp, text, is_outgoing, author_id, sender_name, media_type,
+    ///  reply_to_message_id, forward_from_peer_id, views, forwards, reactions, entities, …).
+    /// Returns nil if the message is not found in the live history node. Main thread.
+    public static var getMessageDataHandler: ((Int64, Int32) -> [String: Any]?)?
+
     /// Wired by ChatController: present a native Telegram sheet hosting the given content view.
     /// The argument is the raw UIView pointer (as UInt). Returns the presented screen's pointer
     /// (as UInt) so ObjC can dismiss it later, or 0 if not presented (ObjC then falls back to UIKit).

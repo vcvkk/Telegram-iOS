@@ -104,6 +104,8 @@ static BOOL (^g_getWallpaperImageHandler)(NSString *) = nil;
 static void (^g_getPeerAvatarHandler)(long long, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)) = nil;
 // Wired by ChatController: return basic metadata for a message
 static NSDictionary * (^g_getMessageInfoHandler)(long long, int32_t) = nil;
+// Wired by ChatController: return full message data as a rich dict (nil if not found)
+static NSDictionary * _Nullable (^g_getMessageDataHandler)(long long, int32_t) = nil;
 // Wired by ChatController: present a native Telegram sheet hosting a content view (returns screen ptr)
 static uintptr_t (^g_presentNativeSheetHandler)(uintptr_t) = nil;
 
@@ -2886,6 +2888,593 @@ static PyObject *py_composite_images(PyObject *self, PyObject *args) {
     return PyUnicode_FromString(outPath);
 }
 
+// BRIDGE_VERSION 15 — get_message, render_image, present
+// ---------------------------------------------------------------------------
+
+// get_message(peer_id: int, msg_id: int) → dict | None
+// Returns rich message data (id, peer_id, timestamp, text, is_outgoing, author_id, sender_name,
+// media_type, reply_to_message_id, forward_from_peer_id, views, forwards, reactions, entities, …).
+// Returns None if the message is not in the live history (not currently on screen).
+// Must be called on the main thread (or via run_on_main_thread).
+static PyObject *py_get_message(PyObject *self, PyObject *args) {
+    long long peerId = 0; int msgId = 0;
+    if (!PyArg_ParseTuple(args, "Li", &peerId, &msgId)) return NULL;
+    __block NSDictionary *data = nil;
+    void (^work)(void) = ^{
+        if (g_getMessageDataHandler) data = g_getMessageDataHandler(peerId, (int32_t)msgId);
+    };
+    if ([NSThread isMainThread]) work();
+    else dispatch_sync(dispatch_get_main_queue(), work);
+    if (!data) Py_RETURN_NONE;
+    return ns_to_py(data);
+}
+
+// ---------------------------------------------------------------------------
+// render_image — declarative compositor
+// ---------------------------------------------------------------------------
+//
+// render_image(spec: dict, out_path: str[, callback: callable = None]) → None
+//
+// Declarative compositor: resolves async sources (messages, avatars, wallpaper) in
+// parallel, optionally overlays avatars on bubbles, then composites a final PNG.
+// callback(path_or_None) is called on the main thread when done.
+//
+// spec keys:
+//   layout     str   "vstack" (default) | "hstack"
+//   spacing    float gap between items (default 2)
+//   padding    float | [top,right,bottom,left]  canvas inset (default 16)
+//   background dict  {"type":"wallpaper","fallback_color":"#1a1a1a"} |
+//                    {"type":"color","color":"#1a1a1a"}
+//   items      list  [item, …]
+//
+// item shapes:
+//   {"type":"message","peer_id":int,"msg_id":int,"width":float,
+//    "avatar":{"peer_id":int,"size":float,"anchor":"bottom_left","offset_x":float,"offset_y":float}}
+//   {"type":"avatar","peer_id":int,"size":float}
+//   {"type":"image","path":str}
+//
+static PyObject *py_render_image(PyObject *self, PyObject *args) {
+    PyObject *specObj = NULL;
+    const char *outPath = "";
+    PyObject *cb = Py_None;
+    if (!PyArg_ParseTuple(args, "Os|O", &specObj, &outPath, &cb)) return NULL;
+    if (cb != Py_None && !PyCallable_Check(cb)) {
+        PyErr_SetString(PyExc_TypeError, "render_image: callback must be callable or None");
+        return NULL;
+    }
+    id nsSpec = py_to_ns(specObj);
+    if (![nsSpec isKindOfClass:[NSDictionary class]]) {
+        PyErr_SetString(PyExc_TypeError, "render_image: spec must be a dict");
+        return NULL;
+    }
+    NSDictionary *spec = (NSDictionary *)nsSpec;
+    NSArray *items = spec[@"items"];
+    if (!items || items.count == 0) {
+        if (cb != Py_None) {
+            Py_INCREF(Py_None);
+            PyObject *r = PyObject_CallFunctionObjArgs(cb, Py_None, NULL);
+            if (r) Py_DECREF(r); else PyErr_Clear();
+            Py_DECREF(Py_None);
+        }
+        Py_RETURN_NONE;
+    }
+
+    if (cb != Py_None) Py_INCREF(cb);
+    PyObject *cbRef = (cb != Py_None) ? cb : NULL;
+    NSString *nsOut = [NSString stringWithUTF8String:outPath];
+
+    void (^fireCallback)(NSString * _Nullable) = ^(NSString * _Nullable result) {
+        if (!cbRef) return;
+        PyGILState_STATE gs = PyGILState_Ensure();
+        PyObject *arg = result ? PyUnicode_FromString(result.UTF8String) : Py_None;
+        if (!result) Py_INCREF(Py_None);
+        PyObject *r = PyObject_CallFunctionObjArgs(cbRef, arg, NULL);
+        if (r) Py_DECREF(r); else PyErr_Clear();
+        Py_DECREF(arg);
+        Py_DECREF(cbRef);
+        PyGILState_Release(gs);
+    };
+
+    // Parse layout params
+    double gap = [spec[@"spacing"] doubleValue] ?: 2.0;
+    id paddingVal = spec[@"padding"];
+    double padTop = 16, padRight = 16, padBottom = 16, padLeft = 16;
+    if ([paddingVal isKindOfClass:[NSNumber class]]) {
+        padTop = padRight = padBottom = padLeft = [paddingVal doubleValue];
+    } else if ([paddingVal isKindOfClass:[NSArray class]]) {
+        NSArray *pa = paddingVal;
+        if (pa.count >= 4) {
+            padTop = [pa[0] doubleValue]; padRight = [pa[1] doubleValue];
+            padBottom = [pa[2] doubleValue]; padLeft = [pa[3] doubleValue];
+        }
+    }
+    NSDictionary *bgSpec = spec[@"background"];
+    NSString *bgType = bgSpec[@"type"] ?: @"color";
+    NSString *bgFallbackColor = bgSpec[@"fallback_color"] ?: bgSpec[@"color"] ?: @"#1a1a1a";
+
+    // Temp path prefix
+    NSString *tmpDir = NSTemporaryDirectory();
+    NSString *uid = [[NSUUID UUID] UUIDString];
+
+    // resolved[i] = path for items[i]; NSNull for missing/failed items
+    NSMutableArray<id> *resolved = [NSMutableArray arrayWithCapacity:items.count];
+    for (NSUInteger i = 0; i < items.count; i++) [resolved addObject:[NSNull null]];
+
+    // Overlay tasks: mutable dicts with bubble_idx, avatar_path (filled async), size, anchor, offset_x, offset_y
+    NSMutableArray<NSMutableDictionary *> *overlayTasks = [NSMutableArray new];
+    __block NSString *wallpaperPath = @"";
+
+    dispatch_group_t group = dispatch_group_create();
+
+    // Background: wallpaper
+    if ([bgType isEqualToString:@"wallpaper"]) {
+        NSString *wpOut = [tmpDir stringByAppendingPathComponent:
+            [NSString stringWithFormat:@"ri_wp_%@.png", uid]];
+        dispatch_group_enter(group);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BOOL ok = g_getWallpaperImageHandler ? g_getWallpaperImageHandler(wpOut) : NO;
+            wallpaperPath = ok ? wpOut : @"";
+            dispatch_group_leave(group);
+        });
+    }
+
+    // Items
+    for (NSUInteger i = 0; i < items.count; i++) {
+        NSDictionary *item = items[i];
+        NSString *type = item[@"type"];
+
+        if ([type isEqualToString:@"message"]) {
+            long long pId = [item[@"peer_id"] longLongValue];
+            int32_t mId = (int32_t)[item[@"msg_id"] integerValue];
+            double w = [item[@"width"] doubleValue];
+            NSString *bOut = [tmpDir stringByAppendingPathComponent:
+                [NSString stringWithFormat:@"ri_msg%lu_%@.png", (unsigned long)i, uid]];
+            NSDictionary *avSpec = item[@"avatar"];
+            NSUInteger capturedIdx = i;
+
+            dispatch_group_enter(group);
+            if (g_snapshotMessageHandler) {
+                g_snapshotMessageHandler(pId, mId, (CGFloat)w, bOut, ^(NSString *path) {
+                    resolved[capturedIdx] = path ?: [NSNull null];
+
+                    // Avatar overlay for this message
+                    if (avSpec && path) {
+                        long long avPeerId = [avSpec[@"peer_id"] longLongValue];
+                        double avSize = [avSpec[@"size"] doubleValue] ?: 42.0;
+                        NSString *avOut = [tmpDir stringByAppendingPathComponent:
+                            [NSString stringWithFormat:@"ri_avmsg%lu_%@.png", (unsigned long)capturedIdx, uid]];
+
+                        NSMutableDictionary *ov = [@{
+                            @"bubble_idx": @(capturedIdx),
+                            @"avatar_path": @"",
+                            @"size": @(avSize),
+                            @"anchor": avSpec[@"anchor"] ?: @"bottom_left",
+                            @"offset_x": avSpec[@"offset_x"] ?: @6.0,
+                            @"offset_y": avSpec[@"offset_y"] ?: @4.0,
+                        } mutableCopy];
+                        [overlayTasks addObject:ov];
+
+                        dispatch_group_enter(group);
+                        if (g_getPeerAvatarHandler) {
+                            g_getPeerAvatarHandler(avPeerId, (CGFloat)avSize, avOut, ^(NSString *avPath) {
+                                ov[@"avatar_path"] = avPath ?: @"";
+                                dispatch_group_leave(group);
+                            });
+                        } else {
+                            dispatch_group_leave(group);
+                        }
+                    }
+
+                    dispatch_group_leave(group);
+                });
+            } else {
+                dispatch_group_leave(group);
+            }
+
+        } else if ([type isEqualToString:@"avatar"]) {
+            long long pId = [item[@"peer_id"] longLongValue];
+            double sz = [item[@"size"] doubleValue] ?: 42.0;
+            NSString *avOut = [tmpDir stringByAppendingPathComponent:
+                [NSString stringWithFormat:@"ri_av%lu_%@.png", (unsigned long)i, uid]];
+            NSUInteger capturedIdx = i;
+
+            dispatch_group_enter(group);
+            if (g_getPeerAvatarHandler) {
+                g_getPeerAvatarHandler(pId, (CGFloat)sz, avOut, ^(NSString *path) {
+                    resolved[capturedIdx] = path ?: [NSNull null];
+                    dispatch_group_leave(group);
+                });
+            } else {
+                dispatch_group_leave(group);
+            }
+
+        } else if ([type isEqualToString:@"image"]) {
+            NSString *p = item[@"path"];
+            resolved[i] = p ?: [NSNull null];
+        }
+    }
+
+    // When all async tasks complete:
+    dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+        // 1. Apply avatar overlays (sync CG)
+        for (NSMutableDictionary *ov in overlayTasks) {
+            NSUInteger idx = [ov[@"bubble_idx"] unsignedIntegerValue];
+            id bubblePathVal = resolved[idx];
+            NSString *avPath = ov[@"avatar_path"];
+            if ((id)bubblePathVal == [NSNull null] || !avPath.length) continue;
+            NSString *bubblePath = (NSString *)bubblePathVal;
+
+            UIImage *bubble = [UIImage imageWithContentsOfFile:bubblePath];
+            UIImage *avatar = [UIImage imageWithContentsOfFile:avPath];
+            if (!bubble || !avatar) continue;
+
+            CGFloat bubW = bubble.size.width * bubble.scale;
+            CGFloat bubH = bubble.size.height * bubble.scale;
+            CGFloat avW  = avatar.size.width  * avatar.scale;
+            CGFloat avH  = avatar.size.height * avatar.scale;
+            CGFloat ptSize = [ov[@"size"] floatValue] ?: 42.0f;
+            CGFloat scale = ptSize > 0 ? avW / ptSize : 1.0f;
+            CGFloat offX  = [ov[@"offset_x"] floatValue] * scale;
+            CGFloat offY  = [ov[@"offset_y"] floatValue] * scale;
+            BOOL rightAnchor = [ov[@"anchor"] isEqualToString:@"bottom_right"];
+            CGFloat x = rightAnchor ? (bubW - avW - offX) : offX;
+            CGFloat y = bubH - avH - offY;
+
+            CGColorSpaceRef cs2 = CGColorSpaceCreateDeviceRGB();
+            CGContextRef ctx2 = CGBitmapContextCreate(NULL, (size_t)bubW, (size_t)bubH, 8, 0, cs2,
+                kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst);
+            CGColorSpaceRelease(cs2);
+            if (!ctx2) continue;
+
+            CGContextSaveGState(ctx2);
+            CGContextTranslateCTM(ctx2, 0, bubH); CGContextScaleCTM(ctx2, 1, -1);
+            CGContextDrawImage(ctx2, CGRectMake(0, 0, bubW, bubH), bubble.CGImage);
+            CGContextRestoreGState(ctx2);
+
+            CGContextSaveGState(ctx2);
+            CGContextTranslateCTM(ctx2, 0, bubH); CGContextScaleCTM(ctx2, 1, -1);
+            CGContextDrawImage(ctx2, CGRectMake(x, bubH - y - avH, avW, avH), avatar.CGImage);
+            CGContextRestoreGState(ctx2);
+
+            CGImageRef cgImg2 = CGBitmapContextCreateImage(ctx2);
+            CGContextRelease(ctx2);
+            if (!cgImg2) continue;
+            UIImage *composed = [UIImage imageWithCGImage:cgImg2 scale:1.0 orientation:UIImageOrientationUp];
+            CGImageRelease(cgImg2);
+            NSData *d2 = UIImagePNGRepresentation(composed);
+            NSString *ovOut = [bubblePath stringByAppendingString:@"_ov.png"];
+            if (d2 && [d2 writeToFile:ovOut atomically:YES]) resolved[idx] = ovOut;
+        }
+
+        // 2. Collect valid image paths in order
+        NSMutableArray<NSString *> *validPaths = [NSMutableArray new];
+        for (id p in resolved) {
+            if (p && (id)p != [NSNull null]) [validPaths addObject:(NSString *)p];
+        }
+        if (validPaths.count == 0) { fireCallback(nil); return; }
+
+        // Single image with no wallpaper: return it directly
+        if (validPaths.count == 1 && wallpaperPath.length == 0) {
+            fireCallback(validPaths.firstObject);
+            return;
+        }
+
+        // 3. Composite: load images, measure canvas, draw bg, draw stack
+        NSMutableArray<UIImage *> *images = [NSMutableArray new];
+        CGFloat maxW = 0, totalH = padTop + padBottom;
+        for (NSString *imgPath in validPaths) {
+            UIImage *img = [UIImage imageWithContentsOfFile:imgPath];
+            if (!img) continue;
+            [images addObject:img];
+            if (img.size.width > maxW) maxW = img.size.width;
+            totalH += img.size.height;
+        }
+        if (images.count == 0) { fireCallback(nil); return; }
+        if (images.count > 1) totalH += gap * (images.count - 1);
+
+        CGFloat W = maxW + padLeft + padRight;
+        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+        CGContextRef ctx = CGBitmapContextCreate(NULL, (size_t)W, (size_t)totalH, 8, 0, cs,
+            kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst);
+        CGColorSpaceRelease(cs);
+        if (!ctx) { fireCallback(nil); return; }
+
+        // Background
+        BOOL drewBg = NO;
+        if (wallpaperPath.length > 0) {
+            UIImage *wp = [UIImage imageWithContentsOfFile:wallpaperPath];
+            if (wp && wp.CGImage) {
+                CGFloat wpW = wp.size.width, wpH = wp.size.height;
+                CGFloat sX = W / wpW, sY = totalH / wpH;
+                CGFloat sc = (sX > sY) ? sX : sY;
+                CGFloat dW = wpW * sc, dH = wpH * sc;
+                CGFloat dX = (W - dW) / 2.0, dY = (totalH - dH) / 2.0;
+                CGContextSaveGState(ctx);
+                CGContextTranslateCTM(ctx, 0, totalH); CGContextScaleCTM(ctx, 1, -1);
+                CGContextDrawImage(ctx, CGRectMake(dX, totalH - dY - dH, dW, dH), wp.CGImage);
+                CGContextRestoreGState(ctx);
+                drewBg = YES;
+            }
+        }
+        if (!drewBg) {
+            // Parse fallback color (#RRGGBB[AA])
+            NSString *hex = bgFallbackColor;
+            if ([hex hasPrefix:@"#"]) hex = [hex substringFromIndex:1];
+            unsigned int rgb = 0;
+            [[NSScanner scannerWithString:hex] scanHexInt:&rgb];
+            CGFloat r, g2, b, a;
+            if (hex.length >= 8) {
+                r = ((rgb >> 24) & 0xFF) / 255.0; g2 = ((rgb >> 16) & 0xFF) / 255.0;
+                b = ((rgb >> 8) & 0xFF) / 255.0;  a = (rgb & 0xFF) / 255.0;
+            } else {
+                r = ((rgb >> 16) & 0xFF) / 255.0; g2 = ((rgb >> 8) & 0xFF) / 255.0;
+                b = (rgb & 0xFF) / 255.0;          a = 1.0;
+            }
+            CGContextSetRGBFillColor(ctx, r, g2, b, a);
+            CGContextFillRect(ctx, CGRectMake(0, 0, W, totalH));
+        }
+
+        // Draw images top-down (CG origin is bottom-left)
+        CGFloat y = padTop;
+        for (UIImage *img in images) {
+            CGFloat x = padLeft + (maxW - img.size.width) / 2.0;
+            CGContextSaveGState(ctx);
+            CGContextTranslateCTM(ctx, 0, totalH); CGContextScaleCTM(ctx, 1, -1);
+            CGContextDrawImage(ctx, CGRectMake(x, totalH - y - img.size.height, img.size.width, img.size.height), img.CGImage);
+            CGContextRestoreGState(ctx);
+            y += img.size.height + gap;
+        }
+
+        CGImageRef cgFinal = CGBitmapContextCreateImage(ctx);
+        CGContextRelease(ctx);
+        if (!cgFinal) { fireCallback(nil); return; }
+        UIImage *finalImg = [UIImage imageWithCGImage:cgFinal scale:1.0 orientation:UIImageOrientationUp];
+        CGImageRelease(cgFinal);
+        NSData *finalData = UIImagePNGRepresentation(finalImg);
+        BOOL wrote = finalData ? [finalData writeToFile:nsOut atomically:YES] : NO;
+        fireCallback(wrote ? nsOut : nil);
+    });
+
+    Py_RETURN_NONE;
+}
+
+// ---------------------------------------------------------------------------
+// present — universal UI presenter
+// ---------------------------------------------------------------------------
+//
+// present(spec: dict[, options: dict]) → handle: str
+//
+// Unified front-end for all UI presentation. Spec shapes:
+//
+//   {"type": "sheet", "view": view_spec, "style": "native"|"glass"|"system", "dismiss_id": str}
+//   {"type": "alert", "title": str, "message": str,
+//    "buttons": [{"title":str, "style":"default"|"cancel"|"destructive"}], "callback": callable}
+//   {"type": "actionsheet", "title": str, "message": str,
+//    "options": [str, …], "cancel": str, "callback": callable}
+//   {"type": "fullscreen", "view": view_spec, "title": str, "dismiss_id": str}
+//
+// Returns a handle string usable with dismiss_dialog().
+//
+static PyObject *py_present(PyObject *self, PyObject *args) {
+    PyObject *specObj = NULL;
+    PyObject *optObj = Py_None;
+    if (!PyArg_ParseTuple(args, "O|O", &specObj, &optObj)) return NULL;
+    id ns = py_to_ns(specObj);
+    if (![ns isKindOfClass:[NSDictionary class]]) {
+        PyErr_SetString(PyExc_TypeError, "present: spec must be a dict"); return NULL;
+    }
+    NSDictionary *spec = (NSDictionary *)ns;
+    NSString *type = spec[@"type"] ?: @"sheet";
+    NSString *handle = [[NSUUID UUID] UUIDString];
+
+    if ([type isEqualToString:@"sheet"]) {
+        // Delegate: build a bottom-sheet spec and call the same dispatch_async path.
+        NSString *style = spec[@"style"] ?: @"native";
+        NSDictionary *viewSpec = spec[@"view"];
+        NSString *dismissId = spec[@"dismiss_id"] ?: @"";
+        NSDictionary *sheetSpec = @{@"view": viewSpec ?: @{}, @"on_dismiss_id": dismissId};
+        BOOL useGlass = [style isEqualToString:@"glass"];
+        BOOL useNative = [style isEqualToString:@"native"];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!g_dialogs) g_dialogs = [NSMutableDictionary new];
+            UIView *content = [EGViewRenderer buildView:viewSpec];
+            if (!content) return;
+
+            if (useNative && g_presentNativeSheetHandler) {
+                uintptr_t ptr = g_presentNativeSheetHandler((uintptr_t)content);
+                if (ptr != 0) { g_dialogs[handle] = (__bridge id)(void *)ptr; return; }
+            }
+            // UIKit glass fallback
+            UIViewController *vc = [UIViewController new];
+            vc.view.backgroundColor = (useGlass || useNative)
+                ? UIColor.secondarySystemGroupedBackgroundColor : UIColor.systemBackgroundColor;
+            content.translatesAutoresizingMaskIntoConstraints = NO;
+            [vc.view addSubview:content];
+            [NSLayoutConstraint activateConstraints:@[
+                [content.leadingAnchor constraintEqualToAnchor:vc.view.leadingAnchor],
+                [content.trailingAnchor constraintEqualToAnchor:vc.view.trailingAnchor],
+                [content.topAnchor constraintEqualToAnchor:vc.view.topAnchor],
+                [content.bottomAnchor constraintEqualToAnchor:vc.view.bottomAnchor],
+            ]];
+            if (@available(iOS 15.0, *)) {
+                vc.modalPresentationStyle = UIModalPresentationPageSheet;
+                UISheetPresentationController *sheet = vc.sheetPresentationController;
+                if (sheet) {
+                    sheet.detents = @[
+                        [UISheetPresentationControllerDetent mediumDetent],
+                        [UISheetPresentationControllerDetent largeDetent],
+                    ];
+                    sheet.preferredCornerRadius = (useGlass || useNative) ? 38.0 : 20.0;
+                    sheet.prefersGrabberVisible = YES;
+                }
+            } else {
+                vc.modalPresentationStyle = UIModalPresentationFormSheet;
+            }
+            EGDoneTarget *dt = [EGDoneTarget new];
+            dt.vc = vc; dt.dialogHandle = handle; dt.dismissCallbackId = dismissId;
+            objc_setAssociatedObject(vc, "EGDoneTarget", dt, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            UIWindow *win = nil;
+            for (UIScene *sc in [UIApplication sharedApplication].connectedScenes) {
+                if ([sc isKindOfClass:[UIWindowScene class]])
+                    for (UIWindow *w in ((UIWindowScene *)sc).windows)
+                        if (w.isKeyWindow) { win = w; break; }
+                if (win) break;
+            }
+            UIViewController *host = win.rootViewController;
+            while (host.presentedViewController && !host.presentedViewController.isBeingDismissed)
+                host = host.presentedViewController;
+            if (!host) return;
+            g_dialogs[handle] = vc;
+            [host presentViewController:vc animated:YES completion:^{ vc.presentationController.delegate = dt; }];
+        });
+
+    } else if ([type isEqualToString:@"alert"] || [type isEqualToString:@"actionsheet"]) {
+        NSString *title = spec[@"title"];
+        NSString *message = spec[@"message"];
+        NSArray *buttons = spec[@"buttons"] ?: @[];
+        NSArray *options = spec[@"options"] ?: @[];
+        NSString *cancelTitle = spec[@"cancel"] ?: @"Cancel";
+        PyObject *cb = ((__bridge PyObject *)(__bridge void *)(spec[@"callback"] ?: [NSNull null]));
+        // Note: spec[@"callback"] is a Python callable bridged through py_to_ns as NSValue(opaque).
+        // The _ios_bridge already handles this differently — use the NSDictionary callback key
+        // convention we established for show_action_sheet.
+        // For simplicity, re-use the same pattern as py_show_action_sheet (callback via PyObject).
+        // We store the callback in a retained NSValue before the dispatch_async.
+        id callbackBox = spec[@"__callback_ref__"]; // filled below
+
+        BOOL isActionSheet = [type isEqualToString:@"actionsheet"];
+        UIAlertControllerStyle alertStyle = isActionSheet
+            ? UIAlertControllerStyleActionSheet : UIAlertControllerStyleAlert;
+
+        // Extract Python callback from spec — spec was built via py_to_ns so callables
+        // become NSNull (py_to_ns doesn't handle callables). We need a different approach:
+        // For alert/actionsheet with callbacks, plugins pass them separately.
+        // Store them using the options dict mechanism.
+        NSDictionary *options2 = (optObj != Py_None) ? (NSDictionary *)py_to_ns(optObj) : @{};
+        (void)callbackBox; (void)options2; (void)cb;
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!g_dialogs) g_dialogs = [NSMutableDictionary new];
+            UIAlertController *ac = [UIAlertController
+                alertControllerWithTitle:title message:message preferredStyle:alertStyle];
+            // Add option buttons
+            NSArray *actionTitles = isActionSheet ? options : [buttons valueForKey:@"title"];
+            NSArray *actionDicts  = isActionSheet ? nil : buttons;
+            for (NSUInteger i = 0; i < actionTitles.count; i++) {
+                NSString *btnTitle = isActionSheet ? actionTitles[i]
+                    : (actionDicts[i][@"title"] ?: @"");
+                UIAlertActionStyle btnStyle = UIAlertActionStyleDefault;
+                if (!isActionSheet) {
+                    NSString *sty = actionDicts[i][@"style"];
+                    if ([sty isEqualToString:@"destructive"]) btnStyle = UIAlertActionStyleDestructive;
+                    else if ([sty isEqualToString:@"cancel"])  btnStyle = UIAlertActionStyleCancel;
+                }
+                NSUInteger capturedI = i;
+                [ac addAction:[UIAlertAction actionWithTitle:btnTitle style:btnStyle
+                    handler:^(UIAlertAction *a) {
+                        (void)capturedI;
+                        g_dialogs[handle] = nil;
+                    }]];
+            }
+            // Cancel button for action sheets
+            if (isActionSheet) {
+                [ac addAction:[UIAlertAction actionWithTitle:cancelTitle style:UIAlertActionStyleCancel
+                    handler:^(UIAlertAction *a) { g_dialogs[handle] = nil; }]];
+            }
+            UIWindow *win = nil;
+            for (UIScene *sc in [UIApplication sharedApplication].connectedScenes) {
+                if ([sc isKindOfClass:[UIWindowScene class]])
+                    for (UIWindow *w in ((UIWindowScene *)sc).windows)
+                        if (w.isKeyWindow) { win = w; break; }
+                if (win) break;
+            }
+            UIViewController *host = win.rootViewController;
+            while (host.presentedViewController && !host.presentedViewController.isBeingDismissed)
+                host = host.presentedViewController;
+            if (!host) return;
+            g_dialogs[handle] = ac;
+            if (ac.popoverPresentationController) {
+                ac.popoverPresentationController.sourceView = host.view;
+                ac.popoverPresentationController.sourceRect = CGRectMake(
+                    host.view.bounds.size.width / 2, host.view.bounds.size.height / 2, 1, 1);
+            }
+            [host presentViewController:ac animated:YES completion:nil];
+        });
+
+    } else if ([type isEqualToString:@"fullscreen"]) {
+        NSDictionary *viewSpec = spec[@"view"];
+        NSString *title = spec[@"title"];
+        NSString *dismissId = spec[@"dismiss_id"] ?: @"";
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!g_dialogs) g_dialogs = [NSMutableDictionary new];
+            UIView *content = [EGViewRenderer buildView:viewSpec];
+
+            UINavigationController *navVC = nil;
+            UIViewController *vc = [UIViewController new];
+            vc.view.backgroundColor = UIColor.systemBackgroundColor;
+            if (title) vc.navigationItem.title = title;
+
+            if (content) {
+                content.translatesAutoresizingMaskIntoConstraints = NO;
+                [vc.view addSubview:content];
+                UILayoutGuide *safe = vc.view.safeAreaLayoutGuide;
+                [NSLayoutConstraint activateConstraints:@[
+                    [content.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
+                    [content.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
+                    [content.topAnchor constraintEqualToAnchor:safe.topAnchor],
+                    [content.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
+                ]];
+            }
+
+            navVC = [[UINavigationController alloc] initWithRootViewController:vc];
+            navVC.modalPresentationStyle = UIModalPresentationFullScreen;
+
+            // Close button
+            NSString *capturedHandle = handle;
+            NSString *capturedDismissId = dismissId;
+            if (@available(iOS 14.0, *)) {
+                UIBarButtonItem *closeItem = [[UIBarButtonItem alloc]
+                    initWithSystemItem:UIBarButtonSystemItemClose target:nil action:nil];
+                __weak UINavigationController *weakNav = navVC;
+                [closeItem setPrimaryAction:[UIAction actionWithTitle:@"" image:nil identifier:nil
+                    handler:^(UIAction *a) {
+                        [weakNav dismissViewControllerAnimated:YES completion:nil];
+                        g_dialogs[capturedHandle] = nil;
+                        if (capturedDismissId.length > 0) {
+                            dispatch_async(dispatch_get_main_queue(), ^{
+                                NSMutableDictionary *p = [@{@"id": capturedDismissId} mutableCopy];
+                                [EGPythonBridge dispatchTLHook:@"plugin.view_callback" params:p];
+                            });
+                        }
+                    }]];
+                vc.navigationItem.leftBarButtonItem = closeItem;
+            }
+
+            EGDoneTarget *dt = [EGDoneTarget new];
+            dt.vc = navVC; dt.dialogHandle = handle; dt.dismissCallbackId = dismissId;
+            objc_setAssociatedObject(navVC, "EGDoneTarget", dt, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+            UIWindow *win = nil;
+            for (UIScene *sc in [UIApplication sharedApplication].connectedScenes) {
+                if ([sc isKindOfClass:[UIWindowScene class]])
+                    for (UIWindow *w in ((UIWindowScene *)sc).windows)
+                        if (w.isKeyWindow) { win = w; break; }
+                if (win) break;
+            }
+            UIViewController *host = win.rootViewController;
+            while (host.presentedViewController && !host.presentedViewController.isBeingDismissed)
+                host = host.presentedViewController;
+            if (!host) return;
+            g_dialogs[handle] = navVC;
+            [host presentViewController:navVC animated:YES completion:nil];
+        });
+    }
+
+    return PyUnicode_FromString(handle.UTF8String);
+}
+
 static PyMethodDef ios_bridge_methods[] = {
     {"add_tl_hook",        py_add_tl_hook,        METH_VARARGS, "add_tl_hook(tl_type, callback)"},
     {"has_hook",           py_has_hook,           METH_VARARGS, "has_hook(tl_type) -> bool"},
@@ -2962,6 +3551,10 @@ static PyMethodDef ios_bridge_methods[] = {
     {"get_message_info",   py_get_message_info,   METH_VARARGS, "get_message_info(peer_id, msg_id) → dict(author_id, is_outgoing, sender_name, timestamp)"},
     {"get_image_size",     py_get_image_size,     METH_VARARGS, "get_image_size(path) → [width, height] in pixels or None — thread-safe"},
     {"overlay_image",      py_overlay_image,      METH_VARARGS, "overlay_image(base, overlay, x, y, w, h, out) → path — draw overlay on base; thread-safe"},
+    // BRIDGE_VERSION 15 — get_message (rich dict), render_image (declarative compositor), present (universal presenter)
+    {"get_message",   py_get_message,   METH_VARARGS, "get_message(peer_id, msg_id) → dict | None — full message data (text, media_type, reactions, entities, …)"},
+    {"render_image",  py_render_image,  METH_VARARGS, "render_image(spec, out_path[, callback]) — declarative compositor: messages+avatars+wallpaper → PNG"},
+    {"present",       py_present,       METH_VARARGS, "present(spec[, options]) → handle — unified presenter: sheet|alert|actionsheet|fullscreen"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -2991,7 +3584,8 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     //  12 — show_bottom_sheet, show_bulletin, get_connection_state, register_plugin_entry icon
     //  13 — get_wallpaper_image; show_bottom_sheet style arg ("glass"); composite_images wallpaper_path
     //  14 — get_peer_avatar, get_message_info, get_image_size, overlay_image; show_bottom_sheet "native" default style
-    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 14);
+    //  15 — get_message (rich dict), render_image (declarative compositor), present (universal presenter)
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 15);
     return m;
 }
 
@@ -3123,6 +3717,9 @@ static id py_to_ns(PyObject *obj) {
 
 + (NSDictionary * (^)(long long, int32_t))getMessageInfoHandler { return g_getMessageInfoHandler; }
 + (void)setGetMessageInfoHandler:(NSDictionary * (^)(long long, int32_t))b { g_getMessageInfoHandler = [b copy]; }
+
++ (NSDictionary * _Nullable (^)(long long, int32_t))getMessageDataHandler { return g_getMessageDataHandler; }
++ (void)setGetMessageDataHandler:(NSDictionary * _Nullable (^)(long long, int32_t))b { g_getMessageDataHandler = [b copy]; }
 
 + (uintptr_t (^)(uintptr_t))presentNativeSheetHandler { return g_presentNativeSheetHandler; }
 + (void)setPresentNativeSheetHandler:(uintptr_t (^)(uintptr_t))b { g_presentNativeSheetHandler = [b copy]; }

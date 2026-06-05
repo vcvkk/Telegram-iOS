@@ -113,6 +113,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// (author_id, is_outgoing, sender_name, timestamp). Empty dict if not found. Main thread.
 @property (class, nonatomic, copy, nullable) NSDictionary * _Nonnull (^getMessageInfoHandler)(long long peerId, int32_t msgId);
 
+/// Wired by ChatController: return full message data as a rich NSDictionary
+/// (id, peer_id, timestamp, text, is_outgoing, author_id, sender_name, media_type,
+///  reply_to_message_id, forward_from_peer_id, views, forwards, reactions, entities, …).
+/// Returns nil if the message is not found in the live history. Main thread.
+@property (class, nonatomic, copy, nullable) NSDictionary * _Nullable (^getMessageDataHandler)(long long peerId, int32_t msgId);
+
 /// Wired by EGPluginsEngineImpl: present a native Telegram sheet hosting the given content view.
 /// The argument is the raw UIView pointer (uintptr_t). Returns the presented screen's pointer
 /// (uintptr_t) for later dismissal, or 0 if not presented (caller falls back to UIKit).

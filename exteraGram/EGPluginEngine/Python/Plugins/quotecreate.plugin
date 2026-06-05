@@ -1,7 +1,7 @@
 __id__           = "quotecreate"
 __name__         = "✏️ Quote"
 __os__           = "ios"
-__version__      = "7.0"
+__version__      = "8.0"
 __author__       = "@oodze"
 __description__  = "Pixel-perfect quote images from the message selection toolbar."
 
@@ -40,7 +40,6 @@ def _show_preview(composite_path, peer_id, first_msg_id):
         btn.setText(title)
         btn._spec["text_size"] = 17
         btn._spec["typeface"] = "medium"
-        # Theme-adaptive colors so the buttons are legible in both light and dark themes.
         btn._spec["text_color"] = "label"
         btn._spec["background_drawable"] = {
             "color": "secondarySystemFill",
@@ -85,13 +84,77 @@ def _handle_action(action, path, peer_id, reply_id):
 _AVATAR_PTS = 34
 
 
+def _build_render_spec(peer_id, sorted_ids):
+    """
+    Build a render_image spec for the given message list.
+    Uses get_message (BRIDGE_VERSION 15) to determine author/incoming per message,
+    then attaches an avatar overlay on the last incoming message of each same-author run.
+    Falls back to get_message_info if get_message is unavailable (BRIDGE_VERSION < 15).
+    """
+    get_msg = getattr(bridge, "get_message", None)
+    infos = {}
+    for mid in sorted_ids:
+        if get_msg:
+            info = get_msg(peer_id, mid) or {}
+        else:
+            info = bridge.get_message_info(peer_id, mid) or {}
+        infos[mid] = info
+
+    items = []
+    for i, mid in enumerate(sorted_ids):
+        info = infos[mid]
+        item = {"type": "message", "peer_id": peer_id, "msg_id": mid, "width": 390}
+
+        # Attach avatar if this is the last incoming message in a same-author run
+        if not info.get("is_outgoing"):
+            aid = info.get("author_id")
+            if aid:
+                is_last_in_run = True
+                if i + 1 < len(sorted_ids):
+                    nxt = infos[sorted_ids[i + 1]]
+                    if not nxt.get("is_outgoing") and nxt.get("author_id") == aid:
+                        is_last_in_run = False
+                if is_last_in_run:
+                    item["avatar"] = {
+                        "peer_id": aid,
+                        "size": float(_AVATAR_PTS),
+                        "anchor": "bottom_left",
+                        "offset_x": 6.0,
+                        "offset_y": 4.0,
+                    }
+
+        items.append(item)
+
+    return {
+        "layout": "vstack",
+        "spacing": 2,
+        "padding": 16,
+        "background": {"type": "wallpaper", "fallback_color": "#1a1a1a"},
+        "items": items,
+    }
+
+
 def _do_render_multiple(peer_id, message_ids):
     sorted_ids = sorted(message_ids)
+    out = _data_path("quote_{}.png".format(int(time.time() * 1000)))
+
+    # Use render_image (BRIDGE_VERSION 15) if available; otherwise fall back to v14 primitives.
+    if hasattr(bridge, "render_image"):
+        spec = _build_render_spec(peer_id, sorted_ids)
+        def _on_render(path):
+            bridge.run_on_main_thread(lambda: _show_preview(path, peer_id, sorted_ids[0]))
+        bridge.render_image(spec, out, _on_render)
+    else:
+        _do_render_v14(peer_id, sorted_ids, out)
+
+
+# ---------------------------------------------------------------------------
+# Legacy v14 rendering path (kept as fallback when render_image unavailable)
+# ---------------------------------------------------------------------------
+
+def _do_render_v14(peer_id, sorted_ids, final_out):
     ts = int(time.time() * 1000)
-
-    # Per-message metadata (author/incoming) — read on the main thread.
     infos = {mid: (bridge.get_message_info(peer_id, mid) or {}) for mid in sorted_ids}
-
     bubbles = {}
     pending = [len(sorted_ids)]
 
@@ -100,24 +163,19 @@ def _do_render_multiple(peer_id, message_ids):
         if not ordered:
             bridge.show_bulletin("✏️ Quote", "Не удалось создать изображение")
             return
-        _draw_avatars_then_composite(peer_id, ordered, infos, bubbles, ts)
+        _draw_avatars_then_composite(peer_id, ordered, infos, bubbles, ts, final_out)
 
     for mid in sorted_ids:
-        out = _data_path("bubble_{}_{}.png".format(mid, ts))
-
+        bub_out = _data_path("bubble_{}_{}.png".format(mid, ts))
         def _cb(path, mid=mid):
             bubbles[mid] = path
             pending[0] -= 1
             if pending[0] == 0:
                 _on_all_bubbles()
-
-        # snapshot_message captures the live bubble (media, grouping, custom emoji,
-        # inline buttons, reactions) without the selection checkmark / share button.
-        bridge.snapshot_message(peer_id, mid, out, 390, _cb)
+        bridge.snapshot_message(peer_id, mid, bub_out, 390, _cb)
 
 
 def _avatar_targets(ordered, infos):
-    # The author avatar is drawn on the last incoming message of each same-author run.
     targets = []
     for i, mid in enumerate(ordered):
         info = infos.get(mid, {})
@@ -136,18 +194,17 @@ def _avatar_targets(ordered, infos):
     return targets
 
 
-def _draw_avatars_then_composite(peer_id, ordered, infos, bubbles, ts):
+def _draw_avatars_then_composite(peer_id, ordered, infos, bubbles, ts, final_out):
     targets = _avatar_targets(ordered, infos)
 
     def _composite():
         wp_path = _data_path("wp_{}.png".format(ts))
         wp = bridge.get_wallpaper_image(wp_path)
         paths = [bubbles[mid] for mid in ordered]
-        out = _data_path("quote_{}.png".format(ts))
         if len(paths) == 1 and not wp:
             composite = paths[0]
         else:
-            composite = bridge.composite_images(paths, out, 2, 16, "#1a1a1a", wp or "")
+            composite = bridge.composite_images(paths, final_out, 2, 16, "#1a1a1a", wp or "")
         bridge.run_on_main_thread(lambda: _show_preview(composite, peer_id, ordered[0]))
 
     if not targets:
@@ -158,13 +215,12 @@ def _draw_avatars_then_composite(peer_id, ordered, infos, bubbles, ts):
 
     for mid, aid in targets:
         av_out = _data_path("avatar_{}_{}.png".format(mid, ts))
-
         def _acb(av_path, mid=mid):
             if av_path:
                 av_size = bridge.get_image_size(av_path)
                 bub_size = bridge.get_image_size(bubbles[mid])
                 if av_size and bub_size:
-                    scale = av_size[0] / float(_AVATAR_PTS)  # px per pt (device scale)
+                    scale = av_size[0] / float(_AVATAR_PTS)
                     x = int(6 * scale)
                     y = int(bub_size[1] - av_size[1] - 4 * scale)
                     over_out = _data_path("bubavatar_{}_{}.png".format(mid, ts))
@@ -175,8 +231,6 @@ def _draw_avatars_then_composite(peer_id, ordered, infos, bubbles, ts):
             pending[0] -= 1
             if pending[0] == 0:
                 _composite()
-
-        # aid is the message author's peer id — fetch their avatar.
         bridge.get_peer_avatar(aid, av_out, _AVATAR_PTS, _acb)
 
 
@@ -191,7 +245,7 @@ def _on_selection_tap(params):
 
 def on_load(plugin):
     bridge.add_tl_hook("plugin.selection_action_tapped", _on_selection_tap)
-    bridge.log(__id__, "on_load complete (v7 — generic primitives: snapshot/avatar/overlay)")
+    bridge.log(__id__, "on_load complete (v8 — render_image/get_message; v14 fallback)")
 
 
 def on_unload(plugin):

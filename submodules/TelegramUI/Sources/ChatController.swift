@@ -7787,6 +7787,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         EGPluginHooks.snapshotMessageHandler = nil
         EGPluginHooks.quoteSelectionHandler = nil
         EGPluginHooks.getWallpaperImageHandler = nil
+        EGPluginHooks.getMessageDataHandler = nil
 
         if #available(iOS 18.0, *) {
         } else {
@@ -10812,6 +10813,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             guard let self = self, reqPeerId == peerId else { return [:] }
             return self.egGetMessageInfo(peerId: reqPeerId, msgId: msgId)
         }
+        EGPluginHooks.getMessageDataHandler = { [weak self] reqPeerId, msgId in
+            guard let self = self, reqPeerId == peerId else { return nil }
+            return self.egGetMessageData(peerId: reqPeerId, msgId: msgId)
+        }
         EGPluginHooks.presentNativeSheetHandler = { [weak self] contentPtr in
             guard let self = self else { return 0 }
             guard let raw = UnsafeRawPointer(bitPattern: contentPtr) else { return 0 }
@@ -10916,6 +10921,112 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 result["sender_name"] = EnginePeer(author).compactDisplayTitle
             }
             result["timestamp"] = Int(message.timestamp)
+        }
+        return result
+    }
+
+    /// Generic primitive: rich message data dict for a message in the live history node.
+    private func egGetMessageData(peerId: Int64, msgId: Int32) -> [String: Any]? {
+        let targetPeerId = PeerId(peerId)
+        var result: [String: Any]? = nil
+        self.chatDisplayNode.historyNode.forEachItemNode { node in
+            guard result == nil,
+                  let view = node as? ChatMessageItemView,
+                  let item = view.item,
+                  item.message.id.id == msgId,
+                  item.message.id.peerId == targetPeerId else { return }
+            let msg = item.message
+            var d: [String: Any] = [:]
+            d["id"]         = Int(msg.id.id)
+            d["peer_id"]    = msg.id.peerId.toInt64()
+            d["timestamp"]  = Int(msg.timestamp)
+            d["text"]       = msg.text
+            d["is_outgoing"] = msg.flags.contains(.Outgoing)
+            d["is_edited"]   = msg.flags.contains(.HasBeenEdited)
+            d["is_pinned"]   = msg.tags.contains(.pinned)
+            if let author = msg.author {
+                d["author_id"]   = author.id.toInt64()
+                d["sender_name"] = EnginePeer(author).compactDisplayTitle
+            }
+            // Forward info
+            if let fwd = msg.forwardInfo {
+                if let fwdAuthor = fwd.author {
+                    d["forward_from_peer_id"] = fwdAuthor.id.toInt64()
+                    d["forward_from_name"] = EnginePeer(fwdAuthor).compactDisplayTitle
+                } else if let sig = fwd.authorSignature {
+                    d["forward_from_name"] = sig
+                }
+                if let srcId = fwd.sourceMessageId {
+                    d["forward_from_message_id"] = Int(srcId.id)
+                }
+            }
+            // Attributes
+            for attr in msg.attributes {
+                if let r = attr as? ReplyMessageAttribute {
+                    d["reply_to_message_id"] = Int(r.messageId.id)
+                } else if let v = attr as? ViewCountMessageAttribute {
+                    d["views"] = v.count
+                } else if let f = attr as? ForwardCountMessageAttribute {
+                    d["forwards"] = f.count
+                } else if let entities = attr as? TextEntitiesMessageAttribute {
+                    d["entities"] = entities.entities.map { e -> [String: Any] in
+                        var ed: [String: Any] = [
+                            "offset": e.range.lowerBound,
+                            "length": e.range.upperBound - e.range.lowerBound,
+                        ]
+                        switch e.type {
+                        case .Bold:                   ed["type"] = "bold"
+                        case .Italic:                 ed["type"] = "italic"
+                        case .Code:                   ed["type"] = "code"
+                        case .Pre:                    ed["type"] = "pre"
+                        case .Strikethrough:          ed["type"] = "strikethrough"
+                        case .Underline:              ed["type"] = "underline"
+                        case .Spoiler:                ed["type"] = "spoiler"
+                        case .Url:                    ed["type"] = "url"
+                        case .Email:                  ed["type"] = "email"
+                        case .PhoneNumber:            ed["type"] = "phone"
+                        case .Mention:                ed["type"] = "mention"
+                        case .Hashtag:                ed["type"] = "hashtag"
+                        case .BotCommand:             ed["type"] = "bot_command"
+                        case .TextUrl(let url):       ed["type"] = "text_url"; ed["url"] = url
+                        case .TextMention(let pid):   ed["type"] = "text_mention"; ed["peer_id"] = pid.toInt64()
+                        case .CustomEmoji(_, let fid): ed["type"] = "custom_emoji"; ed["file_id"] = fid
+                        default:                      ed["type"] = "unknown"
+                        }
+                        return ed
+                    }
+                } else if let reactions = attr as? ReactionsMessageAttribute {
+                    d["reactions"] = reactions.reactions.map { r -> [String: Any] in
+                        var rd: [String: Any] = ["count": Int(r.count), "chosen": r.isSelected]
+                        switch r.value {
+                        case .builtin(let emoji):  rd["type"] = "builtin"; rd["emoticon"] = emoji
+                        case .custom(let fileId):  rd["type"] = "custom";  rd["file_id"] = fileId
+                        case .stars:               rd["type"] = "stars"
+                        }
+                        return rd
+                    }
+                }
+            }
+            // Media type
+            for media in msg.media {
+                if media is TelegramMediaImage {
+                    d["media_type"] = "photo"; break
+                } else if let file = media as? TelegramMediaFile {
+                    if file.isInstantVideo        { d["media_type"] = "video_note" }
+                    else if file.isVideo && file.isAnimated { d["media_type"] = "gif" }
+                    else if file.isVideo          { d["media_type"] = "video" }
+                    else if file.isVoice          { d["media_type"] = "voice" }
+                    else if file.isMusic          { d["media_type"] = "audio" }
+                    else if file.isAnimatedSticker || file.isVideoSticker { d["media_type"] = "animated_sticker" }
+                    else if file.isSticker        { d["media_type"] = "sticker" }
+                    else                          { d["media_type"] = "document" }
+                    break
+                } else if media is TelegramMediaPoll    { d["media_type"] = "poll";    break }
+                else if media is TelegramMediaContact   { d["media_type"] = "contact"; break }
+                else if media is TelegramMediaMap       { d["media_type"] = "location"; break }
+                else if media is TelegramMediaWebpage   { d["media_type"] = "webpage"; break }
+            }
+            result = d
         }
         return result
     }

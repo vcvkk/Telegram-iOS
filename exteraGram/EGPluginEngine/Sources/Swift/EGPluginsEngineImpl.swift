@@ -116,6 +116,10 @@ public final class EGPluginsEngineImpl {
                 let info = EGPluginHooks.getMessageInfoHandler?(peerId, msgId) ?? [:]
                 return info as NSDictionary
             }
+            EGPythonBridge.getMessageDataHandler = { peerId, msgId in
+                guard let data = EGPluginHooks.getMessageDataHandler?(peerId, msgId) else { return nil }
+                return data as NSDictionary
+            }
             EGPythonBridge.presentNativeSheetHandler = { ptr in
                 return UInt(EGPluginHooks.presentNativeSheetHandler?(UInt(ptr)) ?? 0)
             }
@@ -175,6 +179,8 @@ public final class EGPluginsEngineImpl {
             EGPluginHooks.getPeerAvatarHandler = nil
             EGPythonBridge.getMessageInfoHandler = nil
             EGPluginHooks.getMessageInfoHandler = nil
+            EGPythonBridge.getMessageDataHandler = nil
+            EGPluginHooks.getMessageDataHandler = nil
             EGPythonBridge.presentNativeSheetHandler = nil
             EGPluginHooks.presentNativeSheetHandler = nil
             EGPythonBridge.registerMenuItemHandler = nil
