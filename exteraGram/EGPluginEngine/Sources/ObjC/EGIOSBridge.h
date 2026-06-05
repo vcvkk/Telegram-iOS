@@ -103,6 +103,17 @@ NS_ASSUME_NONNULL_BEGIN
 /// Called on main thread. Returns YES on success.
 @property (class, nonatomic, copy, nullable) BOOL (^getWallpaperImageHandler)(NSString *outPath);
 
+/// Wired by EGPluginsEngineImpl: render selected messages into one quote image (live bubbles +
+/// avatars + grouping + wallpaper). completion is called on the main thread with outPath, or nil.
+@property (class, nonatomic, copy, nullable)
+    void (^renderQuoteHandler)(long long peerId, NSArray<NSNumber *> *msgIds, CGFloat width,
+                               NSString *outPath, void (^_Nullable completion)(NSString * _Nullable));
+
+/// Wired by EGPluginsEngineImpl: present a native Telegram sheet hosting the given content view.
+/// The argument is the raw UIView pointer (uintptr_t). Returns YES if presented; on NO the caller
+/// falls back to the UIKit sheet. Must be called on the main thread.
+@property (class, nonatomic, copy, nullable) BOOL (^presentNativeSheetHandler)(uintptr_t contentViewPtr);
+
 /// Must be called on the main thread before any plugin uses get_system_info / get_device_info.
 /// Enables UIDevice battery monitoring and caches immutable UIScreen dimensions so that
 /// the Python bridge functions can call them safely from background threads without dispatch_sync.

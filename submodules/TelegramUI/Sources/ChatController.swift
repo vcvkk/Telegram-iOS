@@ -10794,15 +10794,27 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                     params: ["peer_id": peerId, "message_ids": messageIds.map { Int($0) }])
         }
         EGPluginHooks.getWallpaperImageHandler = { [weak self] outPath in
-            guard let self = self else { return false }
-            let bgView = self.chatDisplayNode.backgroundNode.view
-            let size = bgView.bounds.size
-            guard size.width > 0, size.height > 0 else { return false }
-            let renderer = UIGraphicsImageRenderer(size: size)
-            let img = renderer.image { _ in bgView.drawHierarchy(in: bgView.bounds, afterScreenUpdates: false) }
+            guard let self = self, let img = self.egCaptureWallpaperImage() else { return false }
             guard let data = img.pngData() else { return false }
             return (try? data.write(to: URL(fileURLWithPath: outPath), options: .atomic)) != nil
         }
+        EGPluginHooks.renderQuoteHandler = { [weak self] reqPeerId, msgIds, renderWidth, outPath, completion in
+            guard let self = self, reqPeerId == peerId else { completion(nil); return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { completion(nil); return }
+                self.egRenderQuote(reqPeerId: reqPeerId, msgIds: msgIds,
+                                   width: renderWidth, outPath: outPath, completion: completion)
+            }
+        }
+    }
+
+    /// Snapshot the live chat wallpaper background to a UIImage.
+    private func egCaptureWallpaperImage() -> UIImage? {
+        let bgView = self.chatDisplayNode.backgroundNode.view
+        let size = bgView.bounds.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { _ in bgView.drawHierarchy(in: bgView.bounds, afterScreenUpdates: false) }
     }
 
     private func egSnapshotMessage(reqPeerId: Int64, msgId: Int32, renderWidth: CGFloat,
@@ -10829,6 +10841,153 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             completion(outPath)
         } catch {
             completion(nil)
+        }
+    }
+
+    /// Render a view's layer backing store (transform-independent, captures layer-backed nodes) to a UIImage.
+    private func egRenderViewToImage(_ view: UIView) -> UIImage? {
+        let bounds = view.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: bounds.size, format: format)
+        return renderer.image { ctx in
+            let cgCtx = ctx.cgContext
+            cgCtx.translateBy(x: 0, y: bounds.height)
+            cgCtx.scaleBy(x: 1, y: -1)
+            view.layer.render(in: cgCtx)
+        }
+    }
+
+    /// Render the selected messages into a single quote image, mirroring the live chat:
+    /// captures each live bubble's contentNode (excludes the selection checkmark, share button and
+    /// the 42pt selection shift — all of which live outside mainContextSourceNode.contentNode),
+    /// keeps native media/grouping/custom-emoji/inline-buttons/reactions, draws author avatars on the
+    /// last incoming message of each same-author run, and composites over the chat wallpaper.
+    private func egRenderQuote(reqPeerId: Int64, msgIds: [Int32], width: CGFloat,
+                               outPath: String, completion: @escaping (String?) -> Void) {
+        let targetPeerId = PeerId(reqPeerId)
+        let sortedIds = msgIds.sorted()
+
+        struct EGQuoteEntry {
+            let image: UIImage
+            let author: EnginePeer?
+            let incoming: Bool
+            var drawAvatar: Bool
+        }
+
+        var collected: [(image: UIImage, author: EnginePeer?, incoming: Bool)] = []
+        for mid in sortedIds {
+            var foundBubble: ChatMessageBubbleItemNode?
+            self.chatDisplayNode.historyNode.forEachItemNode { node in
+                guard foundBubble == nil,
+                      let bubble = node as? ChatMessageBubbleItemNode,
+                      let item = bubble.item,
+                      item.message.id.id == mid,
+                      item.message.id.peerId == targetPeerId else { return }
+                foundBubble = bubble
+            }
+            guard let bubble = foundBubble, let item = bubble.item,
+                  let image = self.egRenderViewToImage(bubble.mainContextSourceNode.contentNode.view) else { continue }
+            let incoming = item.message.effectivelyIncoming(self.context.account.peerId)
+            let author = item.message.author.flatMap { EnginePeer($0) }
+            collected.append((image, author, incoming))
+        }
+
+        guard !collected.isEmpty else { completion(nil); return }
+
+        // An avatar is drawn on the last incoming message of each consecutive same-author run.
+        var entries: [EGQuoteEntry] = []
+        for (i, c) in collected.enumerated() {
+            var drawAvatar = false
+            if c.incoming, let authorId = c.author?.id {
+                let isLastInRun = (i == collected.count - 1)
+                    || !collected[i + 1].incoming
+                    || collected[i + 1].author?.id != authorId
+                drawAvatar = isLastInRun
+            }
+            entries.append(EGQuoteEntry(image: c.image, author: c.author, incoming: c.incoming, drawAvatar: drawAvatar))
+        }
+
+        let avatarSize = CGSize(width: 34.0, height: 34.0)
+        var avatarSignals: [Signal<(Int, UIImage?), NoError>] = []
+        for (i, e) in entries.enumerated() {
+            if e.drawAvatar, let author = e.author {
+                let sig: Signal<(Int, UIImage?), NoError> = peerAvatarCompleteImage(
+                    account: self.context.account, peer: author, size: avatarSize, round: true)
+                    |> filter { $0 != nil }
+                    |> take(1)
+                    |> map { (i, $0) }
+                    |> timeout(1.5, queue: Queue.mainQueue(), alternate: .single((i, nil)))
+                avatarSignals.append(sig)
+            }
+        }
+
+        let assemble: ([Int: UIImage]) -> Void = { [weak self] avatarMap in
+            guard let self = self else { completion(nil); return }
+            let wallpaper = self.egCaptureWallpaperImage()
+            let pad: CGFloat = 12.0
+            let runSpacing: CGFloat = 8.0
+            let mergeSpacing: CGFloat = 2.0
+
+            var maxW: CGFloat = 1.0
+            var totalH: CGFloat = 0.0
+            for (i, e) in entries.enumerated() {
+                maxW = max(maxW, e.image.size.width)
+                totalH += e.image.size.height
+                if i < entries.count - 1 {
+                    totalH += e.drawAvatar ? runSpacing : mergeSpacing
+                }
+            }
+            let canvasSize = CGSize(width: maxW + pad * 2.0, height: totalH + pad * 2.0)
+
+            let format = UIGraphicsImageRendererFormat()
+            format.opaque = true
+            let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
+            let result = renderer.image { ctx in
+                if let wp = wallpaper, wp.size.width > 0, wp.size.height > 0 {
+                    let scale = max(canvasSize.width / wp.size.width, canvasSize.height / wp.size.height)
+                    let wSize = CGSize(width: wp.size.width * scale, height: wp.size.height * scale)
+                    let wOrigin = CGPoint(x: (canvasSize.width - wSize.width) / 2.0,
+                                          y: (canvasSize.height - wSize.height) / 2.0)
+                    wp.draw(in: CGRect(origin: wOrigin, size: wSize))
+                } else {
+                    UIColor(white: 0.1, alpha: 1.0).setFill()
+                    ctx.fill(CGRect(origin: .zero, size: canvasSize))
+                }
+                var y = pad
+                for (i, e) in entries.enumerated() {
+                    e.image.draw(at: CGPoint(x: pad, y: y))
+                    if e.drawAvatar, let av = avatarMap[i] {
+                        let ax = pad + 3.0
+                        let ay = y + e.image.size.height - avatarSize.height
+                        av.draw(in: CGRect(x: ax, y: ay, width: avatarSize.width, height: avatarSize.height))
+                    }
+                    y += e.image.size.height
+                    if i < entries.count - 1 {
+                        y += e.drawAvatar ? runSpacing : mergeSpacing
+                    }
+                }
+            }
+            guard let data = result.pngData() else { completion(nil); return }
+            do {
+                try data.write(to: URL(fileURLWithPath: outPath), options: .atomic)
+                completion(outPath)
+            } catch {
+                completion(nil)
+            }
+        }
+
+        if avatarSignals.isEmpty {
+            assemble([:])
+        } else {
+            let _ = (combineLatest(avatarSignals) |> deliverOnMainQueue).startStandalone(next: { pairs in
+                var map: [Int: UIImage] = [:]
+                for (idx, img) in pairs {
+                    if let img = img { map[idx] = img }
+                }
+                assemble(map)
+            })
         }
     }
 

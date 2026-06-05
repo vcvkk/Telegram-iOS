@@ -1,7 +1,7 @@
 __id__           = "quotecreate"
 __name__         = "✏️ Quote"
 __os__           = "ios"
-__version__      = "6.0"
+__version__      = "7.0"
 __author__       = "@oodze"
 __description__  = "Pixel-perfect quote images from the message selection toolbar."
 
@@ -83,46 +83,18 @@ def _handle_action(action, path, peer_id, reply_id):
 
 def _do_render_multiple(peer_id, message_ids):
     sorted_ids = sorted(message_ids)
-    results = {}
-    pending = [0]
+    out = _data_path("quote_{}.png".format(int(time.time() * 1000)))
 
-    def _finish():
-        ordered = [results[mid] for mid in sorted_ids if results.get(mid)]
-        if not ordered:
+    def _cb(path):
+        if not path:
             bridge.show_bulletin("✏️ Quote", "Не удалось создать изображение")
             return
+        bridge.run_on_main_thread(lambda: _show_preview(path, peer_id, sorted_ids[0]))
 
-        ts = int(time.time() * 1000)
-
-        wp_path = _data_path("wp_{}.png".format(ts))
-        wp = bridge.get_wallpaper_image(wp_path)
-
-        if len(ordered) == 1 and not wp:
-            composite = ordered[0]
-        else:
-            composite = bridge.composite_images(
-                ordered,
-                _data_path("composite_{}.png".format(ts)),
-                2, 16, "#1a1a1a",
-                wp or ""
-            )
-
-        bridge.run_on_main_thread(lambda: _show_preview(composite, peer_id, sorted_ids[0]))
-
-    for msg_id in sorted_ids:
-        pending[0] += 1
-        out = _data_path("q_{}_{}.png".format(msg_id, int(time.time() * 1000)))
-
-        def _cb(path, mid=msg_id):
-            results[mid] = path
-            pending[0] -= 1
-            if pending[0] == 0:
-                _finish()
-
-        bridge.snapshot_message(peer_id, msg_id, out, 390, _cb)
-
-    if pending[0] == 0:
-        _finish()
+    # snapshot_quote renders all selected messages into one image natively:
+    # live bubbles (media, grouping, custom emoji, inline buttons, reactions),
+    # author avatars, and the chat wallpaper — no client-side compositing needed.
+    bridge.snapshot_quote(peer_id, sorted_ids, out, 390, _cb)
 
 
 def _on_selection_tap(params):
@@ -136,7 +108,7 @@ def _on_selection_tap(params):
 
 def on_load(plugin):
     bridge.add_tl_hook("plugin.selection_action_tapped", _on_selection_tap)
-    bridge.log(__id__, "on_load complete (v6 — layer.render + styled buttons)")
+    bridge.log(__id__, "on_load complete (v7 — snapshot_quote native render)")
 
 
 def on_unload(plugin):

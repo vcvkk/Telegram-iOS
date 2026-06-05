@@ -76,6 +76,16 @@ public enum EGPluginHooks {
     /// Called synchronously on main thread by py_get_wallpaper_image. Returns true on success.
     public static var getWallpaperImageHandler: ((String) -> Bool)?
 
+    /// Wired by ChatController: render selected messages into a single quote image (live bubble
+    /// capture + avatars + grouping + wallpaper). (peerId, msgIds, width, outPath, completion).
+    /// completion(outPath) or completion(nil) is called on the main thread.
+    public static var renderQuoteHandler: ((Int64, [Int32], CGFloat, String, @escaping (String?) -> Void) -> Void)?
+
+    /// Wired by ChatController: present a native Telegram sheet hosting the given content view.
+    /// The argument is the raw UIView pointer (as UInt, same convention as findMessageViewHandler).
+    /// Returns true if presented (ObjC falls back to a UIKit sheet when this is nil/false).
+    public static var presentNativeSheetHandler: ((UInt) -> Bool)?
+
     /// MessageTextEntity type names to suppress when storing incoming messages.
     /// Plugins insert/remove entries; TelegramCore checks the set at parse time.
     /// Example: "Spoiler" suppresses messageEntitySpoiler entities.
