@@ -105,13 +105,16 @@ public final class EGPluginsEngineImpl {
             EGPythonBridge.getWallpaperImageHandler = { outPath in
                 return EGPluginHooks.getWallpaperImageHandler?(outPath) ?? false
             }
-            EGPythonBridge.renderQuoteHandler = { peerId, msgIds, width, outPath, completion in
-                let ids = msgIds.map { $0.int32Value }
-                if let handler = EGPluginHooks.renderQuoteHandler {
-                    handler(peerId, ids, width, outPath) { path in completion?(path) }
+            EGPythonBridge.getPeerAvatarHandler = { peerId, size, outPath, completion in
+                if let handler = EGPluginHooks.getPeerAvatarHandler {
+                    handler(peerId, size, outPath) { path in completion?(path) }
                 } else {
                     completion?(nil)
                 }
+            }
+            EGPythonBridge.getMessageInfoHandler = { peerId, msgId in
+                let info = EGPluginHooks.getMessageInfoHandler?(peerId, msgId) ?? [:]
+                return info as NSDictionary
             }
             EGPythonBridge.presentNativeSheetHandler = { ptr in
                 return EGPluginHooks.presentNativeSheetHandler?(UInt(ptr)) ?? false
@@ -168,8 +171,10 @@ public final class EGPluginsEngineImpl {
             EGPythonBridge.snapshotMessageHandler = nil
             EGPythonBridge.getWallpaperImageHandler = nil
             EGPluginHooks.getWallpaperImageHandler = nil
-            EGPythonBridge.renderQuoteHandler = nil
-            EGPluginHooks.renderQuoteHandler = nil
+            EGPythonBridge.getPeerAvatarHandler = nil
+            EGPluginHooks.getPeerAvatarHandler = nil
+            EGPythonBridge.getMessageInfoHandler = nil
+            EGPluginHooks.getMessageInfoHandler = nil
             EGPythonBridge.presentNativeSheetHandler = nil
             EGPluginHooks.presentNativeSheetHandler = nil
             EGPythonBridge.registerMenuItemHandler = nil

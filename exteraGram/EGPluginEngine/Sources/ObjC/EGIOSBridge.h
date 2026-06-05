@@ -103,11 +103,15 @@ NS_ASSUME_NONNULL_BEGIN
 /// Called on main thread. Returns YES on success.
 @property (class, nonatomic, copy, nullable) BOOL (^getWallpaperImageHandler)(NSString *outPath);
 
-/// Wired by EGPluginsEngineImpl: render selected messages into one quote image (live bubbles +
-/// avatars + grouping + wallpaper). completion is called on the main thread with outPath, or nil.
+/// Wired by EGPluginsEngineImpl: write a peer's avatar (photo or letters placeholder) to a PNG.
+/// completion is called on the main thread with outPath, or nil on failure.
 @property (class, nonatomic, copy, nullable)
-    void (^renderQuoteHandler)(long long peerId, NSArray<NSNumber *> *msgIds, CGFloat width,
-                               NSString *outPath, void (^_Nullable completion)(NSString * _Nullable));
+    void (^getPeerAvatarHandler)(long long peerId, CGFloat size, NSString *outPath,
+                                 void (^_Nullable completion)(NSString * _Nullable));
+
+/// Wired by EGPluginsEngineImpl: return basic metadata for a message as a dictionary
+/// (author_id, is_outgoing, sender_name, timestamp). Empty dict if not found. Main thread.
+@property (class, nonatomic, copy, nullable) NSDictionary * _Nonnull (^getMessageInfoHandler)(long long peerId, int32_t msgId);
 
 /// Wired by EGPluginsEngineImpl: present a native Telegram sheet hosting the given content view.
 /// The argument is the raw UIView pointer (uintptr_t). Returns YES if presented; on NO the caller

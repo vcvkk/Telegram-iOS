@@ -99,8 +99,10 @@ static uint64_t (^g_findMessageViewHandler)(long long, int32_t) = nil;
 static void (^g_snapshotMessageHandler)(long long, int32_t, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)) = nil;
 // Wired by ChatController: synchronously snapshots the chat wallpaper to a PNG file
 static BOOL (^g_getWallpaperImageHandler)(NSString *) = nil;
-// Wired by ChatController: render selected messages into a single quote image
-static void (^g_renderQuoteHandler)(long long, NSArray<NSNumber *> *, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)) = nil;
+// Wired by ChatController: write a peer's avatar to a PNG file
+static void (^g_getPeerAvatarHandler)(long long, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)) = nil;
+// Wired by ChatController: return basic metadata for a message
+static NSDictionary * (^g_getMessageInfoHandler)(long long, int32_t) = nil;
 // Wired by ChatController: present a native Telegram sheet hosting a content view
 static BOOL (^g_presentNativeSheetHandler)(uintptr_t) = nil;
 
@@ -2658,29 +2660,15 @@ static PyObject *py_snapshot_message(PyObject *self, PyObject *args) {
     Py_RETURN_NONE;
 }
 
-// snapshot_quote(peer_id: int, msg_ids: list[int], out_path: str[, width: float = 0, callback: callable = None]) → None
-// Async: delegates to g_renderQuoteHandler (ChatController). Renders all selected messages into one
-// image (live bubbles + avatars + grouping + wallpaper). Calls callback(path_or_None) on main thread.
-static PyObject *py_snapshot_quote(PyObject *self, PyObject *args) {
-    long long peerId = 0; PyObject *idList = NULL; const char *outPath = "";
-    double width = 0.0; PyObject *cb = Py_None;
-    if (!PyArg_ParseTuple(args, "LOs|dO", &peerId, &idList, &outPath, &width, &cb)) return NULL;
-    if (!PySequence_Check(idList)) {
-        PyErr_SetString(PyExc_TypeError, "msg_ids must be a sequence"); return NULL;
-    }
+// get_peer_avatar(peer_id: int, out_path: str[, size: float = 42, callback: callable = None]) → None
+// Async: delegates to g_getPeerAvatarHandler (ChatController). Writes the peer's avatar (photo or
+// letters placeholder) to out_path as PNG. Calls callback(path_or_None) on the main thread.
+static PyObject *py_get_peer_avatar(PyObject *self, PyObject *args) {
+    long long peerId = 0; const char *outPath = "";
+    double size = 42.0; PyObject *cb = Py_None;
+    if (!PyArg_ParseTuple(args, "Ls|dO", &peerId, &outPath, &size, &cb)) return NULL;
     if (cb != Py_None && !PyCallable_Check(cb)) {
         PyErr_SetString(PyExc_TypeError, "callback must be callable or None"); return NULL;
-    }
-    Py_ssize_t n = PySequence_Size(idList);
-    NSMutableArray<NSNumber *> *msgIds = [NSMutableArray arrayWithCapacity:(NSUInteger)MAX((Py_ssize_t)0, n)];
-    for (Py_ssize_t i = 0; i < n; i++) {
-        PyObject *item = PySequence_GetItem(idList, i);
-        if (item) {
-            long v = PyLong_AsLong(item);
-            if (!PyErr_Occurred()) [msgIds addObject:@((int32_t)v)];
-            else PyErr_Clear();
-            Py_DECREF(item);
-        }
     }
     if (cb != Py_None) Py_INCREF(cb);
     PyObject *cbRef = (cb != Py_None) ? cb : NULL;
@@ -2697,13 +2685,63 @@ static PyObject *py_snapshot_quote(PyObject *self, PyObject *args) {
             PyGILState_Release(gs);
         }
     };
-    if (g_renderQuoteHandler) {
-        g_renderQuoteHandler(peerId, msgIds, (CGFloat)width, nsOut, completion);
+    if (g_getPeerAvatarHandler) {
+        g_getPeerAvatarHandler(peerId, (CGFloat)size, nsOut, completion);
     } else {
         dispatch_async(dispatch_get_main_queue(), ^{ completion(nil); });
-        EGPluginDebugLog_appendCStr("Bridge", "snapshot_quote: handler NIL — ChatController not active?");
+        EGPluginDebugLog_appendCStr("Bridge", "get_peer_avatar: handler NIL — ChatController not active?");
     }
     Py_RETURN_NONE;
+}
+
+// get_message_info(peer_id: int, msg_id: int) → dict
+// Returns basic metadata (author_id, is_outgoing, sender_name, timestamp) for an on-screen message,
+// or an empty dict if not found. Must be called on the main thread (or via run_on_main_thread).
+static PyObject *py_get_message_info(PyObject *self, PyObject *args) {
+    long long peerId = 0; int msgId = 0;
+    if (!PyArg_ParseTuple(args, "Li", &peerId, &msgId)) return NULL;
+    __block NSDictionary *info = nil;
+    void (^work)(void) = ^{ if (g_getMessageInfoHandler) info = g_getMessageInfoHandler(peerId, (int32_t)msgId); };
+    if ([NSThread isMainThread]) work();
+    else dispatch_sync(dispatch_get_main_queue(), work);
+    return ns_to_py(info ?: @{});
+}
+
+// get_image_size(path: str) → [width, height] | None  — pure ObjC, thread-safe.
+static PyObject *py_get_image_size(PyObject *self, PyObject *args) {
+    const char *path = "";
+    if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
+    UIImage *img = [UIImage imageWithContentsOfFile:[NSString stringWithUTF8String:path]];
+    if (!img) Py_RETURN_NONE;
+    CGFloat w = img.size.width * img.scale, h = img.size.height * img.scale;
+    PyObject *list = PyList_New(2);
+    PyList_SetItem(list, 0, PyFloat_FromDouble((double)w));
+    PyList_SetItem(list, 1, PyFloat_FromDouble((double)h));
+    return list;
+}
+
+// overlay_image(base_path: str, overlay_path: str, x: float, y: float, w: float, h: float, out_path: str) → str | None
+// Draws overlay on top of base at the given pixel rect, writes the result to out_path. Pure CGContext.
+static PyObject *py_overlay_image(PyObject *self, PyObject *args) {
+    const char *basePath = "", *overlayPath = "", *outPath = "";
+    double x = 0, y = 0, w = 0, h = 0;
+    if (!PyArg_ParseTuple(args, "ssdddds", &basePath, &overlayPath, &x, &y, &w, &h, &outPath)) return NULL;
+    UIImage *base = [UIImage imageWithContentsOfFile:[NSString stringWithUTF8String:basePath]];
+    UIImage *overlay = [UIImage imageWithContentsOfFile:[NSString stringWithUTF8String:overlayPath]];
+    if (!base) Py_RETURN_NONE;
+    CGSize size = CGSizeMake(base.size.width * base.scale, base.size.height * base.scale);
+    UIGraphicsImageRendererFormat *fmt = [UIGraphicsImageRendererFormat defaultFormat];
+    fmt.scale = 1.0; fmt.opaque = NO;
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:size format:fmt];
+    UIImage *result = [renderer imageWithActions:^(UIGraphicsImageRendererContext * _Nonnull rctx) {
+        [base drawInRect:CGRectMake(0, 0, size.width, size.height)];
+        if (overlay) [overlay drawInRect:CGRectMake(x, y, w, h)];
+    }];
+    NSData *data = UIImagePNGRepresentation(result);
+    if (!data) Py_RETURN_NONE;
+    NSError *err = nil;
+    if (![data writeToFile:[NSString stringWithUTF8String:outPath] options:NSDataWritingAtomic error:&err]) Py_RETURN_NONE;
+    return PyUnicode_FromString(outPath);
 }
 
 // get_wallpaper_image(out_path: str) → str | None  (BRIDGE_VERSION 13)
@@ -2897,8 +2935,11 @@ static PyMethodDef ios_bridge_methods[] = {
     {"composite_images",   py_composite_images,   METH_VARARGS, "composite_images(paths, out_path[, gap=2, padding=16, bg='#1a1a1a'[, wallpaper_path='']]) → path — thread-safe"},
     // BRIDGE_VERSION 13 — get_wallpaper_image; show_bottom_sheet gains optional style arg; composite_images gains wallpaper_path
     {"get_wallpaper_image", py_get_wallpaper_image, METH_VARARGS, "get_wallpaper_image(out_path) → path or None — snapshot chat wallpaper PNG; call on main thread"},
-    // BRIDGE_VERSION 14 — snapshot_quote (live bubble capture + avatars + grouping + wallpaper); show_bottom_sheet "native" default style
-    {"snapshot_quote",     py_snapshot_quote,     METH_VARARGS, "snapshot_quote(peer_id, msg_ids, out_path[, width=0, callback=None]) — async single quote image"},
+    // BRIDGE_VERSION 14 — generic media/message primitives; show_bottom_sheet "native" default style
+    {"get_peer_avatar",    py_get_peer_avatar,    METH_VARARGS, "get_peer_avatar(peer_id, out_path[, size=42, callback=None]) — async avatar PNG"},
+    {"get_message_info",   py_get_message_info,   METH_VARARGS, "get_message_info(peer_id, msg_id) → dict(author_id, is_outgoing, sender_name, timestamp)"},
+    {"get_image_size",     py_get_image_size,     METH_VARARGS, "get_image_size(path) → [width, height] in pixels or None — thread-safe"},
+    {"overlay_image",      py_overlay_image,      METH_VARARGS, "overlay_image(base, overlay, x, y, w, h, out) → path — draw overlay on base; thread-safe"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -2927,7 +2968,7 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     //  11 — find_message_view, snapshot_view, snapshot_message, composite_images
     //  12 — show_bottom_sheet, show_bulletin, get_connection_state, register_plugin_entry icon
     //  13 — get_wallpaper_image; show_bottom_sheet style arg ("glass"); composite_images wallpaper_path
-    //  14 — snapshot_quote (one image: live bubbles + avatars + grouping + wallpaper); show_bottom_sheet "native" default style
+    //  14 — get_peer_avatar, get_message_info, get_image_size, overlay_image; show_bottom_sheet "native" default style
     PyModule_AddIntConstant(m, "BRIDGE_VERSION", 14);
     return m;
 }
@@ -3055,8 +3096,11 @@ static id py_to_ns(PyObject *obj) {
 + (BOOL (^)(NSString *))getWallpaperImageHandler { return g_getWallpaperImageHandler; }
 + (void)setGetWallpaperImageHandler:(BOOL (^)(NSString *))b { g_getWallpaperImageHandler = [b copy]; }
 
-+ (void (^)(long long, NSArray<NSNumber *> *, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)))renderQuoteHandler { return g_renderQuoteHandler; }
-+ (void)setRenderQuoteHandler:(void (^)(long long, NSArray<NSNumber *> *, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)))b { g_renderQuoteHandler = [b copy]; }
++ (void (^)(long long, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)))getPeerAvatarHandler { return g_getPeerAvatarHandler; }
++ (void)setGetPeerAvatarHandler:(void (^)(long long, CGFloat, NSString *, void(^_Nullable)(NSString * _Nullable)))b { g_getPeerAvatarHandler = [b copy]; }
+
++ (NSDictionary * (^)(long long, int32_t))getMessageInfoHandler { return g_getMessageInfoHandler; }
++ (void)setGetMessageInfoHandler:(NSDictionary * (^)(long long, int32_t))b { g_getMessageInfoHandler = [b copy]; }
 
 + (BOOL (^)(uintptr_t))presentNativeSheetHandler { return g_presentNativeSheetHandler; }
 + (void)setPresentNativeSheetHandler:(BOOL (^)(uintptr_t))b { g_presentNativeSheetHandler = [b copy]; }

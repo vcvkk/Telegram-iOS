@@ -21,6 +21,46 @@ static UIColor *EG_ColorFromARGB(NSNumber *n) {
     return [UIColor colorWithRed:r green:g blue:b alpha:a];
 }
 
+// Resolve a spec color value: an ARGB NSNumber, a "#RRGGBB"/"#RRGGBBAA" hex string,
+// or a theme-adaptive named system color (e.g. "label", "secondarySystemFill").
+static UIColor *EG_Color(id value) {
+    if (!value || value == [NSNull null]) return UIColor.clearColor;
+    if ([value isKindOfClass:[NSNumber class]]) return EG_ColorFromARGB((NSNumber *)value);
+    if (![value isKindOfClass:[NSString class]]) return UIColor.clearColor;
+
+    NSString *s = [(NSString *)value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    if (s.length == 0) return UIColor.clearColor;
+
+    if ([s hasPrefix:@"#"]) {
+        NSString *hex = [s substringFromIndex:1];
+        unsigned long long raw = 0;
+        [[NSScanner scannerWithString:hex] scanHexLongLong:&raw];
+        uint32_t argb;
+        if (hex.length <= 6) {
+            argb = 0xFF000000u | ((uint32_t)raw & 0x00FFFFFFu);          // RRGGBB → opaque
+        } else {
+            uint32_t rgba = (uint32_t)raw;                                // RRGGBBAA → AARRGGBB
+            uint32_t r = (rgba >> 24) & 0xFF, g = (rgba >> 16) & 0xFF,
+                     b = (rgba >>  8) & 0xFF, a = rgba & 0xFF;
+            argb = (a << 24) | (r << 16) | (g << 8) | b;
+        }
+        return EG_ColorFromARGB(@(argb));
+    }
+
+    NSString *k = s.lowercaseString;
+    if ([k isEqualToString:@"label"])                return UIColor.labelColor;
+    if ([k isEqualToString:@"secondarylabel"])       return UIColor.secondaryLabelColor;
+    if ([k isEqualToString:@"tertiarylabel"])        return UIColor.tertiaryLabelColor;
+    if ([k isEqualToString:@"accent"] || [k isEqualToString:@"link"]) return UIColor.linkColor;
+    if ([k isEqualToString:@"separator"])            return UIColor.separatorColor;
+    if ([k isEqualToString:@"systemfill"])           return UIColor.systemFillColor;
+    if ([k isEqualToString:@"secondarysystemfill"])  return UIColor.secondarySystemFillColor;
+    if ([k isEqualToString:@"tertiarysystemfill"])   return UIColor.tertiarySystemFillColor;
+    if ([k isEqualToString:@"systembackground"])     return UIColor.systemBackgroundColor;
+    if ([k isEqualToString:@"clear"])                return UIColor.clearColor;
+    return UIColor.clearColor;
+}
+
 // Map Android gravity bit-flag → UIKit text alignment / stack alignment.
 static NSTextAlignment EG_TextAlignmentFromGravity(NSInteger gravity) {
     NSInteger horiz = gravity & 0x07;
@@ -223,15 +263,15 @@ static NSTextAlignment EG_TextAlignmentFromGravity(NSInteger gravity) {
 + (void)applyCommonStyle:(UIView *)v from:(NSDictionary *)spec {
     if (!v) return;
 
-    NSNumber *bgc = spec[@"background_color"];
-    if (bgc) v.backgroundColor = EG_ColorFromARGB(bgc);
+    id bgc = spec[@"background_color"];
+    if (bgc) v.backgroundColor = EG_Color(bgc);
 
     NSDictionary *drawable = spec[@"background_drawable"];
     if ([drawable isKindOfClass:[NSDictionary class]]) {
-        UIColor *fill   = EG_ColorFromARGB(drawable[@"color"]);
+        UIColor *fill   = EG_Color(drawable[@"color"]);
         CGFloat radius  = [drawable[@"corner_radius"] doubleValue];
         CGFloat strokeW = [drawable[@"stroke_width"]  doubleValue];
-        UIColor *stroke = EG_ColorFromARGB(drawable[@"stroke_color"]);
+        UIColor *stroke = EG_Color(drawable[@"stroke_color"]);
         v.backgroundColor = fill;
         v.layer.cornerRadius = radius;
         if (strokeW > 0) {

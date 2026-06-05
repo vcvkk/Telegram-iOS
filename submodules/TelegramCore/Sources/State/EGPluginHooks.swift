@@ -76,10 +76,13 @@ public enum EGPluginHooks {
     /// Called synchronously on main thread by py_get_wallpaper_image. Returns true on success.
     public static var getWallpaperImageHandler: ((String) -> Bool)?
 
-    /// Wired by ChatController: render selected messages into a single quote image (live bubble
-    /// capture + avatars + grouping + wallpaper). (peerId, msgIds, width, outPath, completion).
-    /// completion(outPath) or completion(nil) is called on the main thread.
-    public static var renderQuoteHandler: ((Int64, [Int32], CGFloat, String, @escaping (String?) -> Void) -> Void)?
+    /// Wired by ChatController: write a peer's avatar (photo or letters) to a PNG file.
+    /// (peerId, size, outPath, completion). completion(outPath)/completion(nil) on the main thread.
+    public static var getPeerAvatarHandler: ((Int64, CGFloat, String, @escaping (String?) -> Void) -> Void)?
+
+    /// Wired by ChatController: return basic metadata for a message
+    /// (author_id: Int64, is_outgoing: Bool, sender_name: String, timestamp: Int). Main thread.
+    public static var getMessageInfoHandler: ((Int64, Int32) -> [String: Any])?
 
     /// Wired by ChatController: present a native Telegram sheet hosting the given content view.
     /// The argument is the raw UIView pointer (as UInt, same convention as findMessageViewHandler).
