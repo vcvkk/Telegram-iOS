@@ -114,11 +114,11 @@ public final class EGPluginsEngineImpl {
             }
             EGPythonBridge.getMessageInfoHandler = { peerId, msgId in
                 let info = EGPluginHooks.getMessageInfoHandler?(peerId, msgId) ?? [:]
-                return info as NSDictionary
+                return info as [AnyHashable: Any]
             }
             EGPythonBridge.getMessageDataHandler = { peerId, msgId in
                 guard let data = EGPluginHooks.getMessageDataHandler?(peerId, msgId) else { return nil }
-                return data as NSDictionary
+                return data as [AnyHashable: Any]
             }
             EGPythonBridge.presentNativeSheetHandler = { ptr in
                 return UInt(EGPluginHooks.presentNativeSheetHandler?(UInt(ptr)) ?? 0)
