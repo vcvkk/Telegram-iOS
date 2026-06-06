@@ -10941,8 +10941,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             d["peer_id"]    = msg.id.peerId.toInt64()
             d["timestamp"]  = Int(msg.timestamp)
             d["text"]       = msg.text
-            d["is_outgoing"] = msg.flags.contains(.Outgoing)
-            d["is_edited"]   = msg.flags.contains(.HasBeenEdited)
+            d["is_outgoing"] = !msg.flags.contains(.Incoming)
+            d["is_edited"]   = msg.attributes.contains { $0 is EditedMessageAttribute }
             d["is_pinned"]   = msg.tags.contains(.pinned)
             if let author = msg.author {
                 d["author_id"]   = author.id.toInt64()
