@@ -654,7 +654,7 @@ static PyObject *py_show_bottom_sheet(PyObject *self, PyObject *args) {
     PyObject *specObj = NULL;
     const char *style = "native";
     if (!PyArg_ParseTuple(args, "O|s", &specObj, &style)) return NULL;
-    BOOL useGlass = (strcmp(style, "glass") == 0);
+    __block BOOL useGlass = (strcmp(style, "glass") == 0);
     BOOL useNative = (strcmp(style, "native") == 0);
     id ns = py_to_ns(specObj);
     if (![ns isKindOfClass:[NSDictionary class]]) {
@@ -3335,24 +3335,9 @@ static PyObject *py_present(PyObject *self, PyObject *args) {
         NSArray *buttons = spec[@"buttons"] ?: @[];
         NSArray *options = spec[@"options"] ?: @[];
         NSString *cancelTitle = spec[@"cancel"] ?: @"Cancel";
-        PyObject *cb = ((__bridge PyObject *)(__bridge void *)(spec[@"callback"] ?: [NSNull null]));
-        // Note: spec[@"callback"] is a Python callable bridged through py_to_ns as NSValue(opaque).
-        // The _ios_bridge already handles this differently — use the NSDictionary callback key
-        // convention we established for show_action_sheet.
-        // For simplicity, re-use the same pattern as py_show_action_sheet (callback via PyObject).
-        // We store the callback in a retained NSValue before the dispatch_async.
-        id callbackBox = spec[@"__callback_ref__"]; // filled below
-
         BOOL isActionSheet = [type isEqualToString:@"actionsheet"];
         UIAlertControllerStyle alertStyle = isActionSheet
             ? UIAlertControllerStyleActionSheet : UIAlertControllerStyleAlert;
-
-        // Extract Python callback from spec — spec was built via py_to_ns so callables
-        // become NSNull (py_to_ns doesn't handle callables). We need a different approach:
-        // For alert/actionsheet with callbacks, plugins pass them separately.
-        // Store them using the options dict mechanism.
-        NSDictionary *options2 = (optObj != Py_None) ? (NSDictionary *)py_to_ns(optObj) : @{};
-        (void)callbackBox; (void)options2; (void)cb;
 
         dispatch_async(dispatch_get_main_queue(), ^{
             if (!g_dialogs) g_dialogs = [NSMutableDictionary new];
@@ -3435,20 +3420,18 @@ static PyObject *py_present(PyObject *self, PyObject *args) {
             NSString *capturedHandle = handle;
             NSString *capturedDismissId = dismissId;
             if (@available(iOS 14.0, *)) {
-                UIBarButtonItem *closeItem = [[UIBarButtonItem alloc]
-                    initWithSystemItem:UIBarButtonSystemItemClose target:nil action:nil];
                 __weak UINavigationController *weakNav = navVC;
-                [closeItem setPrimaryAction:[UIAction actionWithTitle:@"" image:nil identifier:nil
-                    handler:^(UIAction *a) {
-                        [weakNav dismissViewControllerAnimated:YES completion:nil];
-                        g_dialogs[capturedHandle] = nil;
-                        if (capturedDismissId.length > 0) {
-                            dispatch_async(dispatch_get_main_queue(), ^{
+                UIImage *xmark = [UIImage systemImageNamed:@"xmark"];
+                UIBarButtonItem *closeItem = [[UIBarButtonItem alloc]
+                    initWithPrimaryAction:[UIAction actionWithTitle:@"" image:xmark identifier:nil
+                        handler:^(UIAction *a) {
+                            [weakNav dismissViewControllerAnimated:YES completion:nil];
+                            g_dialogs[capturedHandle] = nil;
+                            if (capturedDismissId.length > 0) {
                                 NSMutableDictionary *p = [@{@"id": capturedDismissId} mutableCopy];
                                 [EGPythonBridge dispatchTLHook:@"plugin.view_callback" params:p];
-                            });
-                        }
-                    }]];
+                            }
+                        }]];
                 vc.navigationItem.leftBarButtonItem = closeItem;
             }
 
