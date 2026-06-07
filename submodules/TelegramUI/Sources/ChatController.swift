@@ -47,6 +47,8 @@ import AppBundle
 import ComponentFlow
 import ViewControllerComponent
 import SheetComponent
+import GlassBarButtonComponent
+import BundleIconComponent
 import LocalizedPeerData
 import PhoneNumberFormat
 import SettingsUI
@@ -10867,11 +10869,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         let bounds = view.bounds
         guard bounds.width > 0, bounds.height > 0 else { completion(nil); return }
         let renderer = UIGraphicsImageRenderer(size: bounds.size)
-        let image = renderer.image { ctx in
-            let cgCtx = ctx.cgContext
-            cgCtx.translateBy(x: 0, y: bounds.height)
-            cgCtx.scaleBy(x: 1, y: -1)
-            view.layer.render(in: cgCtx)
+        let image = renderer.image { _ in
+            view.drawHierarchy(in: CGRect(origin: .zero, size: bounds.size), afterScreenUpdates: false)
         }
         guard let data = image.pngData() else { completion(nil); return }
         do {
@@ -11106,40 +11105,32 @@ private final class EGNativeSheetContentComponent: Component {
 
     final class View: UIView {
         private var hostedView: UIView?
-        private var closeButton: UIButton?
+        private let closeButtonView = ComponentView<Empty>()
         private var dismissAction: (() -> Void)?
-
-        @objc private func closePressed() {
-            self.dismissAction?()
-        }
 
         func update(component: EGNativeSheetContentComponent, availableSize: CGSize, transition: ComponentTransition) -> CGSize {
             self.dismissAction = component.dismiss
 
-            let closeDiameter: CGFloat = 30.0
-            let closeButton: UIButton
-            if let existing = self.closeButton {
-                closeButton = existing
-            } else {
-                let button = UIButton(type: .custom)
-                let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
-                blur.isUserInteractionEnabled = false
-                blur.clipsToBounds = true
-                blur.layer.cornerRadius = closeDiameter / 2.0
-                button.insertSubview(blur, at: 0)
-                // Use the same close glyph as the native plugin-install sheet ("Navigation/Close").
-                let closeImage = UIImage(bundleImageName: "Navigation/Close")?.withRenderingMode(.alwaysTemplate)
-                    ?? UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12.0, weight: .semibold))
-                button.setImage(closeImage, for: .normal)
-                button.addTarget(self, action: #selector(self.closePressed), for: .touchUpInside)
-                self.addSubview(button)
-                self.closeButton = button
-                closeButton = button
-            }
-            closeButton.tintColor = component.theme.chat.inputPanel.panelControlColor
-            closeButton.frame = CGRect(x: 16.0, y: 14.0, width: closeDiameter, height: closeDiameter)
-            if let blur = closeButton.subviews.first as? UIVisualEffectView {
-                blur.frame = CGRect(origin: .zero, size: CGSize(width: closeDiameter, height: closeDiameter))
+            let closeDiameter: CGFloat = 44.0
+            let _ = self.closeButtonView.update(
+                transition: transition,
+                component: AnyComponent(GlassBarButtonComponent(
+                    size: CGSize(width: closeDiameter, height: closeDiameter),
+                    backgroundColor: nil,
+                    isDark: component.theme.overallDarkAppearance,
+                    state: .glass,
+                    component: AnyComponentWithIdentity(id: "close", component: AnyComponent(
+                        BundleIconComponent(name: "Navigation/Close",
+                            tintColor: component.theme.chat.inputPanel.panelControlColor)
+                    )),
+                    action: { [weak self] _ in self?.dismissAction?() }
+                )),
+                environment: {},
+                containerSize: CGSize(width: closeDiameter, height: closeDiameter)
+            )
+            if let closeView = self.closeButtonView.view {
+                if closeView.superview == nil { self.addSubview(closeView) }
+                closeView.frame = CGRect(x: 16.0, y: 14.0, width: closeDiameter, height: closeDiameter)
             }
 
             if self.hostedView !== component.contentView {
@@ -11148,7 +11139,7 @@ private final class EGNativeSheetContentComponent: Component {
                 self.hostedView = component.contentView
             }
 
-            let topInset: CGFloat = 56.0
+            let topInset: CGFloat = 66.0
             let contentWidth = availableSize.width
             let fitting = component.contentView.systemLayoutSizeFitting(
                 CGSize(width: contentWidth, height: .greatestFiniteMagnitude),

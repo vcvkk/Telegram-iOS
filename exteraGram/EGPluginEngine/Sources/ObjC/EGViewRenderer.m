@@ -216,7 +216,10 @@ static NSTextAlignment EG_TextAlignmentFromGravity(NSInteger gravity) {
     [btn setTitle:(spec[@"text"] ?: @"") forState:UIControlStateNormal];
     CGFloat size = [spec[@"text_size"] doubleValue]; if (size <= 0) size = 14;
     NSString *face = spec[@"typeface"] ?: @"bold";
-    UIFontWeight w = [face containsString:@"bold"] ? UIFontWeightBold : UIFontWeightRegular;
+    UIFontWeight w = UIFontWeightRegular;
+    if ([face containsString:@"bold"])           w = UIFontWeightBold;
+    else if ([face isEqualToString:@"semibold"]) w = UIFontWeightSemibold;
+    else if ([face isEqualToString:@"medium"])   w = UIFontWeightMedium;
     btn.titleLabel.font = [UIFont systemFontOfSize:size weight:w];
     UIColor *titleColor = spec[@"text_color"] ? EG_Color(spec[@"text_color"]) : UIColor.labelColor;
     [btn setTitleColor:titleColor forState:UIControlStateNormal];
@@ -314,6 +317,7 @@ static NSTextAlignment EG_TextAlignmentFromGravity(NSInteger gravity) {
 
 + (void)applySizing:(UIView *)v from:(NSDictionary *)lp {
     if (!v || ![lp isKindOfClass:[NSDictionary class]]) return;
+    v.translatesAutoresizingMaskIntoConstraints = NO;
     NSInteger w = [lp[@"width"]  integerValue];
     NSInteger h = [lp[@"height"] integerValue];
     CGFloat   wt = [lp[@"weight"] doubleValue];

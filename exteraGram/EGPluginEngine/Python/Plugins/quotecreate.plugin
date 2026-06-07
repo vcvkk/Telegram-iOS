@@ -81,7 +81,7 @@ def _handle_action(action, path, peer_id, reply_id):
         bridge.show_share_sheet(path)
 
 
-_AVATAR_PTS = 34
+_AVATAR_PTS = 42
 
 
 def _do_render_multiple(peer_id, message_ids):

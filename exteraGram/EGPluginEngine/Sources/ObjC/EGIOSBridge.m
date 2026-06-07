@@ -2855,55 +2855,35 @@ static PyObject *py_composite_images(PyObject *self, PyObject *args) {
     if (images.count > 1) totalH += gap * (images.count - 1);
 
     CGFloat W = maxW + padding * 2;
-    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-    CGContextRef ctx = CGBitmapContextCreate(NULL, (size_t)W, (size_t)totalH, 8, 0, cs,
-        kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst);
-    CGColorSpaceRelease(cs);
-    if (!ctx) Py_RETURN_NONE;
 
-    // Draw background: wallpaper (aspect-fill) or solid color
-    BOOL drewWallpaper = NO;
-    if (strlen(wallpaperPath) > 0) {
-        UIImage *wp = [UIImage imageWithContentsOfFile:[NSString stringWithUTF8String:wallpaperPath]];
-        if (wp && wp.CGImage) {
-            CGFloat wpW = wp.size.width, wpH = wp.size.height;
-            CGFloat scaleX = W / wpW, scaleY = totalH / wpH;
-            CGFloat scale = (scaleX > scaleY) ? scaleX : scaleY;
-            CGFloat drawW = wpW * scale, drawH = wpH * scale;
-            CGFloat drawX = (W - drawW) / 2.0, drawY = (totalH - drawH) / 2.0;
-            // CG origin is bottom-left — flip to UIKit top-left
-            CGContextSaveGState(ctx);
-            CGContextTranslateCTM(ctx, 0, totalH);
-            CGContextScaleCTM(ctx, 1.0, -1.0);
-            CGContextDrawImage(ctx, CGRectMake(drawX, totalH - drawY - drawH, drawW, drawH), wp.CGImage);
-            CGContextRestoreGState(ctx);
-            drewWallpaper = YES;
+    // Use UIGraphicsImageRenderer throughout so all coordinate math stays in UIKit
+    // top-left space — no manual CG flip needed, and drawInRect handles orientation.
+    UIGraphicsImageRendererFormat *fmt = [UIGraphicsImageRendererFormat defaultFormat];
+    fmt.scale = 1.0; fmt.opaque = YES;
+    UIGraphicsImageRenderer *rend = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(W, totalH) format:fmt];
+    UIImage *result = [rend imageWithActions:^(UIGraphicsImageRendererContext *rctx __unused) {
+        // Background: wallpaper aspect-fill or solid color
+        NSString *wpNS = [NSString stringWithUTF8String:wallpaperPath];
+        UIImage *wp = (wpNS.length > 0) ? [UIImage imageWithContentsOfFile:wpNS] : nil;
+        if (wp) {
+            CGFloat scaleX = W / wp.size.width, scaleY = totalH / wp.size.height;
+            CGFloat sc = MAX(scaleX, scaleY);
+            CGFloat dw = wp.size.width * sc, dh = wp.size.height * sc;
+            [wp drawInRect:CGRectMake((W - dw) / 2.0, (totalH - dh) / 2.0, dw, dh)];
+        } else {
+            [[UIColor colorWithRed:bgR green:bgG blue:bgB alpha:1.0] setFill];
+            UIRectFill(CGRectMake(0, 0, W, totalH));
         }
-    }
-    if (!drewWallpaper) {
-        CGContextSetRGBFillColor(ctx, bgR, bgG, bgB, 1.0);
-        CGContextFillRect(ctx, CGRectMake(0, 0, W, totalH));
-    }
-
-    CGFloat y = padding;
-    for (UIImage *img in images) {
-        CGFloat x = padding + (maxW - img.size.width) / 2.0;
-        // CG coordinate origin is bottom-left — flip to match UIKit top-left
-        CGContextSaveGState(ctx);
-        CGContextTranslateCTM(ctx, 0, totalH);
-        CGContextScaleCTM(ctx, 1.0, -1.0);
-        CGContextDrawImage(ctx, CGRectMake(x, totalH - y - img.size.height, img.size.width, img.size.height), img.CGImage);
-        CGContextRestoreGState(ctx);
-        y += img.size.height + gap;
-    }
-
-    CGImageRef cgImg = CGBitmapContextCreateImage(ctx);
-    CGContextRelease(ctx);
-    if (!cgImg) Py_RETURN_NONE;
+        // Stack images top-to-bottom (UIKit order: y=0 is top)
+        CGFloat y = padding;
+        for (UIImage *img in images) {
+            CGFloat x = padding + (maxW - img.size.width) / 2.0;
+            [img drawInRect:CGRectMake(x, y, img.size.width, img.size.height)];
+            y += img.size.height + gap;
+        }
+    }];
 
     NSString *nsOut = [NSString stringWithUTF8String:outPath];
-    UIImage *result = [UIImage imageWithCGImage:cgImg scale:1.0 orientation:UIImageOrientationUp];
-    CGImageRelease(cgImg);
     NSData *data = UIImagePNGRepresentation(result);
     BOOL ok = data ? [data writeToFile:nsOut atomically:YES] : NO;
     if (!ok) Py_RETURN_NONE;
