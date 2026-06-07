@@ -11121,19 +11121,22 @@ private final class EGNativeSheetContentComponent: Component {
             if let existing = self.closeButton {
                 closeButton = existing
             } else {
-                let button = UIButton(type: .system)
-                let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+                let button = UIButton(type: .custom)
+                let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
                 blur.isUserInteractionEnabled = false
                 blur.clipsToBounds = true
                 blur.layer.cornerRadius = closeDiameter / 2.0
                 button.insertSubview(blur, at: 0)
-                button.setImage(UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12.0, weight: .semibold)), for: .normal)
+                // Use the same close glyph as the native plugin-install sheet ("Navigation/Close").
+                let closeImage = UIImage(bundleImageName: "Navigation/Close")?.withRenderingMode(.alwaysTemplate)
+                    ?? UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12.0, weight: .semibold))
+                button.setImage(closeImage, for: .normal)
                 button.addTarget(self, action: #selector(self.closePressed), for: .touchUpInside)
                 self.addSubview(button)
                 self.closeButton = button
                 closeButton = button
             }
-            closeButton.tintColor = component.theme.list.itemSecondaryTextColor
+            closeButton.tintColor = component.theme.chat.inputPanel.panelControlColor
             closeButton.frame = CGRect(x: 16.0, y: 14.0, width: closeDiameter, height: closeDiameter)
             if let blur = closeButton.subviews.first as? UIVisualEffectView {
                 blur.frame = CGRect(origin: .zero, size: CGSize(width: closeDiameter, height: closeDiameter))

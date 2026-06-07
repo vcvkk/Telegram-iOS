@@ -84,68 +84,13 @@ def _handle_action(action, path, peer_id, reply_id):
 _AVATAR_PTS = 34
 
 
-def _build_render_spec(peer_id, sorted_ids):
-    """
-    Build a render_image spec for the given message list.
-    Uses get_message (BRIDGE_VERSION 15) to determine author/incoming per message,
-    then attaches an avatar overlay on the last incoming message of each same-author run.
-    Falls back to get_message_info if get_message is unavailable (BRIDGE_VERSION < 15).
-    """
-    get_msg = getattr(bridge, "get_message", None)
-    infos = {}
-    for mid in sorted_ids:
-        if get_msg:
-            info = get_msg(peer_id, mid) or {}
-        else:
-            info = bridge.get_message_info(peer_id, mid) or {}
-        infos[mid] = info
-
-    items = []
-    for i, mid in enumerate(sorted_ids):
-        info = infos[mid]
-        item = {"type": "message", "peer_id": peer_id, "msg_id": mid, "width": 390}
-
-        # Attach avatar if this is the last incoming message in a same-author run
-        if not info.get("is_outgoing"):
-            aid = info.get("author_id")
-            if aid:
-                is_last_in_run = True
-                if i + 1 < len(sorted_ids):
-                    nxt = infos[sorted_ids[i + 1]]
-                    if not nxt.get("is_outgoing") and nxt.get("author_id") == aid:
-                        is_last_in_run = False
-                if is_last_in_run:
-                    item["avatar"] = {
-                        "peer_id": aid,
-                        "size": float(_AVATAR_PTS),
-                        "anchor": "bottom_left",
-                        "offset_x": 6.0,
-                        "offset_y": 4.0,
-                    }
-
-        items.append(item)
-
-    return {
-        "layout": "vstack",
-        "spacing": 2,
-        "padding": 16,
-        "background": {"type": "wallpaper", "fallback_color": "#1a1a1a"},
-        "items": items,
-    }
-
-
 def _do_render_multiple(peer_id, message_ids):
     sorted_ids = sorted(message_ids)
     out = _data_path("quote_{}.png".format(int(time.time() * 1000)))
-
-    # Use render_image (BRIDGE_VERSION 15) if available; otherwise fall back to v14 primitives.
-    if hasattr(bridge, "render_image"):
-        spec = _build_render_spec(peer_id, sorted_ids)
-        def _on_render(path):
-            bridge.run_on_main_thread(lambda: _show_preview(path, peer_id, sorted_ids[0]))
-        bridge.render_image(spec, out, _on_render)
-    else:
-        _do_render_v14(peer_id, sorted_ids, out)
+    # Use the proven per-primitive path (snapshot_message + overlay_image + composite_images).
+    # render_image() exists as a generic API but the explicit path gives pixel-identical,
+    # orientation-correct output for the quote layout.
+    _do_render_v14(peer_id, sorted_ids, out)
 
 
 # ---------------------------------------------------------------------------

@@ -3120,27 +3120,16 @@ static PyObject *py_render_image(PyObject *self, PyObject *args) {
             CGFloat x = rightAnchor ? (bubW - avW - offX) : offX;
             CGFloat y = bubH - avH - offY;
 
-            CGColorSpaceRef cs2 = CGColorSpaceCreateDeviceRGB();
-            CGContextRef ctx2 = CGBitmapContextCreate(NULL, (size_t)bubW, (size_t)bubH, 8, 0, cs2,
-                kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst);
-            CGColorSpaceRelease(cs2);
-            if (!ctx2) continue;
-
-            CGContextSaveGState(ctx2);
-            CGContextTranslateCTM(ctx2, 0, bubH); CGContextScaleCTM(ctx2, 1, -1);
-            CGContextDrawImage(ctx2, CGRectMake(0, 0, bubW, bubH), bubble.CGImage);
-            CGContextRestoreGState(ctx2);
-
-            CGContextSaveGState(ctx2);
-            CGContextTranslateCTM(ctx2, 0, bubH); CGContextScaleCTM(ctx2, 1, -1);
-            CGContextDrawImage(ctx2, CGRectMake(x, bubH - y - avH, avW, avH), avatar.CGImage);
-            CGContextRestoreGState(ctx2);
-
-            CGImageRef cgImg2 = CGBitmapContextCreateImage(ctx2);
-            CGContextRelease(ctx2);
-            if (!cgImg2) continue;
-            UIImage *composed = [UIImage imageWithCGImage:cgImg2 scale:1.0 orientation:UIImageOrientationUp];
-            CGImageRelease(cgImg2);
+            // Use UIKit drawInRect (same as overlay_image) so the bubble's pixel orientation
+            // is preserved faithfully — the final composite then flips all items uniformly.
+            UIGraphicsImageRendererFormat *ovFmt = [UIGraphicsImageRendererFormat defaultFormat];
+            ovFmt.scale = 1.0; ovFmt.opaque = NO;
+            UIGraphicsImageRenderer *ovRenderer = [[UIGraphicsImageRenderer alloc]
+                initWithSize:CGSizeMake(bubW, bubH) format:ovFmt];
+            UIImage *composed = [ovRenderer imageWithActions:^(UIGraphicsImageRendererContext *rctx) {
+                [bubble drawInRect:CGRectMake(0, 0, bubW, bubH)];
+                [avatar drawInRect:CGRectMake(x, y, avW, avH)];
+            }];
             NSData *d2 = UIImagePNGRepresentation(composed);
             NSString *ovOut = [bubblePath stringByAppendingString:@"_ov.png"];
             if (d2 && [d2 writeToFile:ovOut atomically:YES]) resolved[idx] = ovOut;

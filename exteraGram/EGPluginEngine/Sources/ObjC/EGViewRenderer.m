@@ -198,7 +198,7 @@ static NSTextAlignment EG_TextAlignmentFromGravity(NSInteger gravity) {
         if (d) font = [UIFont fontWithDescriptor:d size:size];
     }
     label.font = font;
-    label.textColor = EG_ColorFromARGB(spec[@"text_color"]);
+    label.textColor = spec[@"text_color"] ? EG_Color(spec[@"text_color"]) : UIColor.labelColor;
     NSInteger gravity = [spec[@"gravity"] integerValue];
     label.textAlignment = EG_TextAlignmentFromGravity(gravity);
     NSInteger maxLines = [spec[@"max_lines"] integerValue];
@@ -218,8 +218,9 @@ static NSTextAlignment EG_TextAlignmentFromGravity(NSInteger gravity) {
     NSString *face = spec[@"typeface"] ?: @"bold";
     UIFontWeight w = [face containsString:@"bold"] ? UIFontWeightBold : UIFontWeightRegular;
     btn.titleLabel.font = [UIFont systemFontOfSize:size weight:w];
-    [btn setTitleColor:EG_ColorFromARGB(spec[@"text_color"]) forState:UIControlStateNormal];
-    [btn setTitleColor:[EG_ColorFromARGB(spec[@"text_color"]) colorWithAlphaComponent:0.4]
+    UIColor *titleColor = spec[@"text_color"] ? EG_Color(spec[@"text_color"]) : UIColor.labelColor;
+    [btn setTitleColor:titleColor forState:UIControlStateNormal];
+    [btn setTitleColor:[titleColor colorWithAlphaComponent:0.4]
               forState:UIControlStateDisabled];
     btn.titleLabel.numberOfLines = 2;
     btn.titleLabel.textAlignment = NSTextAlignmentCenter;
