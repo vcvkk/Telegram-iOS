@@ -70,7 +70,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Wired by PluginsController.wireClientInfo: (peerId, text) → real enqueueMessages call.
 /// Called from _ios_bridge.send_message(peer_id, text) to let plugins send messages.
-@property (class, nonatomic, copy, nullable) void (^sendMessageHandler)(long long peerId, NSString *text);
+@property (class, nonatomic, copy, nullable) void (^sendMessageHandler)(long long peerId, NSString *text, NSArray<NSDictionary *> * _Nullable entities);
 
 /// Wired by PluginsController.wireClientInfo: (peerId, msgId, emoticon) → updateMessageReactionsInteractively.
 /// Called from _ios_bridge.send_reaction(peer_id, msg_id, emoticon) to let plugins add reactions.
