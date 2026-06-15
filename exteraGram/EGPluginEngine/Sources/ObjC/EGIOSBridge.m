@@ -3682,8 +3682,8 @@ static id py_to_ns(PyObject *obj) {
 + (void (^)(NSString *, BOOL))suppressAttributeTypeHandler { return g_suppressAttributeTypeHandler; }
 + (void)setSuppressAttributeTypeHandler:(void (^)(NSString *, BOOL))b { g_suppressAttributeTypeHandler = [b copy]; }
 
-+ (void (^)(long long, NSString *))sendMessageHandler { return g_sendMessageHandler; }
-+ (void)setSendMessageHandler:(void (^)(long long, NSString *))b { g_sendMessageHandler = [b copy]; }
++ (void (^)(long long, NSString *, NSArray<NSDictionary *> *))sendMessageHandler { return g_sendMessageHandler; }
++ (void)setSendMessageHandler:(void (^)(long long, NSString *, NSArray<NSDictionary *> *))b { g_sendMessageHandler = [b copy]; }
 
 + (void (^)(long long, int32_t, NSString *))sendReactionHandler { return g_sendReactionHandler; }
 + (void)setSendReactionHandler:(void (^)(long long, int32_t, NSString *))b { g_sendReactionHandler = [b copy]; }
