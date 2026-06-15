@@ -82,8 +82,8 @@ public final class EGPluginsEngineImpl {
             }
             // Forward _ios_bridge.send_message() to the real enqueueMessages wired by PluginsController.
             // EGPythonBridge is ObjC — only visible inside EGPluginEngine, not in EGSettingsUI.
-            EGPythonBridge.sendMessageHandler = { peerId, text in
-                EGPluginHooks.pluginSendMessageHandler?(peerId, text)
+            EGPythonBridge.sendMessageHandler = { peerId, text, entities in
+                EGPluginHooks.pluginSendMessageHandler?(peerId, text, entities)
             }
             EGPythonBridge.sendReactionHandler = { peerId, msgId, emoticon in
                 EGPluginHooks.pluginSendReactionHandler?(peerId, msgId, emoticon)
