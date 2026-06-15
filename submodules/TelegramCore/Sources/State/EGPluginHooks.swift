@@ -48,7 +48,7 @@ public enum EGPluginHooks {
 
     /// Called from _ios_bridge.send_message(peer_id, text) — plugin-initiated sends.
     /// Wired by PluginsController.wireClientInfo to a real enqueueMessages call.
-    public static var pluginSendMessageHandler: ((Int64, String, [[String: Any]]?) -> Void)?
+    public static var pluginSendMessageHandler: ((Int64, String, [[AnyHashable: Any]]?) -> Void)?
 
     /// Called from _ios_bridge.send_reaction(peer_id, msg_id, emoticon) — plugin-initiated reactions.
     /// Wired by PluginsController.wireClientInfo to updateMessageReactionsInteractively.
