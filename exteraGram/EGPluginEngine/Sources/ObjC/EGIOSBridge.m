@@ -85,7 +85,7 @@ static BOOL g_initialized = NO;
 static void (^g_suppressEntityTypeHandler)(NSString *, BOOL) = nil;
 static void (^g_suppressAttributeTypeHandler)(NSString *, BOOL) = nil;
 // Wired by PluginsController.wireClientInfo: lets plugins send Telegram messages
-static void (^g_sendMessageHandler)(long long, NSString *) = nil;
+static void (^g_sendMessageHandler)(long long, NSString *, NSArray<NSDictionary *> * _Nullable) = nil;
 // Wired by PluginsController.wireClientInfo: lets plugins send Telegram reactions
 static void (^g_sendReactionHandler)(long long, int32_t, NSString *) = nil;
 // Wired by EGPluginsEngineImpl: register a plugin menu entry in the iOS UI
@@ -1465,12 +1465,34 @@ static PyObject *py_show_plugin_settings(PyObject *self, PyObject *args) {
 static PyObject *py_send_message(PyObject *self, PyObject *args) {
     long long peerId = 0;
     const char *text = "";
-    if (!PyArg_ParseTuple(args, "Ls", &peerId, &text)) return NULL;
-    void (^h)(long long, NSString *) = g_sendMessageHandler;
+    PyObject *pyEntities = NULL;
+    if (!PyArg_ParseTuple(args, "Ls|O", &peerId, &text, &pyEntities)) return NULL;
+    void (^h)(long long, NSString *, NSArray<NSDictionary *> *) = g_sendMessageHandler;
     if (h) {
         NSString *nsText = [NSString stringWithUTF8String:text];
-        h(peerId, nsText);
-        EGPluginDebugLog_appendCStr("Bridge", [[NSString stringWithFormat:@"send_message: peer=%lld len=%lu", peerId, (unsigned long)nsText.length] UTF8String]);
+        NSMutableArray<NSDictionary *> *entities = nil;
+        if (pyEntities && PyList_Check(pyEntities)) {
+            entities = [NSMutableArray array];
+            for (Py_ssize_t i = 0; i < PyList_Size(pyEntities); i++) {
+                PyObject *item = PyList_GetItem(pyEntities, i);
+                if (!PyDict_Check(item)) continue;
+                NSMutableDictionary *dict = [NSMutableDictionary dictionary];
+                PyObject *key, *value;
+                Py_ssize_t pos = 0;
+                while (PyDict_Next(item, &pos, &key, &value)) {
+                    if (!PyUnicode_Check(key)) continue;
+                    NSString *nsKey = @(PyUnicode_AsUTF8(key));
+                    if (PyLong_Check(value)) {
+                        dict[nsKey] = @(PyLong_AsLong(value));
+                    } else if (PyUnicode_Check(value)) {
+                        dict[nsKey] = @(PyUnicode_AsUTF8(value));
+                    }
+                }
+                [entities addObject:dict];
+            }
+        }
+        h(peerId, nsText, entities);
+        EGPluginDebugLog_appendCStr("Bridge", [[NSString stringWithFormat:@"send_message: peer=%lld len=%lu entities=%lu", peerId, (unsigned long)nsText.length, (unsigned long)(entities.count)] UTF8String]);
     } else {
         EGPluginDebugLog_appendCStr("Bridge", "send_message: handler NIL — wireClientInfo not called yet?");
     }
