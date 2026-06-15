@@ -279,26 +279,53 @@ public final class PluginsController {
         EGPluginClientInfo.connectionStateProvider = { stateBox.value }
 
         // Wire send_message() for plugins.
-        EGPluginHooks.pluginSendMessageHandler = { [weak context] peerId, text in
-            guard let ctx = context else { return }
-            let pid = PeerId(peerId)
-            let _ = enqueueMessages(
-                account: ctx.account,
-                peerId: pid,
-                messages: [.message(
-                    text: text,
-                    attributes: [],
-                    inlineStickers: [:],
-                    mediaReference: nil,
-                    threadId: nil,
-                    replyToMessageId: nil,
-                    replyToStoryId: nil,
-                    localGroupingKey: nil,
-                    correlationId: nil,
-                    bubbleUpEmojiOrStickersets: []
-                )]
-            ).startStandalone()
+        EGPluginHooks.pluginSendMessageHandler = { [weak context] peerId, text, pyEntities in
+    guard let ctx = context else { return }
+    let pid = PeerId(peerId)
+    var attributes: [MessageAttribute] = []
+    if let dicts = pyEntities, !dicts.isEmpty {
+        var textEntities: [MessageTextEntity] = []
+        for d in dicts {
+            guard let offset = d["offset"] as? Int,
+                  let length = d["length"] as? Int,
+                  let type   = d["_type"]  as? String else { continue }
+            let range = offset ..< (offset + length)
+            switch type {
+            case "messageEntityTextUrl":
+                if let url = d["url"] as? String {
+                    textEntities.append(MessageTextEntity(range: range, type: .TextUrl(url: url)))
+                }
+            case "messageEntityBold":
+                textEntities.append(MessageTextEntity(range: range, type: .Bold))
+            case "messageEntityItalic":
+                textEntities.append(MessageTextEntity(range: range, type: .Italic))
+            case "messageEntityCode":
+                textEntities.append(MessageTextEntity(range: range, type: .Code))
+            default:
+                break
+            }
         }
+        if !textEntities.isEmpty {
+            attributes.append(TextEntitiesMessageAttribute(entities: textEntities))
+        }
+    }
+    let _ = enqueueMessages(
+        account: ctx.account,
+        peerId: pid,
+        messages: [.message(
+            text: text,
+            attributes: attributes,
+            inlineStickers: [:],
+            mediaReference: nil,
+            threadId: nil,
+            replyToMessageId: nil,
+            replyToStoryId: nil,
+            localGroupingKey: nil,
+            correlationId: nil,
+            bubbleUpEmojiOrStickersets: []
+        )]
+    ).startStandalone()
+}
 
         // Wire send_reaction() for plugins — appends a builtin emoji reaction to a message.
         EGPluginHooks.pluginSendReactionHandler = { [weak context] peerId, messageId, emoticon in
