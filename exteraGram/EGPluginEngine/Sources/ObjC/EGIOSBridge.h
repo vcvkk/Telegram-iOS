@@ -33,6 +33,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// Unload a plugin: call on_unload() and remove from sys.modules.
 + (void)unloadPlugin:(NSString *)pluginId;
 
+/// Inject SystemExit into the Python thread currently running a plugin's on_load.
+/// Best-effort recovery for a hung load; no-op if the plugin isn't currently loading.
++ (void)interruptPlugin:(NSString *)pluginId;
+
+/// Parse a plugin file's top-level dunder metadata via Python's ast module (no code is
+/// executed). Returns a JSON string of {name: value}, or nil on failure / runtime down.
++ (nullable NSString *)parsePluginMetadata:(NSString *)path;
+
 /// Fire all Python TL hook callbacks registered for tlType.
 /// The params dict is converted to a Python dict, passed to each callback,
 /// then the (possibly modified) values are written back into params.

@@ -1147,6 +1147,7 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: 
                         var hookParams: [String: Any] = [
                             "peer_id": message.id.peerId.toInt64(),
                             "text":    message.text,
+                            "from_id": message.authorId?.toInt64() ?? 0,
                         ]
                         if case let .Id(msgId) = message.id {
                             hookParams["message_id"] = Int(msgId.id)

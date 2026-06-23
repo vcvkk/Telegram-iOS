@@ -239,9 +239,25 @@ public final class EGPluginsEngineImpl {
             }
         }
         let watchdog = EGPluginsWatchdog.shared
-        watchdog.begin(pluginId: id) { [weak self] in self?.notResponding[id] = true }
+        watchdog.begin(pluginId: id) { [weak self] in
+            self?.notResponding[id] = true
+            // Best-effort: inject SystemExit into the hung plugin's Python thread so the
+            // interpreter (and engine queue) can recover instead of wedging forever.
+            EGPythonBridge.interruptPlugin(id)
+            NotificationCenter.default.post(
+                name: NSNotification.Name("EGPluginShowBulletinNotification"), object: nil,
+                userInfo: ["title": "⚠️ Plugin", "text": "Plugin '\(id)' stopped — not responding", "icon": ""])
+        }
         EGPluginDebugLog.shared.append(tag: "Engine", "Loading plugin: \(id)")
+        // Per-plugin crash marker: record that this plugin is mid-load. If the app dies
+        // here (e.g. a native crash inside on_load), PluginsController detects the marker
+        // on the next launch and disables just this plugin. Cleared immediately on return.
+        let defaults = UserDefaults.standard
+        defaults.set(id, forKey: "eg_loading_plugin")
+        defaults.synchronize()
         let errMsg = EGPythonBridge.loadPlugin(id, fromPath: filePath)
+        defaults.removeObject(forKey: "eg_loading_plugin")
+        defaults.synchronize()
         watchdog.end(pluginId: id)
         if let errMsg {
             errorStates[id] = errMsg

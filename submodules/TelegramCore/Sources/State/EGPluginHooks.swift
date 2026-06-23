@@ -144,7 +144,8 @@ public enum EGPluginHooks {
 // Plugins subscribe via add_tl_hook(event_name, callback).
 //
 // "messages.receivedMessage"   — incoming message stored (after decrypt)
-//   params: peer_id: Int64, text: String, message_id: Int (if available)
+//   params: peer_id: Int64, text: String, from_id: Int64 (sender, 0 if unknown),
+//           message_id: Int (if available)
 //   source: AccountStateManagementUtils.swift / .updateNewMessage
 //
 // "messages.readHistory"       — read pointer advanced

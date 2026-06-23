@@ -168,6 +168,13 @@ public final class PluginsController {
     // next launch, triggering auto safe mode.
     private let launchMarkerKey = "eg_plugins_launching"
 
+    // UserDefaults key recording the single plugin currently being loaded.
+    // Written by EGPluginsEngineImpl around each EGPythonBridge.loadPlugin call and
+    // cleared on return. If it survives to the next launch, that plugin crashed during
+    // load and is disabled individually (per-plugin crash guard). Must match the literal
+    // used in EGPluginsEngineImpl (the two live in different modules).
+    private let loadingPluginKey = "eg_loading_plugin"
+
     public func startEngine(completion: (() -> Void)? = nil) {
         EGLogger.shared.log("PluginsController",
             "startEngine called — isEngineEnabled=\(isEngineEnabled) isSafeModeEnabled=\(isSafeModeEnabled) plugins=\(plugins.count) enabled=\(plugins.filter { $0.isEnabled }.count)")
@@ -181,7 +188,17 @@ public final class PluginsController {
         // If the marker is still set from a previous session, either the app was
         // force-killed while plugins were loading/running, or Python crashed.
         let defaults = UserDefaults.standard
-        if defaults.bool(forKey: launchMarkerKey) {
+        // Per-plugin crash guard takes priority: if a specific plugin was mid-load when
+        // the app died, disable just that one and continue normal startup — far less
+        // disruptive than the all-or-nothing safe mode.
+        if let crashed = defaults.string(forKey: loadingPluginKey), !crashed.isEmpty {
+            EGLogger.shared.log("PluginsController",
+                "Per-plugin crash guard: '\(crashed)' was mid-load at last shutdown — disabling it")
+            defaults.removeObject(forKey: loadingPluginKey)
+            defaults.removeObject(forKey: launchMarkerKey) // attributed — skip global safe mode
+            disableCrashedPlugin(crashed)
+            // fall through to a normal start with that plugin now disabled
+        } else if defaults.bool(forKey: launchMarkerKey) {
             EGLogger.shared.log("PluginsController",
                 "Unclean shutdown detected — auto-entering safe mode")
             isSafeModeEnabled = true
@@ -206,6 +223,7 @@ public final class PluginsController {
             DispatchQueue.main.async {
                 self.refreshPluginStates()
                 NotificationCenter.default.post(name: .egPluginsChanged, object: nil)
+                self.startHotReloadWatcher() // no-op unless dev mode is on
                 completion?()
             }
         }
@@ -231,6 +249,7 @@ public final class PluginsController {
     }
 
     public func stopEngine(completion: (() -> Void)? = nil) {
+        stopHotReloadWatcher()
         // Clean shutdown — erase the crash marker so the next startEngine
         // doesn't misdetect this as an unclean shutdown.
         UserDefaults.standard.removeObject(forKey: launchMarkerKey)
@@ -460,7 +479,110 @@ public final class PluginsController {
         NotificationCenter.default.post(name: .egPluginsChanged, object: nil)
     }
 
+    // MARK: - Hot reload (dev mode)
+
+    private var hotReloadSource: DispatchSourceFileSystemObject?
+    private var hotReloadFd: Int32 = -1
+    private var pluginMTimes: [String: Date] = [:]
+    private var hotReloadDebounce: DispatchWorkItem?
+    private let hotReloadQueue = DispatchQueue(label: "app.exteragram.ios.pluginHotReload", qos: .utility)
+
+    /// Begin watching the plugins directory for edits and live-reload changed plugins.
+    /// No-op unless dev mode is enabled. Safe to call repeatedly (re-arms the watcher).
+    private func startHotReloadWatcher() {
+        guard isDevMode else { return }
+        stopHotReloadWatcher()
+        let dir = EGPluginsDirectory.plugins.url
+        let fd = open(dir.path, O_EVTONLY)
+        guard fd >= 0 else {
+            EGLogger.shared.log("PluginsController", "Hot reload: cannot open \(dir.path)")
+            return
+        }
+        hotReloadFd = fd
+        pluginMTimes = currentPluginMTimes()
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: [.write, .extend, .rename], queue: hotReloadQueue)
+        source.setEventHandler { [weak self] in self?.scheduleHotReloadCheck() }
+        source.setCancelHandler { [weak self] in
+            if let fd = self?.hotReloadFd, fd >= 0 { close(fd) }
+            self?.hotReloadFd = -1
+        }
+        hotReloadSource = source
+        source.resume()
+        EGLogger.shared.log("PluginsController", "Hot reload watching \(dir.path)")
+    }
+
+    private func stopHotReloadWatcher() {
+        hotReloadDebounce?.cancel()
+        hotReloadDebounce = nil
+        hotReloadSource?.cancel() // fd closed in the cancel handler
+        hotReloadSource = nil
+    }
+
+    /// Coalesce the rapid bursts of write events editors emit into a single check.
+    private func scheduleHotReloadCheck() {
+        hotReloadDebounce?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.checkForChangedPlugins() }
+        hotReloadDebounce = item
+        hotReloadQueue.asyncAfter(deadline: .now() + 0.3, execute: item)
+    }
+
+    private func currentPluginMTimes() -> [String: Date] {
+        let dir = EGPluginsDirectory.plugins.url
+        var result: [String: Date] = [:]
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return result }
+        for url in items where url.pathExtension == "plugin" {
+            if let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
+                result[url.deletingPathExtension().lastPathComponent] = date
+            }
+        }
+        return result
+    }
+
+    private func checkForChangedPlugins() {
+        let newMTimes = currentPluginMTimes()
+        // Only reload plugins that already existed and whose mtime moved (edited in place).
+        var changed: [String] = []
+        for (id, date) in newMTimes {
+            if let old = pluginMTimes[id], old != date { changed.append(id) }
+        }
+        pluginMTimes = newMTimes
+        guard !changed.isEmpty else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for id in changed {
+                guard let plugin = self.plugins.first(where: { $0.id == id }), plugin.isEnabled else { continue }
+                self.engine.unloadPlugin(id)
+                self.engine.loadPlugin(id: id, filePath: plugin.filePath)
+                self.refreshPluginStates()
+                self.showBulletin(title: "🔁 Plugin reloaded", text: "'\(plugin.name)' reloaded", icon: "")
+                EGLogger.shared.log("PluginsController", "Hot reloaded '\(id)'")
+            }
+        }
+    }
+
     // MARK: - Enable / Disable
+
+    /// Disable a single plugin that crashed the app during load, and surface a bulletin.
+    /// Used by the per-plugin crash guard in startEngine().
+    private func disableCrashedPlugin(_ id: String) {
+        var all = plugins
+        let name = all.first(where: { $0.id == id })?.name ?? id
+        if let idx = all.firstIndex(where: { $0.id == id }) {
+            all[idx].isEnabled = false
+            plugins = all
+        }
+        EGLogger.shared.log("PluginsController",
+            "Disabled '\(id)' after it crashed on load")
+        // Defer the bulletin so the caller's view hierarchy is stable first.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.showBulletin(title: "⚠️ Plugin disabled",
+                               text: "'\(name)' crashed on load and was disabled",
+                               icon: "")
+        }
+        NotificationCenter.default.post(name: .egPluginsChanged, object: nil)
+    }
 
     public func setEnabled(_ pluginId: String, enabled: Bool) {
         if let plugin = plugins.first(where: { $0.id == pluginId }) {

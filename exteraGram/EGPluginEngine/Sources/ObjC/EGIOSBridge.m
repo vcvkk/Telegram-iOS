@@ -108,6 +108,9 @@ static NSDictionary * (^g_getMessageInfoHandler)(long long, int32_t) = nil;
 static NSDictionary * _Nullable (^g_getMessageDataHandler)(long long, int32_t) = nil;
 // Wired by ChatController: present a native Telegram sheet hosting a content view (returns screen ptr)
 static uintptr_t (^g_presentNativeSheetHandler)(uintptr_t) = nil;
+// plugin_id → Python thread id (unsigned long) currently executing the plugin's on_load.
+// Used by +interruptPlugin: to inject SystemExit into a hung load.
+static NSMutableDictionary<NSString *, NSNumber *> *g_plugin_thread_ids = nil;
 
 // ---------------------------------------------------------------------------
 // Overlay system storage (BRIDGE_VERSION 4)
@@ -3449,6 +3452,116 @@ static PyObject *py_present(PyObject *self, PyObject *args) {
     return PyUnicode_FromString(handle.UTF8String);
 }
 
+// ---------------------------------------------------------------------------
+// BRIDGE_VERSION 16 — ObjC runtime introspection (for the `objc` SDK module)
+// ---------------------------------------------------------------------------
+
+// list_objc_classes(pattern=None) → list[str]
+// Names of all registered ObjC classes; optionally filtered by substring.
+static PyObject *py_list_objc_classes(PyObject *self __unused, PyObject *args) {
+    const char *pattern = NULL;
+    if (!PyArg_ParseTuple(args, "|z", &pattern)) return NULL;
+    unsigned int count = 0;
+    Class *names = objc_copyClassList(&count);
+    PyObject *result = PyList_New(0);
+    if (!result) { if (names) free(names); return NULL; }
+    for (unsigned int i = 0; i < count; i++) {
+        const char *n = class_getName(names[i]);
+        if (!n) continue;
+        if (!pattern || strstr(n, pattern)) {
+            PyObject *s = PyUnicode_FromString(n);
+            if (s) { PyList_Append(result, s); Py_DECREF(s); }
+        }
+    }
+    if (names) free(names);
+    return result;
+}
+
+// list_methods(class_name) → list[str] — instance methods of the named class.
+static PyObject *py_list_methods(PyObject *self __unused, PyObject *args) {
+    const char *className = NULL;
+    if (!PyArg_ParseTuple(args, "s", &className)) return NULL;
+    Class cls = objc_getClass(className);
+    if (!cls) { PyErr_SetString(PyExc_ValueError, "Class not found"); return NULL; }
+    unsigned int count = 0;
+    Method *methods = class_copyMethodList(cls, &count);
+    PyObject *result = PyList_New(0);
+    if (!result) { if (methods) free(methods); return NULL; }
+    for (unsigned int i = 0; i < count; i++) {
+        const char *n = sel_getName(method_getName(methods[i]));
+        if (!n) continue;
+        PyObject *s = PyUnicode_FromString(n);
+        if (s) { PyList_Append(result, s); Py_DECREF(s); }
+    }
+    if (methods) free(methods);
+    return result;
+}
+
+// list_ivars(class_name) → list[str] — instance variables of the named class.
+static PyObject *py_list_ivars(PyObject *self __unused, PyObject *args) {
+    const char *className = NULL;
+    if (!PyArg_ParseTuple(args, "s", &className)) return NULL;
+    Class cls = objc_getClass(className);
+    if (!cls) { PyErr_SetString(PyExc_ValueError, "Class not found"); return NULL; }
+    unsigned int count = 0;
+    Ivar *ivars = class_copyIvarList(cls, &count);
+    PyObject *result = PyList_New(0);
+    if (!result) { if (ivars) free(ivars); return NULL; }
+    for (unsigned int i = 0; i < count; i++) {
+        const char *n = ivar_getName(ivars[i]);
+        if (!n) continue;
+        PyObject *s = PyUnicode_FromString(n);
+        if (s) { PyList_Append(result, s); Py_DECREF(s); }
+    }
+    if (ivars) free(ivars);
+    return result;
+}
+
+// parse_plugin_metadata(path) → str(JSON) | None
+// Safely extracts top-level dunder assignments via Python's ast module without
+// executing the plugin. Returns a JSON string of {name: value} for literal-evaluable
+// values, or None on any failure. The Swift loader JSON-decodes the result.
+static PyObject *py_parse_plugin_metadata(PyObject *self __unused, PyObject *args) {
+    const char *path = NULL;
+    if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
+
+    // Build an isolated namespace dict so we never touch __main__ globals.
+    // PyRun_String auto-inserts __builtins__ when the globals dict lacks it.
+    PyObject *ns = PyDict_New();
+    if (!ns) Py_RETURN_NONE;
+
+    static const char *kSrc =
+        "import ast, json\n"
+        "def _eg_parse(p):\n"
+        "    src = open(p, encoding='utf-8').read()\n"
+        "    tree = ast.parse(src)\n"
+        "    meta = {}\n"
+        "    for node in tree.body:\n"
+        "        if isinstance(node, ast.Assign):\n"
+        "            for t in node.targets:\n"
+        "                if isinstance(t, ast.Name) and t.id.startswith('__') and t.id.endswith('__'):\n"
+        "                    try: meta[t.id] = ast.literal_eval(node.value)\n"
+        "                    except Exception: pass\n"
+        "    return json.dumps(meta, ensure_ascii=False)\n";
+
+    PyObject *code = PyRun_String(kSrc, Py_file_input, ns, ns);
+    if (!code) { PyErr_Clear(); Py_DECREF(ns); Py_RETURN_NONE; }
+    Py_DECREF(code);
+
+    PyObject *fn = PyDict_GetItemString(ns, "_eg_parse");   // borrowed
+    PyObject *result = NULL;
+    if (fn && PyCallable_Check(fn)) {
+        PyObject *arg = PyUnicode_FromString(path);
+        if (arg) {
+            result = PyObject_CallFunctionObjArgs(fn, arg, NULL);
+            Py_DECREF(arg);
+        }
+    }
+    Py_DECREF(ns);
+    if (!result) { PyErr_Clear(); Py_RETURN_NONE; }
+    return result;  // a str (JSON); ownership transferred to caller
+}
+
 static PyMethodDef ios_bridge_methods[] = {
     {"add_tl_hook",        py_add_tl_hook,        METH_VARARGS, "add_tl_hook(tl_type, callback)"},
     {"has_hook",           py_has_hook,           METH_VARARGS, "has_hook(tl_type) -> bool"},
@@ -3529,6 +3642,11 @@ static PyMethodDef ios_bridge_methods[] = {
     {"get_message",   py_get_message,   METH_VARARGS, "get_message(peer_id, msg_id) → dict | None — full message data (text, media_type, reactions, entities, …)"},
     {"render_image",  py_render_image,  METH_VARARGS, "render_image(spec, out_path[, callback]) — declarative compositor: messages+avatars+wallpaper → PNG"},
     {"present",       py_present,       METH_VARARGS, "present(spec[, options]) → handle — unified presenter: sheet|alert|actionsheet|fullscreen"},
+    // BRIDGE_VERSION 16 — ObjC runtime introspection + AST metadata parsing
+    {"list_objc_classes",     py_list_objc_classes,     METH_VARARGS, "list_objc_classes([pattern]) → list[str] — registered ObjC class names"},
+    {"list_methods",          py_list_methods,          METH_VARARGS, "list_methods(class_name) → list[str] — instance method selectors"},
+    {"list_ivars",            py_list_ivars,            METH_VARARGS, "list_ivars(class_name) → list[str] — instance variable names"},
+    {"parse_plugin_metadata", py_parse_plugin_metadata, METH_VARARGS, "parse_plugin_metadata(path) → str(JSON) | None — dunder metadata via ast (no exec)"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -3559,7 +3677,8 @@ PyMODINIT_FUNC PyInit__ios_bridge(void) {
     //  13 — get_wallpaper_image; show_bottom_sheet style arg ("glass"); composite_images wallpaper_path
     //  14 — get_peer_avatar, get_message_info, get_image_size, overlay_image; show_bottom_sheet "native" default style
     //  15 — get_message (rich dict), render_image (declarative compositor), present (universal presenter)
-    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 15);
+    //  16 — list_objc_classes/list_methods/list_ivars (objc SDK module), parse_plugin_metadata (ast)
+    PyModule_AddIntConstant(m, "BRIDGE_VERSION", 16);
     return m;
 }
 
@@ -4047,7 +4166,18 @@ static id py_to_ns(PyObject *obj) {
         // swallowing it silently so plugin authors can diagnose failures.
         PyObject *on_load = PyObject_GetAttrString(module, "on_load");
         if (on_load && PyCallable_Check(on_load)) {
+            // Record the executing Python thread so a hung on_load can be interrupted.
+            if (!g_plugin_thread_ids) g_plugin_thread_ids = [NSMutableDictionary new];
+            PyThreadState *ts = PyThreadState_Get();
+            if (ts) {
+                @synchronized (g_plugin_thread_ids) {
+                    g_plugin_thread_ids[pluginId] = @((unsigned long)ts->thread_id);
+                }
+            }
             PyObject *r = PyObject_CallFunctionObjArgs(on_load, module, NULL);
+            @synchronized (g_plugin_thread_ids) {
+                [g_plugin_thread_ids removeObjectForKey:pluginId];
+            }
             if (!r) {
                 // Capture traceback as a string and write to debug log.
                 PyObject *exc = PyErr_GetRaisedException();
@@ -4106,9 +4236,59 @@ static id py_to_ns(PyObject *obj) {
 #endif
 }
 
++ (nullable NSString *)parsePluginMetadata:(NSString *)path {
+#if EGPLUGIN_HAS_PYTHON
+    if (!g_initialized) return nil;
+    __block NSString *json = nil;
+    [self withPython:^{
+        PyObject *bridge = PyImport_ImportModule("_ios_bridge");
+        if (!bridge) { PyErr_Clear(); return; }
+        PyObject *fn = PyObject_GetAttrString(bridge, "parse_plugin_metadata");
+        if (fn && PyCallable_Check(fn)) {
+            PyObject *arg = PyUnicode_FromString(path.UTF8String);
+            PyObject *res = arg ? PyObject_CallFunctionObjArgs(fn, arg, NULL) : NULL;
+            Py_XDECREF(arg);
+            if (res && PyUnicode_Check(res)) {
+                const char *cs = PyUnicode_AsUTF8(res);
+                if (cs) json = [NSString stringWithUTF8String:cs];
+            }
+            if (!res) PyErr_Clear();
+            Py_XDECREF(res);
+        }
+        Py_XDECREF(fn);
+        Py_DECREF(bridge);
+    }];
+    return json;
+#else
+    return nil;
+#endif
+}
+
++ (void)interruptPlugin:(NSString *)pluginId {
+#if EGPLUGIN_HAS_PYTHON
+    if (!g_initialized || !g_plugin_thread_ids) return;
+    NSNumber *tid = nil;
+    @synchronized (g_plugin_thread_ids) { tid = g_plugin_thread_ids[pluginId]; }
+    if (!tid) return;
+    // PyThreadState_SetAsyncExc requires the GIL. Even when the target thread is
+    // spinning in pure-Python code, CPython releases the GIL at the switch interval,
+    // letting us acquire it here and inject the exception, which is then raised on the
+    // target thread. (A thread blocked in a C call is not interruptible — best effort.)
+    PyGILState_STATE gs = PyGILState_Ensure();
+    int n = PyThreadState_SetAsyncExc((unsigned long)tid.unsignedLongValue, PyExc_SystemExit);
+    PyGILState_Release(gs);
+    EGPluginDebugLog_appendCStr("Watchdog",
+        [[NSString stringWithFormat:@"interruptPlugin(%@): SetAsyncExc affected %d thread(s)",
+          pluginId, n] UTF8String]);
+#endif
+}
+
 + (void)unloadPlugin:(NSString *)pluginId {
 #if EGPLUGIN_HAS_PYTHON
     if (!g_initialized) return;
+    if (g_plugin_thread_ids) {
+        @synchronized (g_plugin_thread_ids) { [g_plugin_thread_ids removeObjectForKey:pluginId]; }
+    }
     [self withPython:^{
         PyObject *module = PyDict_GetItemString(g_loaded_modules, pluginId.UTF8String);
         if (module) {

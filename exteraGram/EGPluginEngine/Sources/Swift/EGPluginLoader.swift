@@ -2,6 +2,7 @@
 
 import Foundation
 import EGLogging
+import EGPluginEngineBridge
 
 // MARK: - Validation errors
 
@@ -56,7 +57,74 @@ public final class EGPluginLoader {
     private init() {}
 
     /// Parse and validate plugin metadata. Throws EGPluginValidationError on any issue.
+    ///
+    /// Prefers AST-based parsing via Python (robust against multiline strings, nested
+    /// quotes, and list values) when the runtime is live. Falls back to the line-based
+    /// parser when Python isn't initialized (e.g. the install flow may run before the
+    /// interpreter starts) or when the AST result can't be decoded.
     public func parseAndValidate(path: String) throws -> EGFullPluginMetadata {
+        if EGPythonBridge.isInitialized,
+           let json = EGPythonBridge.parsePluginMetadata(path),
+           let data = json.data(using: .utf8),
+           let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            return try buildMetadata(from: obj)
+        }
+        return try parseAndValidateLineBased(path: path)
+    }
+
+    /// Build & validate metadata from already-typed AST values (strings, lists, …).
+    private func buildMetadata(from raw: [String: Any]) throws -> EGFullPluginMetadata {
+        // Required fields
+        guard let id = Self.string(raw["__id__"]) else { throw EGPluginValidationError.missingID }
+        guard let name = Self.string(raw["__name__"]) else { throw EGPluginValidationError.missingName }
+
+        // ID format: alphanumeric + underscore only
+        let idPattern = try! NSRegularExpression(pattern: "^[a-zA-Z0-9_]+$")
+        let idRange = NSRange(id.startIndex..., in: id)
+        guard idPattern.firstMatch(in: id, range: idRange) != nil else {
+            throw EGPluginValidationError.invalidIDFormat(id)
+        }
+
+        // __os__ — may be a string or list of strings
+        guard raw["__os__"] != nil else { throw EGPluginValidationError.missingOS }
+        let osList = Self.stringList(raw["__os__"])
+        guard osList.contains("ios") else {
+            throw EGPluginValidationError.unsupportedOS(osList.joined(separator: ", "))
+        }
+
+        // App version check
+        let minVer = Self.string(raw["__min_version__"])
+        if let minVer {
+            let appVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+            if compareVersions(appVer, minVer) == .orderedAscending {
+                throw EGPluginValidationError.incompatibleVersion(required: minVer, current: appVer)
+            }
+        }
+
+        // Optional icon — validate format "packName/index"
+        var iconUrl: String? = nil
+        if let rawIcon = Self.string(raw["__icon__"]),
+           let slashIdx = rawIcon.lastIndex(of: "/"),
+           Int(rawIcon[rawIcon.index(after: slashIdx)...]) != nil {
+            iconUrl = rawIcon
+        }
+
+        return EGFullPluginMetadata(
+            id: id,
+            name: name,
+            os: osList,
+            version: Self.string(raw["__version__"]) ?? "0.0",
+            author: Self.string(raw["__author__"]) ?? "",
+            description: Self.string(raw["__description__"]) ?? "",
+            iconUrl: iconUrl,
+            minVersion: minVer,
+            requirements: Self.stringList(raw["__requirements__"]),
+            permissions: Self.stringList(raw["__permissions__"])
+        )
+    }
+
+    /// Legacy line-based parser. Used as a fallback when AST parsing is unavailable.
+    private func parseAndValidateLineBased(path: String) throws -> EGFullPluginMetadata {
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
             throw EGPluginValidationError.fileNotReadable
         }
@@ -114,6 +182,26 @@ public final class EGPluginLoader {
     }
 
     // MARK: - Private
+
+    /// Coerce an AST/JSON value to a trimmed non-empty String, or nil.
+    private static func string(_ any: Any?) -> String? {
+        guard let any else { return nil }
+        if let s = any as? String {
+            let t = s.trimmingCharacters(in: .whitespaces)
+            return t.isEmpty ? nil : t
+        }
+        if let n = any as? NSNumber { return n.stringValue }
+        return nil
+    }
+
+    /// Coerce an AST/JSON value to a list of strings (accepts a single string or an array).
+    private static func stringList(_ any: Any?) -> [String] {
+        if let arr = any as? [Any] {
+            return arr.compactMap { string($0) }
+        }
+        if let s = string(any) { return [s] }
+        return []
+    }
 
     private func parseOS(_ raw: String?) throws -> [String] {
         guard let raw = raw else { throw EGPluginValidationError.missingOS }
