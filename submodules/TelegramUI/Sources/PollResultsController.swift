@@ -195,8 +195,6 @@ private enum PollResultsEntry: ItemListNodeEntry {
                 entities: entities.filter { entity in
                     if case .CustomEmoji = entity.type {
                         return true
-                    } else if case let .TextUrl(url) = entity.type, url.hasPrefix("tg://emoji?id=") {
-                        return true
                     } else {
                         return false
                     }
@@ -242,8 +240,6 @@ private enum PollResultsEntry: ItemListNodeEntry {
                 optionText,
                 entities: optionTextEntities.filter { entity in
                     if case .CustomEmoji = entity.type {
-                        return true
-                    } else if case let .TextUrl(url) = entity.type, url.hasPrefix("tg://emoji?id=") {
                         return true
                     } else {
                         return false
@@ -452,7 +448,7 @@ public func pollResultsController(context: AccountContext, messageId: EngineMess
         })
     }, openPeer: { peer in
         if let peer = peer.peers[peer.peerId] {
-            if let controller = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: peer._asPeer(), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+            if let controller = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
                 pushControllerImpl?(controller)
             }
         }

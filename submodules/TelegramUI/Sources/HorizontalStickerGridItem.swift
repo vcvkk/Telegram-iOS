@@ -4,7 +4,6 @@ import Display
 import TelegramCore
 import SwiftSignalKit
 import AsyncDisplayKit
-import Postbox
 import StickerResources
 import AccountContext
 import AnimatedStickerNode
@@ -81,7 +80,7 @@ final class HorizontalStickerGridItemNode: GridItemNode {
     
     var stickerItem: StickerPackItem? {
         if let (_, item, _) = self.currentState {
-            return StickerPackItem(index: ItemCollectionItemIndex(index: 0, id: 0), file: item.file, indexKeys: [])
+            return StickerPackItem(index: EngineItemCollectionItemIndex(index: 0, id: 0), file: item.file, indexKeys: [])
         } else {
             return nil
         }
@@ -256,7 +255,7 @@ final class HorizontalStickerGridItemNode: GridItemNode {
             placeholderNode.frame = bounds
             
             if let context = self.currentState?.0, let theme = self.currentState?.1.theme, let file = self.currentState?.1.file {
-                placeholderNode.update(backgroundColor: theme.list.plainBackgroundColor, foregroundColor: theme.list.mediaPlaceholderColor.mixedWith(theme.list.plainBackgroundColor, alpha: 0.4), shimmeringColor: theme.list.mediaPlaceholderColor.withAlphaComponent(0.3), data: file.immediateThumbnailData, size: bounds.size, enableEffect: context.sharedContext.energyUsageSettings.fullTranslucency)
+                placeholderNode.update(backgroundColor: nil, foregroundColor: theme.list.itemPrimaryTextColor.withMultipliedAlpha(0.05), shimmeringColor: theme.list.mediaPlaceholderColor.withAlphaComponent(0.2), data: file.immediateThumbnailData, size: bounds.size, enableEffect: context.sharedContext.energyUsageSettings.fullTranslucency)
             }
         }
         

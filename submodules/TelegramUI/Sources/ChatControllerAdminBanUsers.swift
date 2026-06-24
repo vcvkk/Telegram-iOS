@@ -1,7 +1,7 @@
 import Foundation
+import UIKit
 import TelegramPresentationData
 import AccountContext
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 import Display
@@ -21,7 +21,7 @@ fileprivate struct InitialBannedRights {
 }
 
 extension ChatControllerImpl {
-    fileprivate func applyAdminUserActionsResult(messageIds: Set<MessageId>, result: AdminUserActionsSheet.ChatResult, initialUserBannedRights: [EnginePeer.Id: InitialBannedRights]) {
+    fileprivate func applyAdminUserActionsResult(messageIds: Set<EngineMessage.Id>, reactionPeerId: EnginePeer.Id? = nil, result: AdminUserActionsSheet.ChatResult, initialUserBannedRights: [EnginePeer.Id: InitialBannedRights]) {
         guard let messagesPeerId = self.chatLocation.peerId else {
             return
         }
@@ -30,7 +30,12 @@ extension ChatControllerImpl {
         }
         
         
-        var title: String? = messageIds.count == 1 ? self.presentationData.strings.Chat_AdminAction_ToastMessagesDeletedTitleSingle : self.presentationData.strings.Chat_AdminAction_ToastMessagesDeletedTitleMultiple
+        var title: String?
+        if let _ = reactionPeerId {
+            title = self.presentationData.strings.Chat_AdminAction_ToastReactionsDeletedTitleSingle
+        } else {
+            title = messageIds.count == 1 ? self.presentationData.strings.Chat_AdminAction_ToastMessagesDeletedTitleSingle : self.presentationData.strings.Chat_AdminAction_ToastMessagesDeletedTitleMultiple
+        }
         if !result.deleteAllFromPeers.isEmpty {
             title = self.presentationData.strings.Chat_AdminAction_ToastMessagesDeletedTitleMultiple
         }
@@ -67,11 +72,22 @@ extension ChatControllerImpl {
         }
         
         do {
-            let _ = self.context.engine.messages.deleteMessagesInteractively(messageIds: Array(messageIds), type: .forEveryone).startStandalone()
+            if let reactionPeerId {
+                if let messageId = messageIds.first {
+                    let _ = self.context.engine.messages.deleteReaction(messageId: messageId, authorId: reactionPeerId).startStandalone()
+                }
+            } else {
+                let _ = self.context.engine.messages.deleteMessagesInteractively(messageIds: Array(messageIds), type: .forEveryone).startStandalone()
+            }
             
             for authorId in result.deleteAllFromPeers {
                 let _ = self.context.engine.messages.deleteAllMessagesWithAuthor(peerId: messagesPeerId, authorId: authorId, namespace: Namespaces.Message.Cloud).startStandalone()
                 let _ = self.context.engine.messages.clearAuthorHistory(peerId: messagesPeerId, memberId: authorId).startStandalone()
+            }
+            
+            let aroundMessageId = messageIds.count == 1 ? messageIds.first : nil
+            for authorId in result.deleteAllReactionsFromPeers {
+                let _ = self.context.engine.messages.deleteAllReactionsWithAuthor(peerId: messagesPeerId, authorId: authorId, aroundMessageId: aroundMessageId).startStandalone()
             }
             
             for authorId in result.reportSpamPeers {
@@ -88,9 +104,17 @@ extension ChatControllerImpl {
         }
         
         if text.isEmpty {
-            text = messageIds.count == 1 ? self.presentationData.strings.Chat_AdminAction_ToastMessagesDeletedTextSingle : self.presentationData.strings.Chat_AdminAction_ToastMessagesDeletedTextMultiple
-            if !result.deleteAllFromPeers.isEmpty {
+            if let _ = reactionPeerId {
+                text = self.presentationData.strings.Chat_AdminAction_ToastReactionsDeletedTextSingle
+            } else {
+                text = messageIds.count == 1 ? self.presentationData.strings.Chat_AdminAction_ToastMessagesDeletedTextSingle : self.presentationData.strings.Chat_AdminAction_ToastMessagesDeletedTextMultiple
+            }
+            if !result.deleteAllFromPeers.isEmpty && !result.deleteAllReactionsFromPeers.isEmpty {
+                text = self.presentationData.strings.Chat_AdminAction_ToastMessagesAndReactionsDeletedText
+            } else if !result.deleteAllFromPeers.isEmpty {
                 text = self.presentationData.strings.Chat_AdminAction_ToastMessagesDeletedTextMultiple
+            } else if !result.deleteAllReactionsFromPeers.isEmpty {
+                text = self.presentationData.strings.Chat_AdminAction_ToastReactionsDeletedTextMultiple
             }
             title = nil
         }
@@ -124,7 +148,7 @@ extension ChatControllerImpl {
         self.updateChatPresentationInterfaceState(animated: true, interactive: true, { $0.updatedInterfaceState { $0.withoutSelectionState() } })
     }
     
-    func presentMultiBanMessageOptions(accountPeerId: PeerId, authors: [Peer], messageIds: Set<MessageId>, options: ChatAvailableMessageActionOptions) {
+    func presentMultiBanMessageOptions(accountPeerId: EnginePeer.Id, authors: [EnginePeer], messageIds: Set<EngineMessage.Id>, options: ChatAvailableMessageActionOptions) {
         guard let peerId = self.chatLocation.peerId else {
             return
         }
@@ -139,7 +163,7 @@ extension ChatControllerImpl {
         
         var signal = combineLatest(authors.map { author in
             self.context.engine.peers.fetchChannelParticipant(peerId: peerId, participantId: author.id)
-            |> map { result -> (Peer, ChannelParticipant?) in
+            |> map { result -> (EnginePeer, ChannelParticipant?) in
                 return (author, result)
             }
         })
@@ -205,7 +229,7 @@ extension ChatControllerImpl {
                     
                     renderedParticipants.append(RenderedChannelParticipant(
                         participant: participant,
-                        peer: EnginePeer(author)
+                        peer: author
                     ))
                     switch participant {
                     case .creator:
@@ -237,7 +261,31 @@ extension ChatControllerImpl {
         }))
     }
     
-    func presentBanMessageOptions(accountPeerId: PeerId, author: Peer, messageIds: Set<MessageId>, options: ChatAvailableMessageActionOptions) {
+    public func presentReactionDeletionOptions(author: EnginePeer, messageId: EngineMessage.Id) {
+        guard self.chatLocation.peerId?.namespace == Namespaces.Peer.CloudChannel, author.id != self.context.account.peerId  else {
+            return
+        }
+        let _ = (self.context.sharedContext.chatAvailableMessageActions(
+            engine: self.context.engine,
+            accountPeerId: self.context.account.peerId,
+            messageIds: Set([messageId]),
+            keepUpdated: false
+        )
+        |> deliverOnMainQueue).startStandalone(next: { [weak self] actions in
+            guard let self, !actions.options.isEmpty else {
+                return
+            }
+            self.presentBanMessageOptions(
+                accountPeerId: self.context.account.peerId,
+                author: author,
+                messageIds: Set([messageId]),
+                options: actions.options,
+                reaction: true
+            )
+        })
+    }
+
+    func presentBanMessageOptions(accountPeerId: EnginePeer.Id, author: EnginePeer, messageIds: Set<EngineMessage.Id>, options: ChatAvailableMessageActionOptions, reaction: Bool = false) {
         guard let peerId = self.chatLocation.peerId else {
             return
         }
@@ -324,14 +372,17 @@ extension ChatControllerImpl {
                         initialUserBannedRights[participant.peerId] = InitialBannedRights(value: nil)
                     }
                 }
-                self.push(AdminUserActionsSheet(
-                    context: self.context,
-                    chatPeer: chatPeer,
-                    peers: [RenderedChannelParticipant(
-                        participant: participant,
-                        peer: authorPeer
-                    )],
-                    mode: .chat(
+                
+                let mode: AdminUserActionsSheet.Mode
+                if reaction {
+                    mode = .chatReaction(completion: { [weak self] result in
+                        guard let self else {
+                            return
+                        }
+                        self.applyAdminUserActionsResult(messageIds: messageIds, reactionPeerId: authorPeer.id, result: result, initialUserBannedRights: initialUserBannedRights)
+                    })
+                } else {
+                    mode = .chat(
                         messageCount: messageIds.count,
                         deleteAllMessageCount: deleteAllMessageCount,
                         completion: { [weak self] result in
@@ -341,12 +392,22 @@ extension ChatControllerImpl {
                             self.applyAdminUserActionsResult(messageIds: messageIds, result: result, initialUserBannedRights: initialUserBannedRights)
                         }
                     )
+                }
+                
+                self.push(AdminUserActionsSheet(
+                    context: self.context,
+                    chatPeer: chatPeer,
+                    peers: [RenderedChannelParticipant(
+                        participant: participant,
+                        peer: authorPeer
+                    )],
+                    mode: mode
                 ))
             })
         }))
     }
         
-    func beginDeleteMessagesWithUndo(messageIds: Set<MessageId>, type: InteractiveMessagesDeletionType) {
+    func beginDeleteMessagesWithUndo(messageIds: Set<EngineMessage.Id>, type: InteractiveMessagesDeletionType) {
         var deleteImmediately = false
         if case .forEveryone = type {
             deleteImmediately = true
@@ -379,7 +440,7 @@ extension ChatControllerImpl {
         }), in: .current)
     }
     
-    func presentDeleteMessageOptions(messageIds: Set<MessageId>, options: ChatAvailableMessageActionOptions, contextController: ContextControllerProtocol?, completion: @escaping (ContextMenuActionResult) -> Void) {
+    func presentDeleteMessageOptions(messageIds: Set<EngineMessage.Id>, options: ChatAvailableMessageActionOptions, contextController: ContextControllerProtocol?, sourceView: UIView? = nil, completion: @escaping (ContextMenuActionResult) -> Void) {
         let _ = (self.context.engine.data.get(
             EngineDataMap(messageIds.map(TelegramEngine.EngineData.Item.Messages.Message.init(id:)))
         )
@@ -414,7 +475,7 @@ extension ChatControllerImpl {
                                 }
                                 self.beginDeleteMessagesWithUndo(messageIds: messageIds, type: .forEveryone)
                             }),
-                            TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_Cancel, action: {})
+                            TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {})
                         ],
                         actionLayout: .vertical,
                         parseMarkdown: true
@@ -459,14 +520,16 @@ extension ChatControllerImpl {
                                     return
                                 }
                                 var entities: TextEntitiesMessageAttribute?
+                                var richText: RichTextMessageAttribute?
                                 for attribute in message.attributes {
                                     if let attribute = attribute as? TextEntitiesMessageAttribute {
                                         entities = attribute
-                                        break
+                                    } else if let attribute = attribute as? RichTextMessageAttribute {
+                                        richText = attribute
                                     }
                                 }
                                 let scheduleTime = message.timestamp + repeatAttribute.repeatPeriod
-                                self.editMessageDisposable.set((self.context.engine.messages.requestEditMessage(messageId: message.id, text: message.text, media: .keep, entities: entities, inlineStickers: [:], webpagePreviewAttribute: nil, disableUrlPreview: false, scheduleInfoAttribute: OutgoingScheduleInfoMessageAttribute(scheduleTime: scheduleTime, repeatPeriod: repeatAttribute.repeatPeriod)) |> deliverOnMainQueue).startStrict(next: { result in
+                                self.editMessageDisposable.set((self.context.engine.messages.requestEditMessage(messageId: message.id, text: message.text, media: .keep, entities: entities, richText: richText, inlineStickers: [:], webpagePreviewAttribute: nil, disableUrlPreview: false, scheduleInfoAttribute: OutgoingScheduleInfoMessageAttribute(scheduleTime: scheduleTime, repeatPeriod: repeatAttribute.repeatPeriod)) |> deliverOnMainQueue).startStrict(next: { result in
                                 }, error: { error in
                                 }))
                             }),
@@ -476,7 +539,7 @@ extension ChatControllerImpl {
                                 }
                                 self.beginDeleteMessagesWithUndo(messageIds: messageIds, type: .forEveryone)
                             }),
-                            TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_Cancel, action: {})
+                            TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {})
                         ],
                         actionLayout: .vertical,
                         parseMarkdown: true
@@ -502,7 +565,17 @@ extension ChatControllerImpl {
                 isChannel = true
             }
             
+            var contextItems: [ContextMenuItem] = []
+            var canDisplayContextMenu = true
+
             if options.contains(.cancelSending) {
+                contextItems.append(.action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_ContextMenuCancelSending, textColor: .destructive, icon: { _ in nil }, action: { [weak self] _, f in
+                    f(.dismissWithoutContent)
+                    if let strongSelf = self {
+                        strongSelf.updateChatPresentationInterfaceState(animated: true, interactive: true, { $0.updatedInterfaceState { $0.withoutSelectionState() } })
+                        strongSelf.beginDeleteMessagesWithUndo(messageIds: messageIds, type: .forEveryone)
+                    }
+                })))
                 items.append(ActionSheetButtonItem(title: self.presentationData.strings.Conversation_ContextMenuCancelSending, color: .destructive, action: { [weak self, weak actionSheet] in
                     actionSheet?.dismissAnimated()
                     if let strongSelf = self {
@@ -511,9 +584,6 @@ extension ChatControllerImpl {
                     }
                 }))
             }
-            
-            var contextItems: [ContextMenuItem] = []
-            var canDisplayContextMenu = true
             
             var unsendPersonalMessages = false
             if options.contains(.unsendPersonal) {
@@ -535,7 +605,7 @@ extension ChatControllerImpl {
                     if let strongSelf = self {
                         var giveaway: TelegramMediaGiveaway?
                         for messageId in messageIds {
-                            if let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId) {
+                            if let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId)?._asMessage() {
                                 if let media = message.media.first(where: { $0 is TelegramMediaGiveaway }) as? TelegramMediaGiveaway {
                                     giveaway = media
                                     break
@@ -554,7 +624,7 @@ extension ChatControllerImpl {
                                     let dateString = stringForDate(timestamp: giveaway.untilDate, timeZone: .current, strings: strongSelf.presentationData.strings)
                                     strongSelf.present(textAlertController(context: strongSelf.context, updatedPresentationData: strongSelf.updatedPresentationData, title: strongSelf.presentationData.strings.Chat_Giveaway_DeleteConfirmation_Title, text: strongSelf.presentationData.strings.Chat_Giveaway_DeleteConfirmation_Text(dateString).string, actions: [TextAlertAction(type: .destructiveAction, title: strongSelf.presentationData.strings.Common_Delete, action: {
                                         commit()
-                                    }), TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {
+                                    }), TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {
                                     })], parseMarkdown: true), in: .window(.root))
                                 }
                                 f(.default)
@@ -643,6 +713,16 @@ extension ChatControllerImpl {
             
             if canDisplayContextMenu, let contextController = contextController {
                 contextController.setItems(.single(ContextController.Items(content: .list(contextItems))), minHeight: nil, animated: true)
+            } else if canDisplayContextMenu, let sourceView = sourceView {
+                let contextController = makeContextController(
+                    presentationData: self.presentationData,
+                    source: .reference(ChatControllerContextReferenceContentSource(controller: self, sourceView: sourceView, insets: .zero, actionsOnTop: true)),
+                    items: .single(ContextController.Items(content: .list(contextItems))),
+                    gesture: nil
+                )
+                self.chatDisplayNode.dismissInput()
+                self.presentInGlobalOverlay(contextController)
+                completion(.default)
             } else {
                 actionSheet.setItemGroups([ActionSheetItemGroup(items: items), ActionSheetItemGroup(items: [
                     ActionSheetButtonItem(title: self.presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in

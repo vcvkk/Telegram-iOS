@@ -3,7 +3,6 @@ import UIKit
 import AsyncDisplayKit
 import Display
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import AccountContext
@@ -25,6 +24,17 @@ private enum OptionsId: Hashable {
     case reply
     case forward
     case link
+}
+
+private func chatLocationMatchesDestination(_ chatLocation: ChatLocation, peerId: EnginePeer.Id, threadId: Int64?) -> Bool {
+    switch chatLocation {
+    case let .peer(id):
+        return id == peerId && threadId == nil
+    case let .replyThread(replyThreadMessage):
+        return replyThreadMessage.peerId == peerId && replyThreadMessage.threadId == threadId
+    case .customChatContents:
+        return false
+    }
 }
 
 private func presentChatInputOptions(selfController: ChatControllerImpl, sourceView: UIView, initialId: OptionsId) {
@@ -130,11 +140,12 @@ private func chatForwardOptions(selfController: ChatControllerImpl, sourceView: 
         var items: [ContextMenuItem] = []
         
         var hasCaptions = false
-        var uniquePeerIds = Set<PeerId>()
+        var uniquePeerIds = Set<EnginePeer.Id>()
         
         var hasOther = false
         var hasNotOwnMessages = false
         var hasPaid = false
+        var hasRichMessages = false
         for message in messages {
             if let author = message.effectiveAuthor {
                 if !uniquePeerIds.contains(author.id) {
@@ -147,10 +158,8 @@ private func chatForwardOptions(selfController: ChatControllerImpl, sourceView: 
             }
             
             var isDice = false
-            var isMusic = false
             for media in message.media {
                 if let media = media as? TelegramMediaFile, media.isMusic {
-                    isMusic = true
                     if !message.text.isEmpty {
                         hasCaptions = true
                     }
@@ -164,12 +173,15 @@ private func chatForwardOptions(selfController: ChatControllerImpl, sourceView: 
                     hasPaid = true
                 }
             }
-            if !isDice && !isMusic {
+            if !isDice {
                 hasOther = true
+            }
+            if message.richText != nil {
+                hasRichMessages = true
             }
         }
         
-        var canHideNames = hasNotOwnMessages && hasOther
+        var canHideNames = hasNotOwnMessages && hasOther && !hasRichMessages
         if case let .peer(peerId) = selfController.chatLocation, peerId.namespace == Namespaces.Peer.SecretChat {
             canHideNames = false
         }
@@ -564,7 +576,7 @@ func moveReplyMessageToAnotherChat(selfController: ChatControllerImpl, replySubj
             var suggestedPeers: [EnginePeer] = []
             if let message = await selfController.context.engine.data.get(
                 TelegramEngine.EngineData.Item.Messages.Message(id: replySubject.messageId)
-            ).get(), case let .user(author) = message.author {
+            ).get(), case let .user(author) = message.author, author.id != selfController.context.account.peerId {
                 suggestedPeers.append(.user(author))
             }
             
@@ -623,14 +635,13 @@ func moveReplyMessageToAnotherChat(selfController: ChatControllerImpl, replySubj
                     return
                 }
                 let peerId = peer.id
-                //let accountPeerId = selfController.context.account.peerId
                 
                 var isPinnedMessages = false
                 if case .pinnedMessages = selfController.presentationInterfaceState.subject {
                     isPinnedMessages = true
                 }
                 
-                if case .peer(peerId) = selfController.chatLocation, selfController.parentController == nil, !isPinnedMessages {
+                if chatLocationMatchesDestination(selfController.chatLocation, peerId: peerId, threadId: threadId), selfController.parentController == nil, !isPinnedMessages {
                     selfController.updateChatPresentationInterfaceState(animated: false, interactive: true, { $0.updatedInterfaceState({ $0.withUpdatedReplyMessageSubject(replySubject).withoutSelectionState() }).updatedSearch(nil) })
                     selfController.updateItemNodesSearchTextHighlightStates()
                     selfController.searchResultsController = nil
@@ -651,7 +662,7 @@ func moveReplyToChat(selfController: ChatControllerImpl, peerId: EnginePeer.Id, 
     if let navigationController = selfController.effectiveNavigationController {
         for controller in navigationController.viewControllers {
             if let maybeChat = controller as? ChatControllerImpl {
-                if case .peer(peerId) = maybeChat.chatLocation {
+                if chatLocationMatchesDestination(maybeChat.chatLocation, peerId: peerId, threadId: threadId) {
                     var isChatPinnedMessages = false
                     if case .pinnedMessages = maybeChat.presentationInterfaceState.subject {
                         isChatPinnedMessages = true

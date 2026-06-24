@@ -1,5 +1,9 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+sgdeps = [
+    "//submodules/Postbox:Postbox",
+]
+
 swift_library(
     name = "ChatControllerInteraction",
     module_name = "ChatControllerInteraction",
@@ -9,11 +13,10 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = sgdeps + [
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",
-        "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/ChatPresentationInterfaceState:ChatPresentationInterfaceState",
         "//submodules/TelegramUIPreferences:TelegramUIPreferences",

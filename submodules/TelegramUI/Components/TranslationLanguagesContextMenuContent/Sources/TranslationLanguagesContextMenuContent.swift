@@ -3,7 +3,6 @@ import UIKit
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import TelegramStringFormatting
@@ -261,6 +260,7 @@ public final class TranslationLanguagesContextMenuContent: ContextControllerItem
                 self.scrollNode.view.contentInsetAdjustmentBehavior = .never
             }
             self.scrollNode.clipsToBounds = false
+            self.scrollNode.view.scrollsToTop = false
 
             super.init()
 

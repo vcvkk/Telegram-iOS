@@ -2,7 +2,6 @@ import Foundation
 import UIKit
 import Display
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -303,7 +302,7 @@ private func editThemeControllerEntries(presentationData: PresentationData, stat
     return entries
 }
 
-public func editThemeController(context: AccountContext, mode: EditThemeControllerMode, navigateToChat: ((PeerId) -> Void)? = nil, completion: ((PresentationThemeReference) -> Void)? = nil) -> ViewController {
+public func editThemeController(context: AccountContext, mode: EditThemeControllerMode, navigateToChat: ((EnginePeer.Id) -> Void)? = nil, completion: ((PresentationThemeReference) -> Void)? = nil) -> ViewController {
     let initialState: EditThemeControllerState
     let previewThemePromise = Promise<PresentationTheme>()
     let settingsPromise = Promise<TelegramThemeSettings?>(nil)
@@ -334,9 +333,9 @@ public func editThemeController(context: AccountContext, mode: EditThemeControll
         case let .edit(info):
             hasSettings = info.theme.settings != nil
             settingsPromise.set(.single(info.theme.settings?.first))
-            if let file = info.theme.file, let path = context.sharedContext.accountManager.mediaBox.completedResourcePath(file.resource), let data = try? Data(contentsOf: URL(fileURLWithPath: path)), let theme = makePresentationTheme(data: data, resolvedWallpaper: info.resolvedWallpaper) {
+            if let file = info.theme.file, let path = context.sharedContext.accountManager.resources.completedResourcePath(resource: EngineMediaResource(file.resource)), let data = try? Data(contentsOf: URL(fileURLWithPath: path)), let theme = makePresentationTheme(data: data, resolvedWallpaper: info.resolvedWallpaper) {
                 if case let .file(file) = theme.chat.defaultWallpaper, file.id == 0 {
-                    previewThemePromise.set(cachedWallpaper(account: context.account, slug: file.slug, settings: file.settings)
+                    previewThemePromise.set(cachedWallpaper(engine: context.engine, network: context.account.network, slug: file.slug, settings: file.settings)
                     |> map ({ wallpaper -> PresentationTheme in
                         if let wallpaper = wallpaper {
                             return theme.withUpdated(name: nil, defaultWallpaper: wallpaper.wallpaper)
@@ -405,7 +404,7 @@ public func editThemeController(context: AccountContext, mode: EditThemeControll
             if let url = urls.first{
                 if let data = try? Data(contentsOf: url), let theme = makePresentationTheme(data: data) {
                     if case let .file(file) = theme.chat.defaultWallpaper, file.id == 0 {
-                        let _ = (cachedWallpaper(account: context.account, slug: file.slug, settings: file.settings)
+                        let _ = (cachedWallpaper(engine: context.engine, network: context.account.network, slug: file.slug, settings: file.settings)
                         |> mapToSignal { wallpaper -> Signal<TelegramWallpaper?, NoError> in
                             if let wallpaper = wallpaper, case let .file(file) = wallpaper.wallpaper {
                                 var convertedRepresentations: [ImageRepresentationWithReference] = []
@@ -415,7 +414,7 @@ public func editThemeController(context: AccountContext, mode: EditThemeControll
                                     guard complete, let fullSizeData = fullSizeData else {
                                         return .complete()
                                     }
-                                    context.sharedContext.accountManager.mediaBox.storeResourceData(file.file.resource.id, data: fullSizeData, synchronous: true)
+                                    context.sharedContext.accountManager.resources.storeResourceData(id: EngineMediaResource.Id(file.file.resource.id), data: fullSizeData, synchronous: true)
                                     return .single(wallpaper.wallpaper)
                                 }
                             } else {
@@ -497,7 +496,7 @@ public func editThemeController(context: AccountContext, mode: EditThemeControll
     
     let signal = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, statePromise.get(), previewThemePromise.get(), settingsPromise.get())
     |> map { presentationData, state, previewTheme, currentSettings -> (ItemListControllerState, (ItemListNodeState, Any)) in
-        let leftNavigationButton = ItemListNavigationButton(content: .text(presentationData.strings.Common_Cancel), style: .regular, enabled: true, action: {
+        let leftNavigationButton = ItemListNavigationButton(content: .icon(.close), style: .regular, enabled: true, action: {
             dismissImpl?()
         })
         
@@ -517,7 +516,7 @@ public func editThemeController(context: AccountContext, mode: EditThemeControll
                 isComplete = !state.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty && !state.slug.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty
             }
             
-            rightNavigationButton = ItemListNavigationButton(content: .text(presentationData.strings.Common_Done), style: .bold, enabled: isComplete, action: {
+            rightNavigationButton = ItemListNavigationButton(content: .icon(.done), style: .bold, enabled: isComplete, action: {
                 if state.title.count > 128 {
                     errorImpl?(.title)
                     return
@@ -538,7 +537,7 @@ public func editThemeController(context: AccountContext, mode: EditThemeControll
                 let _ = (combineLatest(queue: Queue.mainQueue(), previewThemePromise.get(), settingsPromise.get())
                 |> take(1)).start(next: { previewTheme, settings in
                     let saveThemeTemplateFile: (String, LocalFileMediaResource, @escaping () -> Void) -> Void = { title, resource, completion in
-                        let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: resource.fileId), partialReference: nil, resource: resource, previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "application/x-tgtheme-ios", size: nil, attributes: [.FileName(fileName: "\(title).tgios-theme")], alternativeRepresentations: [])
+                        let file = TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: resource.fileId), partialReference: nil, resource: resource, previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "application/x-tgtheme-ios", size: nil, attributes: [.FileName(fileName: "\(title).tgios-theme")], alternativeRepresentations: [])
                         let message = EnqueueMessage.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: file), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])
 
                         let _ = enqueueMessages(account: context.account, peerId: context.account.peerId, messages: [message]).start()
@@ -575,8 +574,8 @@ public func editThemeController(context: AccountContext, mode: EditThemeControll
                     let themeThumbnailData: Data?
                     if let theme = theme, let themeString = encodePresentationTheme(theme), let data = themeString.data(using: .utf8) {
                         let resource = LocalFileMediaResource(fileId: Int64.random(in: Int64.min ... Int64.max))
-                        context.account.postbox.mediaBox.storeResourceData(resource.id, data: data, synchronous: true)
-                        context.sharedContext.accountManager.mediaBox.storeResourceData(resource.id, data: data, synchronous: true)
+                        context.engine.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: data, synchronous: true)
+                        context.sharedContext.accountManager.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: data, synchronous: true)
                         themeResource = resource
                         themeData = data
                         
@@ -612,14 +611,14 @@ public func editThemeController(context: AccountContext, mode: EditThemeControll
                         let resource = file.file.resource
                         
                         var data: Data?
-                        if let path = context.account.postbox.mediaBox.completedResourcePath(resource), let maybeData = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedRead) {
+                        if let path = context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(resource.id)), let maybeData = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedRead) {
                             data = maybeData
-                        } else if let path = context.sharedContext.accountManager.mediaBox.completedResourcePath(resource), let maybeData = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedRead) {
+                        } else if let path = context.sharedContext.accountManager.resources.completedResourcePath(resource: EngineMediaResource(resource)), let maybeData = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedRead) {
                             data = maybeData
                         }
                         
                         if let data = data {
-                            context.sharedContext.accountManager.mediaBox.storeResourceData(resource.id, data: data, synchronous: true)
+                            context.sharedContext.accountManager.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: data, synchronous: true)
                             prepare = .complete()
                         } else {
                             prepare = .complete()
@@ -637,7 +636,7 @@ public func editThemeController(context: AccountContext, mode: EditThemeControll
                                         let _ = applyTheme(accountManager: context.sharedContext.accountManager, account: context.account, theme: resultTheme).start()
                                         let _ = (updatePresentationThemeSettingsInteractively(accountManager: context.sharedContext.accountManager, { current in
                                             if let resource = resultTheme.file?.resource, let data = themeData {
-                                                context.sharedContext.accountManager.mediaBox.storeResourceData(resource.id, data: data, synchronous: true)
+                                                context.sharedContext.accountManager.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: data, synchronous: true)
                                             }
                                             
                                             let themeReference: PresentationThemeReference = .cloud(PresentationCloudTheme(theme: resultTheme, resolvedWallpaper: resolvedWallpaper, creatorAccountId: context.account.id))
@@ -671,7 +670,7 @@ public func editThemeController(context: AccountContext, mode: EditThemeControll
                                     let _ = applyTheme(accountManager: context.sharedContext.accountManager, account: context.account, theme: resultTheme).start()
                                     let _ = (updatePresentationThemeSettingsInteractively(accountManager: context.sharedContext.accountManager, { current in
                                         if let resource = resultTheme.file?.resource, let data = themeData {
-                                            context.sharedContext.accountManager.mediaBox.storeResourceData(resource.id, data: data, synchronous: true)
+                                            context.sharedContext.accountManager.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: data, synchronous: true)
                                         }
                                         
                                         let themeReference: PresentationThemeReference = .cloud(PresentationCloudTheme(theme: resultTheme, resolvedWallpaper: resolvedWallpaper, creatorAccountId: context.account.id))

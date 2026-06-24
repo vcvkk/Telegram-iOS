@@ -3,7 +3,6 @@ import UIKit
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -29,6 +28,7 @@ import PhoneNumberFormat
 import PlainButtonComponent
 import StoreKit
 import DeviceModel
+import GlassBarButtonComponent
 
 final class AuthorizationSequencePaymentScreenComponent: Component {
     typealias EnvironmentType = ViewControllerComponentContainer.Environment
@@ -43,7 +43,7 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
     let premiumDays: Int32
     let supportEmailAddress: String
     let supportEmailSubject: String
-
+    
     init(
         sharedContext: SharedAccountContext,
         engine: TelegramEngineUnauthorized,
@@ -172,7 +172,7 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
                                 title: nil,
                                 text: errorText,
                                 actions: [
-                                    TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {}),
+                                    TextAlertAction(type: .genericAction, title: presentationData.strings.Common_OK, action: {}),
                                     TextAlertAction(type: .defaultAction, title: presentationData.strings.Login_PhoneNumberHelp, action: { [weak self] in
                                         guard let self else {
                                             return
@@ -255,25 +255,27 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
             
             let helpButtonSize = self.helpButton.update(
                 transition: transition,
-                component: AnyComponent(PlainButtonComponent(
-                    content: AnyComponent(MultilineTextComponent(
-                        text: .plain(NSAttributedString(string: environment.strings.Login_PhoneNumberHelp, font: Font.regular(17.0), textColor: environment.theme.list.itemAccentColor))
-                    )),
-                    minSize: CGSize(width: 0.0, height: 44.0),
-                    contentInsets: UIEdgeInsets(top: 0.0, left: 8.0, bottom: 0.0, right: 8.0),
-                    action: { [weak self] in
-                        guard let self else {
-                            return
+                component: AnyComponent(
+                    GlassBarButtonComponent(
+                        size: nil,
+                        backgroundColor: nil,
+                        isDark: environment.theme.overallDarkAppearance,
+                        state: .glass,
+                        component: AnyComponentWithIdentity(id: "label", component: AnyComponent(MultilineTextComponent(
+                            text: .plain(NSAttributedString(string: environment.strings.Login_PhoneNumberHelp, font: Font.regular(17.0), textColor: environment.theme.chat.inputPanel.panelControlColor))
+                        ))),
+                        action: { [weak self] _ in
+                            guard let self else {
+                                return
+                            }
+                            self.displaySendEmail(error: nil, errorCode: nil)
                         }
-                        self.displaySendEmail(error: nil, errorCode: nil)
-                    },
-                    animateScale: false,
-                    animateContents: false
-                )),
+                    )
+                ),
                 environment: {},
-                containerSize: CGSize(width: 200.0, height: 100.0)
+                containerSize: CGSize(width: 200.0, height: 44.0)
             )
-            let helpButtonFrame = CGRect(origin: CGPoint(x: availableSize.width - 8.0 - helpButtonSize.width, y: environment.statusBarHeight), size: helpButtonSize)
+            let helpButtonFrame = CGRect(origin: CGPoint(x: availableSize.width - 16.0 - helpButtonSize.width, y: environment.navigationHeight - helpButtonSize.height - 6.0), size: helpButtonSize)
             if let helpButtonView = self.helpButton.view {
                 if helpButtonView.superview == nil {
                     self.addSubview(helpButtonView)
@@ -337,13 +339,24 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
                     ))
                 )
             )
+            
+            let supportText: String
+            if component.premiumDays == 7 {
+                supportText = environment.strings.Login_Fee_Support_Text
+            } else if component.premiumDays > 0 {
+                let daysString = environment.strings.Login_Fee_Support_NewText_Days(component.premiumDays)
+                supportText = environment.strings.Login_Fee_Support_NewText(daysString).string
+            } else {
+                supportText = environment.strings.Login_Fee_Support_NewTextNone
+            }
+            
             items.append(
                 AnyComponentWithIdentity(
                     id: "support",
                     component: AnyComponent(ParagraphComponent(
                         title: environment.strings.Login_Fee_Support_Title,
                         titleColor: textColor,
-                        text: environment.strings.Login_Fee_Support_Text,
+                        text: supportText,
                         textColor: secondaryTextColor,
                         iconName: "Premium/Authorization/Support",
                         iconColor: linkColor,
@@ -355,7 +368,7 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
                                 sharedContext: component.sharedContext,
                                 engine: component.engine,
                                 inAppPurchaseManager: component.inAppPurchaseManager,
-                                source: .auth(product.price),
+                                source: .auth(product.price, component.premiumDays),
                                 proceed: { [weak self] in
                                     self?.proceed()
                                 }
@@ -373,7 +386,7 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
                 containerSize: CGSize(width: availableSize.width - sideInset * 2.0, height: availableSize.height)
             )
             
-            let buttonHeight: CGFloat = 50.0
+            let buttonHeight: CGFloat = 52.0
             let bottomPanelPadding: CGFloat = 12.0
             let titleSpacing: CGFloat = -24.0
             let listSpacing: CGFloat = 12.0
@@ -403,7 +416,7 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
                 listView.frame = CGRect(origin: CGPoint(x: floor((availableSize.width - listSize.width) / 2.0), y: originY), size: listSize)
             }
         
-            let bottomInset: CGFloat = environment.safeInsets.bottom > 0.0 ? environment.safeInsets.bottom + 5.0 : bottomPanelPadding
+            let bottomInset: CGFloat = environment.safeInsets.bottom > 0.0 ? environment.safeInsets.bottom + 10.0 : bottomPanelPadding
             let bottomPanelHeight = bottomPanelPadding + buttonHeight + bottomInset
                                     
             let priceString: String
@@ -414,6 +427,16 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
             }
             
             let buttonString = environment.strings.Login_Fee_SignUp(priceString).string
+            let buttonSubtitle: String
+            if component.premiumDays == 7 {
+                buttonSubtitle = environment.strings.Login_Fee_GetPremiumForAWeek
+            } else if component.premiumDays > 0 {
+                let daysString = environment.strings.Login_Fee_GetPremiumForDays_Days(component.premiumDays)
+                buttonSubtitle = environment.strings.Login_Fee_GetPremiumForDays(daysString).string
+            } else {
+                buttonSubtitle = environment.strings.Login_Fee_GetPremiumNone
+            }
+            
             let buttonAttributedString = NSMutableAttributedString(string: buttonString, font: Font.semibold(17.0), textColor: environment.theme.list.itemCheckColors.foregroundColor, paragraphAlignment: .center)
             let buttonSize = self.button.update(
                 transition: transition,
@@ -429,7 +452,7 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
                         component: AnyComponent(
                             VStack([
                                 AnyComponentWithIdentity(id: AnyHashable(0), component: AnyComponent(MultilineTextComponent(text: .plain(buttonAttributedString)))),
-                                AnyComponentWithIdentity(id: AnyHashable(1), component: AnyComponent(MultilineTextComponent(text: .plain(NSAttributedString(string: environment.strings.Login_Fee_GetPremiumForAWeek, font: Font.medium(11.0), textColor: environment.theme.list.itemCheckColors.foregroundColor.withAlphaComponent(0.7), paragraphAlignment: .center)))))
+                                AnyComponentWithIdentity(id: AnyHashable(1), component: AnyComponent(MultilineTextComponent(text: .plain(NSAttributedString(string: buttonSubtitle, font: Font.medium(11.0), textColor: environment.theme.list.itemCheckColors.foregroundColor.withAlphaComponent(0.7), paragraphAlignment: .center)))))
                             ], spacing: 1.0)
                         )
                     ),
@@ -440,7 +463,7 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
                     }
                 )),
                 environment: {},
-                containerSize: CGSize(width: availableSize.width - sideInset * 2.0, height: buttonHeight)
+                containerSize: CGSize(width: availableSize.width - 30.0 * 2.0, height: buttonHeight)
             )
             if let buttonView = self.button.view {
                 if buttonView.superview == nil {

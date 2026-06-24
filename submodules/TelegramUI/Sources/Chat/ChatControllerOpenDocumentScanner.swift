@@ -1,7 +1,6 @@
 import Foundation
 import UIKit
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import AsyncDisplayKit
 import Display
@@ -49,12 +48,12 @@ extension ChatControllerImpl: VNDocumentCameraViewControllerDelegate {
                 arc4random_buf(&randomId, 8)
                 
                 let resource = LocalFileMediaResource(fileId: Int64.random(in: Int64.min ... Int64.max))
-                self.context.account.postbox.mediaBox.storeResourceData(resource.id, data: data, synchronous: true)
+                self.context.engine.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: data, synchronous: true)
                 
                 var previewResource: LocalFileMediaResource?
                 if let image = generatePdfPreviewImage(data: data, size: CGSize(width: 256, height: 256.0)), let jpegData = image.jpegData(compressionQuality: 0.5) {
                     let resource = LocalFileMediaResource(fileId: Int64.random(in: Int64.min ... Int64.max))
-                    self.context.account.postbox.mediaBox.storeResourceData(resource.id, data: jpegData, synchronous: true)
+                    self.context.engine.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: jpegData, synchronous: true)
                     previewResource = resource
                 }
                 
@@ -65,7 +64,7 @@ extension ChatControllerImpl: VNDocumentCameraViewControllerDelegate {
                 let image = scan.imageOfPage(at: i)
                 if let data = image.jpegData(compressionQuality: 0.87) {
                     let resource = LocalFileMediaResource(fileId: Int64.random(in: Int64.min ... Int64.max))
-                    self.context.account.postbox.mediaBox.storeResourceData(resource.id, data: data, synchronous: true)
+                    self.context.engine.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: data, synchronous: true)
                     
                     var fileTitle = title
                     if scan.pageCount > 1 {
@@ -93,7 +92,7 @@ extension ChatControllerImpl: VNDocumentCameraViewControllerDelegate {
             var attributes: [TelegramMediaFileAttribute] = []
             attributes.append(.FileName(fileName: item.fileName))
             
-            let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: fileId), partialReference: nil, resource: item.resource, previewRepresentations: previewRepresentations, videoThumbnails: [], immediateThumbnailData: nil, mimeType: item.mimeType, size: item.size, attributes: attributes, alternativeRepresentations: [])
+            let file = TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: fileId), partialReference: nil, resource: item.resource, previewRepresentations: previewRepresentations, videoThumbnails: [], immediateThumbnailData: nil, mimeType: item.mimeType, size: item.size, attributes: attributes, alternativeRepresentations: [])
             let message: EnqueueMessage = .message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: file), threadId: self.chatLocation.threadId, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: groupingKey, correlationId: nil, bubbleUpEmojiOrStickersets: [])
             messages.append(message)
         

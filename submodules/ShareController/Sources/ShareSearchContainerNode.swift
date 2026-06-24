@@ -286,7 +286,16 @@ final class ShareSearchContainerNode: ASDisplayNode, ShareContentContainerNode {
         let foundItems = combineLatest(self.searchQuery.get(), self.themePromise.get())
         |> mapToSignal { query, theme -> Signal<([ShareSearchPeerEntry]?, Bool), NoError> in
             if !query.isEmpty {
-                let accountPeer = context.stateManager.postbox.loadedPeerWithId(context.accountPeerId) |> take(1)
+                let accountPeer = context.engineData.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.accountPeerId))
+                |> mapToSignal { peer -> Signal<EnginePeer, NoError> in
+                    if let peer {
+                        return .single(peer)
+                    } else {
+                        return .never()
+                    }
+                }
+                |> map { $0._asPeer() }
+                |> take(1)
                 let foundLocalPeers = context.stateManager.postbox.searchPeers(query: query.lowercased())
                 let foundRemotePeers: Signal<([FoundPeer], [FoundPeer], Bool), NoError> = .single(([], [], true))
                 |> then(
@@ -320,7 +329,7 @@ final class ShareSearchContainerNode: ASDisplayNode, ShareContentContainerNode {
                     var result = Set<EnginePeer.Id>()
                     
                     for peer in foundPeers.foundLocalPeers {
-                        if let rawPeer = peer.peer, case let .user(user) = EnginePeer(rawPeer), user.flags.contains(.requirePremium) {
+                        if let user = peer.peer as? TelegramUser, user.flags.contains(.requirePremium) {
                             result.insert(user.id)
                         }
                     }
@@ -396,7 +405,7 @@ final class ShareSearchContainerNode: ASDisplayNode, ShareContentContainerNode {
                                 index += 1
                             }
                         }
-                        
+
                         for foundPeer in foundRemotePeers.1 {
                             let peer = foundPeer.peer
                             if !existingPeerIds.contains(peer.id) && canSendMessagesToPeer(peer) {

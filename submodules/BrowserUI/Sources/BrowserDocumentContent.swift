@@ -3,7 +3,6 @@ import UIKit
 import Display
 import ComponentFlow
 import TelegramCore
-import Postbox
 import SwiftSignalKit
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -44,7 +43,7 @@ final class BrowserDocumentContent: UIView, BrowserContent, WKNavigationDelegate
     var presentInGlobalOverlay: (ViewController) -> Void = { _ in }
     var getNavigationController: () -> NavigationController? = { return nil }
     
-    private var tempFile: TempBoxFile?
+    private var tempFile: EngineTempBoxFile?
     
     init(context: AccountContext, presentationData: PresentationData, file: FileMediaReference) {
         self.context = context
@@ -62,10 +61,10 @@ final class BrowserDocumentContent: UIView, BrowserContent, WKNavigationDelegate
         
         var title: String = "file"
         var url = ""
-        if let path = self.context.account.postbox.mediaBox.completedResourcePath(file.media.resource) {
+        if let path = self.context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(file.media.resource.id)) {
             var updatedPath = path
             if let fileName = file.media.fileName {
-                let tempFile = TempBox.shared.file(path: path, fileName: fileName)
+                let tempFile = EngineTempBox.shared.file(path: path, fileName: fileName)
                 updatedPath = tempFile.path
                 self.tempFile = tempFile
                 title = fileName

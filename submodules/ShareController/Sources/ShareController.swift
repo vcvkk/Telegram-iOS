@@ -1,5 +1,5 @@
 import Foundation
-import EGSimpleSettings
+import SGSimpleSettings
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -300,18 +300,18 @@ public final class ShareControllerAppEnvironment: ShareControllerEnvironment {
 
 public final class ShareControllerSwitchableAccount: Equatable {
     public let account: ShareControllerAccountContext
-    public let peer: Peer
-    
-    public init(account: ShareControllerAccountContext, peer: Peer) {
+    public let peer: EnginePeer
+
+    public init(account: ShareControllerAccountContext, peer: EnginePeer) {
         self.account = account
         self.peer = peer
     }
-    
+
     public static func ==(lhs: ShareControllerSwitchableAccount, rhs: ShareControllerSwitchableAccount) -> Bool {
         if lhs.account !== rhs.account {
             return false
         }
-        if !arePeersEqual(lhs.peer, rhs.peer) {
+        if lhs.peer != rhs.peer {
             return false
         }
         return true
@@ -387,13 +387,13 @@ public final class ShareController: ViewController {
     
     public var parentNavigationController: NavigationController?
     
-    public convenience init(context: AccountContext, subject: ShareControllerSubject, presetText: String? = nil, preferredAction: ShareControllerPreferredAction = .default, showInChat: ((Message) -> Void)? = nil, fromForeignApp: Bool = false, segmentedValues: [ShareControllerSegmentedValue]? = nil, externalShare: Bool = true, immediateExternalShare: Bool = false, immediateExternalShareOverridingEGBehaviour: Bool? = nil, switchableAccounts: [AccountWithInfo] = [], immediatePeerId: PeerId? = nil, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil, forceTheme: PresentationTheme? = nil, forcedActionTitle: String? = nil, shareAsLink: Bool = false, collectibleItemInfo: TelegramCollectibleItemInfo? = nil) {
+    public convenience init(context: AccountContext, subject: ShareControllerSubject, presetText: String? = nil, preferredAction: ShareControllerPreferredAction = .default, showInChat: ((Message) -> Void)? = nil, fromForeignApp: Bool = false, segmentedValues: [ShareControllerSegmentedValue]? = nil, externalShare: Bool = true, immediateExternalShare: Bool = false, immediateExternalShareOverridingSGBehaviour: Bool? = nil, switchableAccounts: [AccountWithInfo] = [], immediatePeerId: PeerId? = nil, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil, forceTheme: PresentationTheme? = nil, forcedActionTitle: String? = nil, shareAsLink: Bool = false, collectibleItemInfo: TelegramCollectibleItemInfo? = nil) {
         var immediateExternalShare = immediateExternalShare
-        if EGSimpleSettings.shared.forceSystemSharing {
+        if SGSimpleSettings.shared.forceSystemSharing {
             immediateExternalShare = true
         }
-        if let immediateExternalShareOverridingEGBehaviour = immediateExternalShareOverridingEGBehaviour {
-            immediateExternalShare = immediateExternalShareOverridingEGBehaviour
+        if let immediateExternalShareOverridingSGBehaviour = immediateExternalShareOverridingSGBehaviour {
+            immediateExternalShare = immediateExternalShareOverridingSGBehaviour
         }
         self.init(
             environment: ShareControllerAppEnvironment(sharedContext: context.sharedContext),
@@ -1153,11 +1153,10 @@ public final class ShareController: ViewController {
             for info in strongSelf.switchableAccounts {
                 items.append(ActionSheetPeerItem(
                     accountPeerId: info.account.accountPeerId,
-                    postbox: info.account.stateManager.postbox,
-                    network: info.account.stateManager.network,
+                    stateManager: info.account.stateManager,
                     contentSettings: info.account.contentSettings,
-                    peer: EnginePeer(info.peer),
-                    title: EnginePeer(info.peer).displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder),
+                    peer: info.peer,
+                    title: info.peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder),
                     isSelected: info.account.accountId == strongSelf.currentContext.accountId,
                     strings: presentationData.strings,
                     theme: presentationData.theme,
@@ -2408,10 +2407,9 @@ public final class ShareController: ViewController {
         }
         let context = accountContext.context
         
-        let postbox = self.currentContext.stateManager.postbox
         let signals: [Signal<Float, NoError>] = messages.compactMap { message -> Signal<Float, NoError>? in
-            if let media = message.media.first {
-                return SaveToCameraRoll.saveToCameraRoll(context: context, postbox: postbox, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: media))
+            if let media = message.effectiveMedia.first {
+                return SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: media))
             } else {
                 return nil
             }
@@ -2437,7 +2435,7 @@ public final class ShareController: ViewController {
         let context = accountContext.context
         
         let media = TelegramMediaImage(imageId: MediaId(namespace: 0, id: 0), representations: representations.map({ $0.representation }), immediateThumbnailData: nil, reference: nil, partialReference: nil, flags: [])
-        self.controllerNode.transitionToProgressWithValue(signal: SaveToCameraRoll.saveToCameraRoll(context: context, postbox: context.account.postbox, userLocation: .other, mediaReference: .standalone(media: media)) |> map(Optional.init), dismissImmediately: true, completion: {})
+        self.controllerNode.transitionToProgressWithValue(signal: SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .other, mediaReference: .standalone(media: media)) |> map(Optional.init), dismissImmediately: true, completion: {})
     }
     
     private func saveToCameraRoll(mediaReference: AnyMediaReference, completion: (() -> Void)?) {
@@ -2446,7 +2444,7 @@ public final class ShareController: ViewController {
         }
         let context = accountContext.context
         
-        self.controllerNode.transitionToProgressWithValue(signal: SaveToCameraRoll.saveToCameraRoll(context: context, postbox: context.account.postbox, userLocation: .other, mediaReference: mediaReference) |> map(Optional.init), dismissImmediately: completion == nil, completion: completion ?? {})
+        self.controllerNode.transitionToProgressWithValue(signal: SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .other, mediaReference: mediaReference) |> map(Optional.init), dismissImmediately: completion == nil, completion: completion ?? {})
     }
     
     private func switchToAccount(account: ShareControllerAccountContext, animateIn: Bool) {

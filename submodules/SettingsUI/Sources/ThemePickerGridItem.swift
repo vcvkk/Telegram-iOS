@@ -3,7 +3,6 @@ import UIKit
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import MergeLists
@@ -26,7 +25,7 @@ private func generateBorderImage(theme: PresentationTheme, bordered: Bool, selec
     if let image = cachedBorderImages[key] {
         return image
     } else {
-        let image = generateImage(CGSize(width: 18.0, height: 18.0), rotatedContext: { size, context in
+        let image = generateImage(CGSize(width: 32.0, height: 32.0), rotatedContext: { size, context in
             let bounds = CGRect(origin: CGPoint(), size: size)
             context.clear(bounds)
 
@@ -52,7 +51,7 @@ private func generateBorderImage(theme: PresentationTheme, bordered: Bool, selec
                 context.setLineWidth(lineWidth)
                 context.strokeEllipse(in: bounds.insetBy(dx: 1.0 + lineWidth / 2.0, dy: 1.0 + lineWidth / 2.0))
             }
-        })?.stretchableImage(withLeftCapWidth: 9, topCapHeight: 9)
+        })?.stretchableImage(withLeftCapWidth: 16, topCapHeight: 16)
         cachedBorderImages[key] = image
         return image
     }
@@ -81,7 +80,7 @@ private final class ThemeGridThemeItemIconNode : ASDisplayNode {
 
         self.imageNode = TransformImageNode()
         self.imageNode.isLayerBacked = true
-        self.imageNode.cornerRadius = 8.0
+        self.imageNode.cornerRadius = 16.0
         self.imageNode.clipsToBounds = true
         
         self.overlayNode = ASImageNode()
@@ -154,11 +153,6 @@ private final class ThemeGridThemeItemIconNode : ASDisplayNode {
         }
     }
     
-//    override func updateAbsoluteRect(_ rect: CGRect, within containerSize: CGSize) {
-//        let emojiFrame = CGRect(origin: CGPoint(x: 33.0, y: 79.0), size: CGSize(width: 24.0, height: 24.0))
-//        self.placeholderNode.updateAbsoluteRect(CGRect(origin: CGPoint(x: rect.minX + emojiFrame.minX, y: rect.minY + emojiFrame.minY), size: emojiFrame.size), within: containerSize)
-//    }
-        
     func setup(item: ThemeCarouselThemeIconItem, size: CGSize) {
         let currentItem = self.item
         let currentSize = self.size
@@ -269,7 +263,7 @@ private final class ThemeGridThemeItemIconNode : ASDisplayNode {
                 }
                 self.animatedStickerNode = animatedStickerNode
                 self.emojiContainerNode.insertSubnode(animatedStickerNode, belowSubnode: self.placeholderNode)
-                let pathPrefix = item.context.account.postbox.mediaBox.shortLivedResourceCachePathPrefix(file.resource.id)
+                let pathPrefix = item.context.engine.resources.shortLivedResourceCachePathPrefix(id: EngineMediaResource.Id(file.resource.id))
                 animatedStickerNode.setup(source: AnimatedStickerResourceSource(account: item.context.account, resource: file.resource), width: 128, height: 128, playbackMode: .still(.start), mode: .direct(cachePathPrefix: pathPrefix))
                 
                 animatedStickerNode.anchorPoint = CGPoint(x: 0.5, y: 1.0)
@@ -277,7 +271,7 @@ private final class ThemeGridThemeItemIconNode : ASDisplayNode {
             animatedStickerNode.autoplay = true
             animatedStickerNode.visibility = true
             
-            self.stickerFetchedDisposable.set(fetchedMediaResource(mediaBox: item.context.account.postbox.mediaBox, userLocation: .other, userContentType: .other, reference: MediaResourceReference.media(media: .standalone(media: file), resource: file.resource)).start())
+            self.stickerFetchedDisposable.set(item.context.engine.resources.fetch(reference: MediaResourceReference.media(media: .standalone(media: file), resource: file.resource), userLocation: .other, userContentType: .other).start())
             
             let thumbnailDimensions = PixelDimensions(width: 512, height: 512)
             self.placeholderNode.update(backgroundColor: nil, foregroundColor: UIColor(rgb: 0xffffff, alpha: 0.2), shimmeringColor: UIColor(rgb: 0xffffff, alpha: 0.3), data: file.immediateThumbnailData, size: emojiFrame.size, enableEffect: item.context.sharedContext.energyUsageSettings.fullTranslucency, imageSize: thumbnailDimensions.cgSize)
@@ -418,6 +412,7 @@ class ThemeGridThemeItemNode: ListViewItemNode, ItemListItemNode {
             let insets: UIEdgeInsets
             let separatorHeight = UIScreenPixel
             
+            let padding: CGFloat = 12.0
             let minSpacing: CGFloat = 6.0
             
             let referenceImageSize: CGSize
@@ -429,18 +424,13 @@ class ThemeGridThemeItemNode: ListViewItemNode, ItemListItemNode {
             }
             let totalWidth = params.width - params.leftInset - params.rightInset
             let imageCount = Int((totalWidth - minSpacing) / (referenceImageSize.width + minSpacing))
-            var itemSize = referenceImageSize.aspectFilled(CGSize(width: floorToScreenPixels((totalWidth - CGFloat(imageCount + 1) * minSpacing) / CGFloat(imageCount)), height: referenceImageSize.height))
+            var itemSize = referenceImageSize.aspectFilled(CGSize(width: floorToScreenPixels((totalWidth - padding * 2.0 - CGFloat(imageCount - 1) * minSpacing) / CGFloat(imageCount)), height: referenceImageSize.height))
             itemSize.height = referenceImageSize.height
-            let itemSpacing = floorToScreenPixels((totalWidth - CGFloat(imageCount) * itemSize.width) / CGFloat(imageCount + 1))
-            
-            var spacingOffset: CGFloat = 0.0
-            if totalWidth - CGFloat(imageCount) * itemSize.width - CGFloat(imageCount + 1) * itemSpacing == 1.0 {
-                spacingOffset = UIScreenPixel
-            }
-            
+            let itemSpacing = floorToScreenPixels((totalWidth - padding * 2.0 - CGFloat(imageCount) * itemSize.width) / CGFloat(imageCount - 1))
+                        
             let rows = ceil(CGFloat(item.themes.count) / CGFloat(imageCount))
             
-            contentSize = CGSize(width: params.width, height: minSpacing + rows * (itemSize.height + itemSpacing))
+            contentSize = CGSize(width: params.width, height: padding * 2.0 + rows * itemSize.height + (rows - 1.0) * itemSpacing)
             insets = itemListNeighborsGroupedInsets(neighbors, params)
 
             let layout = ListViewItemNodeLayout(contentSize: contentSize, insets: insets)
@@ -451,6 +441,7 @@ class ThemeGridThemeItemNode: ListViewItemNode, ItemListItemNode {
                     strongSelf.item = item
                     strongSelf.layoutParams = params
 
+                    strongSelf.scrollNode.view.scrollsToTop = false
                     strongSelf.backgroundNode.backgroundColor = item.theme.list.itemBlocksBackgroundColor
                     strongSelf.topStripeNode.backgroundColor = item.theme.list.itemBlocksSeparatorColor
                     strongSelf.bottomStripeNode.backgroundColor = item.theme.list.itemBlocksSeparatorColor
@@ -493,7 +484,7 @@ class ThemeGridThemeItemNode: ListViewItemNode, ItemListItemNode {
                     }
                     
                     strongSelf.containerNode.frame = CGRect(x: 0.0, y: 0.0, width: contentSize.width, height: contentSize.height)
-                    strongSelf.maskNode.image = hasCorners ? PresentationResourcesItemList.cornersImage(item.theme, top: hasTopCorners, bottom: hasBottomCorners) : nil
+                    strongSelf.maskNode.image = hasCorners ? PresentationResourcesItemList.cornersImage(item.theme, top: hasTopCorners, bottom: hasBottomCorners, glass: true) : nil
 
                     strongSelf.backgroundNode.frame = CGRect(origin: CGPoint(x: 0.0, y: -min(insets.top, separatorHeight)), size: CGSize(width: params.width, height: contentSize.height + min(insets.top, separatorHeight) + min(insets.bottom, separatorHeight)))
                     strongSelf.maskNode.frame = strongSelf.backgroundNode.frame.insetBy(dx: params.leftInset, dy: 0.0)
@@ -526,7 +517,7 @@ class ThemeGridThemeItemNode: ListViewItemNode, ItemListItemNode {
                         
                         let col = CGFloat(index % imageCount)
                         let row = floor(CGFloat(index) / CGFloat(imageCount))
-                        let itemFrame = CGRect(origin: CGPoint(x: params.leftInset + spacingOffset + itemSpacing + (itemSize.width + itemSpacing) * col, y: minSpacing + (itemSize.height + itemSpacing) * row), size: itemSize)
+                        let itemFrame = CGRect(origin: CGPoint(x: params.leftInset + padding + (itemSize.width + itemSpacing) * col, y: padding + (itemSize.height + itemSpacing) * row), size: itemSize)
                         itemNode.frame = itemFrame
                         
                         index += 1

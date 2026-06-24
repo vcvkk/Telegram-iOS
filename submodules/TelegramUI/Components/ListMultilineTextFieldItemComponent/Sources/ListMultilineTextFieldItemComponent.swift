@@ -189,6 +189,9 @@ public final class ListMultilineTextFieldItemComponent: Component {
         if lhs.placeholder != rhs.placeholder {
             return false
         }
+        if lhs.placeholderDefinesMinHeight != rhs.placeholderDefinesMinHeight {
+            return false
+        }
         if lhs.autocapitalizationType != rhs.autocapitalizationType {
             return false
         }
@@ -220,9 +223,6 @@ public final class ListMultilineTextFieldItemComponent: Component {
             return false
         }
         if lhs.formatMenuAvailability != rhs.formatMenuAvailability {
-            return false
-        }
-        if lhs.placeholderDefinesMinHeight != rhs.placeholderDefinesMinHeight {
             return false
         }
         if (lhs.updated == nil) != (rhs.updated == nil) {
@@ -484,13 +484,13 @@ public final class ListMultilineTextFieldItemComponent: Component {
                 environment: {},
                 containerSize: CGSize(width: availableSize.width - leftInset - rightInset, height: 100.0)
             )
-
+            
             var size = CGSize(width: availableSize.width, height: textFieldSize.height - 1.0)
             if component.placeholderDefinesMinHeight {
                 size.height = max(size.height, placeholderSize.height + verticalInset * 2.0 - 1.0)
             }
             let textFieldFrame = CGRect(origin: CGPoint(), size: textFieldSize)
-
+            
             if let textFieldView = self.textField.view {
                 if textFieldView.superview == nil {
                     self.addSubview(textFieldView)
@@ -498,6 +498,7 @@ public final class ListMultilineTextFieldItemComponent: Component {
                 }
                 transition.setFrame(view: textFieldView, frame: textFieldFrame)
             }
+            
             let placeholderFrame = CGRect(origin: CGPoint(x: leftInset, y: verticalInset), size: placeholderSize)
             if let placeholderView = self.placeholder.view {
                 if placeholderView.superview == nil {

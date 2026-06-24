@@ -12,7 +12,6 @@ swift_library(
     deps = [
         "//submodules/AsyncDisplayKit",
         "//submodules/Display",
-        "//submodules/Postbox",
         "//submodules/TelegramCore",
         "//submodules/SSignalKit/SwiftSignalKit",
         "//submodules/ComponentFlow",
@@ -25,7 +24,10 @@ swift_library(
         "//submodules/TelegramStringFormatting",
         "//submodules/PresentationDataUtils",
         "//submodules/Components/SolidRoundedButtonComponent",
+        "//submodules/Components/ResizableSheetComponent",
+        "//submodules/Components/BundleIconComponent",
         "//submodules/TelegramUI/Components/ButtonComponent",
+        "//submodules/TelegramUI/Components/GlassBarButtonComponent",
         "//submodules/TelegramUI/Components/PlainButtonComponent",
         "//submodules/TelegramUI/Components/AnimatedCounterComponent",
         "//submodules/AvatarNode",

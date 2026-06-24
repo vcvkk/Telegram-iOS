@@ -3,7 +3,6 @@ import UIKit
 import Display
 import SwiftSignalKit
 import TelegramCore
-import Postbox
 import SSignalKit
 import TelegramPresentationData
 import AccountContext
@@ -131,7 +130,7 @@ func presentLegacyMediaPickerGallery(
     transitionHostView: @escaping () -> UIView?,
     transitionView: @escaping (String) -> UIView?,
     completed: @escaping (TGMediaSelectableItem & TGMediaEditableItem, Bool, Int32?, @escaping () -> Void) -> Void,
-    presentSchedulePicker: @escaping (Bool, @escaping (Int32) -> Void) -> Void,
+    presentSchedulePicker: @escaping (Bool, @escaping (Int32, Bool) -> Void) -> Void,
     presentTimerPicker: @escaping (@escaping (Int32) -> Void) -> Void,
     getCaptionPanelView: @escaping () -> TGCaptionPanelView?,
     present: @escaping (ViewController, Any?) -> Void,
@@ -153,6 +152,15 @@ func presentLegacyMediaPickerGallery(
     legacyController.statusBar.statusBarStyle = presentationData.theme.rootController.statusBarStyle.style
     
     let paintStickersContext = LegacyPaintStickersContext(context: context)
+    paintStickersContext.presentMediaPickerSendActionMenu = makeLegacyMediaPickerSendActionMenuPresenter(context: context, presentationData: presentationData, presentInGlobalOverlay: { [weak legacyController] controller in
+        if let legacyController {
+            legacyController.presentInGlobalOverlay(controller)
+        } else if let mainWindow = context.sharedContext.mainWindow {
+            mainWindow.presentInGlobalOverlay(controller)
+        } else {
+            context.sharedContext.presentGlobalController(controller, nil)
+        }
+    })
     paintStickersContext.captionPanelView = {
         return getCaptionPanelView()
     }
@@ -165,6 +173,9 @@ func presentLegacyMediaPickerGallery(
         let livePhotoButton = LivePhotoButton(context: context)
         livePhotoButton.present = present
         return livePhotoButton
+    }
+    paintStickersContext.photoToolbarView = { backButton, doneButton, solidBackground, hasSendStarsButton in
+        return makeMediaPickerPhotoToolbarView(context: context, backButton: backButton, doneButton: doneButton, solidBackground: solidBackground, hasSendStarsButton: hasSendStarsButton)
     }
     paintStickersContext.editCover = { dimensions, completion in
         editCover(dimensions, completion)
@@ -193,7 +204,25 @@ func presentLegacyMediaPickerGallery(
         }
     }
     let currentAppConfiguration = context.currentAppConfiguration.with { $0 }
-    let model = TGMediaPickerGalleryModel(context: legacyController.context, items: items, focus: focusItem, selectionContext: selectionContext, editingContext: editingContext, hasCaptions: true, allowCaptionEntities: true, hasTimer: hasTimer, onlyCrop: false, inhibitDocumentCaptions: false, hasSelectionPanel: true, hasCamera: false, recipientName: recipientName, isScheduledMessages: isScheduledMessages, canShowTelescope: currentAppConfiguration.egWebSettings.global.canShowTelescope, canSendTelescope: currentAppConfiguration.egWebSettings.user.canSendTelescope, hasCoverButton: hasCoverButton)!
+    let model = TGMediaPickerGalleryModel(
+        context: legacyController.context,
+        items: items,
+        focus: focusItem,
+        selectionContext: selectionContext,
+        editingContext: editingContext,
+        hasCaptions: true,
+        allowCaptionEntities: true,
+        hasTimer: hasTimer,
+        onlyCrop: false,
+        inhibitDocumentCaptions: false,
+        hasSelectionPanel: true,
+        hasCamera: false,
+        recipientName: recipientName,
+        isScheduledMessages: isScheduledMessages,
+        canShowTelescope: currentAppConfiguration.sgWebSettings.global.canShowTelescope,
+        canSendTelescope: currentAppConfiguration.sgWebSettings.user.canSendTelescope,
+        hasCoverButton: hasCoverButton
+    )!
     model.stickersContext = paintStickersContext
     controller.model = model
     model.controller = controller
@@ -283,7 +312,7 @@ func presentLegacyMediaPickerGallery(
         }
     }
     if !isScheduledMessages && peer != nil {
-        model.interfaceView.doneLongPressed = { [weak selectionContext, weak editingContext, weak legacyController, weak model] item in
+        model.interfaceView.doneLongPressed = { [weak selectionContext, weak editingContext, weak legacyController, weak model, weak paintStickersContext] item, sourceView in
             if let legacyController = legacyController, let item = item as? TGMediaPickerGalleryItem, let model = model, let selectionContext = selectionContext {
                 var effectiveHasSchedule = hasSchedule
                 
@@ -329,37 +358,35 @@ func presentLegacyMediaPickerGallery(
                 let _ = (sendWhenOnlineAvailable
                 |> take(1)
                 |> deliverOnMainQueue).start(next: { sendWhenOnlineAvailable in
-                    let legacySheetController = LegacyController(presentation: .custom, theme: presentationData.theme, initialLayout: nil)
-                    let sheetController = TGMediaPickerSendActionSheetController(context: legacyController.context, isDark: true, sendButtonFrame: model.interfaceView.doneButtonFrame, canSendSilently: hasSilentPosting, canSendWhenOnline: sendWhenOnlineAvailable && effectiveHasSchedule, canSchedule: effectiveHasSchedule, reminder: reminder, hasTimer: hasTimer)
                     let dismissImpl = { [weak model] in
                         model?.dismiss(true, false)
                         dismissAll()
                     }
-                    sheetController.send = {
+                    let send = {
                         completed(item.asset, false, nil, {
                             dismissImpl()
                         })
                     }
-                    sheetController.sendSilently = { [weak model] in
+                    let sendSilently = { [weak model] in
                         model?.interfaceView.onDismiss()
                         
                         completed(item.asset, true, nil, {
                             dismissImpl()
                         })
                     }
-                    sheetController.sendWhenOnline = {
+                    let sendWhenOnline = {
                         completed(item.asset, false, scheduleWhenOnlineTimestamp, {
                             dismissImpl()
                         })
                     }
-                    sheetController.schedule = {
-                        presentSchedulePicker(true, { time in
-                            completed(item.asset, false, time, {
+                    let schedule = {
+                        presentSchedulePicker(true, { time, silentPosting in
+                            completed(item.asset, silentPosting, time, {
                                 dismissImpl()
                             })
                         })
                     }
-                    sheetController.sendWithTimer = {
+                    let sendWithTimer = {
                         presentTimerPicker { time in
                             var items = selectionContext.selectedItems() ?? []
                             items.append(item.asset as Any)
@@ -373,6 +400,20 @@ func presentLegacyMediaPickerGallery(
                             })
                         }
                     }
+
+                    if let sourceView, let paintStickersContext, paintStickersContext.presentMediaPickerSendActionMenu?(sourceView, hasSilentPosting, sendWhenOnlineAvailable && effectiveHasSchedule, effectiveHasSchedule, reminder, hasTimer, sendSilently, sendWhenOnline, schedule, sendWithTimer) == true {
+                        let hapticFeedback = HapticFeedback()
+                        hapticFeedback.impact()
+                        return
+                    }
+
+                    let legacySheetController = LegacyController(presentation: .custom, theme: presentationData.theme, initialLayout: nil)
+                    let sheetController = TGMediaPickerSendActionSheetController(context: legacyController.context, isDark: true, sendButtonFrame: model.interfaceView.doneButtonFrame, canSendSilently: hasSilentPosting, canSendWhenOnline: sendWhenOnlineAvailable && effectiveHasSchedule, canSchedule: effectiveHasSchedule, reminder: reminder, hasTimer: hasTimer)
+                    sheetController.send = send
+                    sheetController.sendSilently = sendSilently
+                    sheetController.sendWhenOnline = sendWhenOnline
+                    sheetController.schedule = schedule
+                    sheetController.sendWithTimer = sendWithTimer
                     sheetController.customDismissBlock = { [weak legacySheetController] in
                         legacySheetController?.dismiss()
                     }

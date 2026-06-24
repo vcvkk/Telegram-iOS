@@ -4,7 +4,6 @@ import AsyncDisplayKit
 import Display
 import SwiftSignalKit
 import TelegramPresentationData
-import Postbox
 import TelegramCore
 import AccountContext
 import ContextUI
@@ -408,10 +407,10 @@ private final class PeerInfoPendingPane {
         updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?,
         chatControllerInteraction: ChatControllerInteraction,
         data: PeerInfoScreenData,
-        openPeerContextAction: @escaping (Bool, Peer, ASDisplayNode, ContextGesture?) -> Void,
+        openPeerContextAction: @escaping (Bool, EnginePeer, ASDisplayNode, ContextGesture?) -> Void,
         openAddMemberAction: @escaping () -> Void,
         requestPerformPeerMemberAction: @escaping (PeerInfoMember, PeerMembersListAction) -> Void,
-        peerId: PeerId,
+        peerId: EnginePeer.Id,
         chatLocation: ChatLocation,
         chatLocationContextHolder: Atomic<ChatLocationContextHolder?>,
         sharedMediaFromForumTopic: (EnginePeer.Id, Int64)?,
@@ -462,7 +461,7 @@ private final class PeerInfoPendingPane {
                 if let cachedUserData = data.cachedData as? CachedUserData, cachedUserData.disallowedGifts == .All {
                     canGift = false
                 }
-                if let channel = peer as? TelegramChannel, case .broadcast = channel.info {
+                if case let .channel(channel) = peer, case .broadcast = channel.info {
                     if channel.hasPermission(.sendSomething) {
                         canManage = true
                     }
@@ -476,7 +475,7 @@ private final class PeerInfoPendingPane {
             if let peer = data.peer {
                 if peer.id == context.account.peerId {
                     canManage = true
-                } else if let channel = peer as? TelegramChannel {
+                } else if case let .channel(channel) = peer {
                     if channel.hasPermission(.editStories) {
                         canManage = true
                     }
@@ -493,7 +492,7 @@ private final class PeerInfoPendingPane {
                 scope = .botPreview(id: peerId)
                 
                 if let peer = data.peer {
-                    if let user = peer as? TelegramUser, let botInfo = user.botInfo, botInfo.flags.contains(.canEdit) {
+                    if case let .user(user) = peer, let botInfo = user.botInfo, botInfo.flags.contains(.canEdit) {
                         canManage = true
                     }
                 }
@@ -582,7 +581,7 @@ private final class PeerInfoPendingPane {
 
 final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegate {
     private let context: AccountContext
-    private let peerId: PeerId
+    private let peerId: EnginePeer.Id
     private let chatLocation: ChatLocation
     private let chatLocationContextHolder: Atomic<ChatLocationContextHolder?>
     private let isMediaOnly: Bool
@@ -637,7 +636,7 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
     var selectionPanelNode: PeerInfoSelectionPanelNode?
     
     var chatControllerInteraction: ChatControllerInteraction?
-    var openPeerContextAction: ((Bool, Peer, ASDisplayNode, ContextGesture?) -> Void)?
+    var openPeerContextAction: ((Bool, EnginePeer, ASDisplayNode, ContextGesture?) -> Void)?
     var openAddMemberAction: (() -> Void)?
     var requestPerformPeerMemberAction: ((PeerInfoMember, PeerMembersListAction) -> Void)?
     
@@ -657,7 +656,7 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
     
     private let initialPaneKey: PeerInfoPaneKey?
     
-    init(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, peerId: PeerId, chatLocation: ChatLocation, sharedMediaFromForumTopic: (EnginePeer.Id, Int64)?, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>, isMediaOnly: Bool, initialPaneKey: PeerInfoPaneKey?, initialStoryFolderId: Int64?, initialGiftCollectionId: Int64?, switchToMediaTarget: PeerInfoSwitchToMediaTarget?) {
+    init(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, peerId: EnginePeer.Id, chatLocation: ChatLocation, sharedMediaFromForumTopic: (EnginePeer.Id, Int64)?, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>, isMediaOnly: Bool, initialPaneKey: PeerInfoPaneKey?, initialStoryFolderId: Int64?, initialGiftCollectionId: Int64?, switchToMediaTarget: PeerInfoSwitchToMediaTarget?) {
         self.context = context
         self.updatedPresentationData = updatedPresentationData
         self.peerId = peerId
@@ -823,7 +822,7 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
         }
     }
     
-    func findLoadedMessage(id: MessageId) -> Message? {
+    func findLoadedMessage(id: EngineMessage.Id) -> EngineMessage? {
         return self.currentPane?.node.findLoadedMessage(id: id)
     }
     
@@ -831,11 +830,11 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
         self.currentPane?.node.updateHiddenMedia()
     }
     
-    func transitionNodeForGallery(messageId: MessageId, media: Media) -> (ASDisplayNode, CGRect, () -> (UIView?, UIView?))? {
+    func transitionNodeForGallery(messageId: EngineMessage.Id, media: EngineMedia) -> (ASDisplayNode, CGRect, () -> (UIView?, UIView?))? {
         return self.currentPane?.node.transitionNodeForGallery(messageId: messageId, media: media)
     }
     
-    func updateSelectedMessageIds(_ selectedMessageIds: Set<MessageId>?, animated: Bool) {
+    func updateSelectedMessageIds(_ selectedMessageIds: Set<EngineMessage.Id>?, animated: Bool) {
         for (_, pane) in self.currentPanes {
             pane.node.updateSelectedMessages(animated: animated)
         }
@@ -1249,7 +1248,7 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
         if let peer = data?.peer {
             if peer.id == self.context.account.peerId {
                 canManageTabs = true
-            } else if let channel = data?.peer as? TelegramChannel, case .broadcast = channel.info {
+            } else if case let .channel(channel) = data?.peer, case .broadcast = channel.info {
                 if channel.hasPermission(.changeInfo) {
                     canManageTabs = true
                 }

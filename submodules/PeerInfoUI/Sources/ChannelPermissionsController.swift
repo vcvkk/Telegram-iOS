@@ -18,7 +18,6 @@ import TelegramPermissionsUI
 import ItemListPeerActionItem
 import Markdown
 import UndoUI
-import Postbox
 import OldChannelsController
 import MessagePriceItem
 
@@ -534,6 +533,8 @@ func stringForGroupPermission(strings: PresentationStrings, right: TelegramChatB
         return strings.Channel_BanUser_PermissionSendVoiceMessage
     } else if right.contains(.banSendInstantVideos) {
         return strings.Channel_BanUser_PermissionSendVideoMessage
+    } else if right.contains(.banSendReactions) {
+        return strings.Channel_BanUser_PermissionSendReactions
     } else if right.contains(.banEditRank) {
         if defaultPermissions {
             return strings.Channel_BanUser_PermissionEditOwnRank
@@ -568,6 +569,8 @@ func compactStringForGroupPermission(strings: PresentationStrings, right: Telegr
         return strings.GroupPermission_NoSendLinks
     } else if right.contains(.banSendPolls) {
         return strings.GroupPermission_NoSendPolls
+    } else if right.contains(.banSendReactions) {
+        return strings.GroupPermission_NoSendReactions
     } else if right.contains(.banChangeInfo) {
         return strings.GroupPermission_NoChangeInfo
     } else if right.contains(.banAddMembers) {
@@ -595,6 +598,7 @@ private let internal_allPossibleGroupPermissionList: [(TelegramChatBannedRightsF
     (.banSendInstantVideos, .banMembers),
     (.banEmbedLinks, .banMembers),
     (.banSendPolls, .banMembers),
+    (.banSendReactions, .banMembers),
     (.banAddMembers, .banMembers),
     (.banPinMessages, .pinMessages),
     (.banManageTopics, .manageTopics),
@@ -647,6 +651,7 @@ public func banSendMediaSubList() -> [(TelegramChatBannedRightsFlags, TelegramCh
         (.banSendInstantVideos, .banMembers),
         (.banEmbedLinks, .banMembers),
         (.banSendPolls, .banMembers),
+        (.banSendReactions, .banMembers)
     ]
 }
 
@@ -677,7 +682,7 @@ func groupPermissionDependencies(_ right: TelegramChatBannedRightsFlags) -> Tele
     }
 }
 
-private func channelPermissionsControllerEntries(context: AccountContext, presentationData: PresentationData, view: PeerView, state: ChannelPermissionsControllerState, participants: [RenderedChannelParticipant]?, configuration: StarsSubscriptionConfiguration) -> [ChannelPermissionsEntry] {
+private func channelPermissionsControllerEntries(context: AccountContext, presentationData: PresentationData, view: EngineRawPeerView, state: ChannelPermissionsControllerState, participants: [RenderedChannelParticipant]?, configuration: StarsSubscriptionConfiguration) -> [ChannelPermissionsEntry] {
     var entries: [ChannelPermissionsEntry] = []
     
     if let channel = view.peers[view.peerId] as? TelegramChannel, let participants = participants, let cachedData = view.cachedData as? CachedChannelData, let defaultBannedRights = channel.defaultBannedRights {
@@ -864,7 +869,7 @@ public func channelPermissionsController(context: AccountContext, updatedPresent
             peersPromise.set(.single((peerId, nil)))
         } else {
             var loadCompletedCalled = false
-            let disposableAndLoadMoreControl = context.peerChannelMemberCategoriesContextsManager.restricted(engine: context.engine, postbox: context.account.postbox, network: context.account.network, accountPeerId: context.account.peerId, peerId: peerId, updated: { state in
+            let disposableAndLoadMoreControl = context.peerChannelMemberCategoriesContextsManager.restricted(engine: context.engine, accountPeerId: context.account.peerId, peerId: peerId, updated: { state in
                 if case .loading(true) = state.loadingState, !updated {
                     peersPromise.set(.single((peerId, nil)))
                 } else {
@@ -891,7 +896,7 @@ public func channelPermissionsController(context: AccountContext, updatedPresent
     let updateSendPaidMessageStarsDisposable = MetaDisposable()
     actionsDisposable.add(updateSendPaidMessageStarsDisposable)
     
-    let peerView = Promise<PeerView>()
+    let peerView = Promise<EngineRawPeerView>()
     peerView.set(sourcePeerId.get()
     |> mapToSignal(context.account.viewTracker.peerView))
     
@@ -1051,7 +1056,14 @@ public func channelPermissionsController(context: AccountContext, updatedPresent
                             }
                     }
                 }
-                let _ = (context.account.postbox.loadedPeerWithId(peerId)
+                let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
+                |> mapToSignal { peer -> Signal<EnginePeer, NoError> in
+                    if let peer {
+                        return .single(peer)
+                    } else {
+                        return .never()
+                    }
+                }
                 |> deliverOnMainQueue).start(next: { channel in
                     dismissController?()
                         presentControllerImpl?(channelBannedMemberController(context: context, peerId: peerId, memberId: peer.id, initialParticipant: participant?.participant, updated: { _ in
@@ -1095,7 +1107,7 @@ public func channelPermissionsController(context: AccountContext, updatedPresent
             }), ViewControllerPresentationArguments(presentationAnimation: .modalSheet))
         })
     }, openPeerInfo: { peer in
-        if let controller = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: peer._asPeer(), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+        if let controller = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
             pushControllerImpl?(controller)
         }
     }, openKicked: {
@@ -1300,7 +1312,7 @@ public func channelPermissionsController(context: AccountContext, updatedPresent
     let previousParticipants = Atomic<[RenderedChannelParticipant]?>(value: nil)
     
     let viewAndParticipants = combineLatest(queue: .mainQueue(), sourcePeerId.get(), peerView.get(), peersPromise.get())
-    |> mapToSignal { peerIdAndChanged, view, peers -> Signal<(PeerView, [RenderedChannelParticipant]?), NoError> in
+    |> mapToSignal { peerIdAndChanged, view, peers -> Signal<(EngineRawPeerView, [RenderedChannelParticipant]?), NoError> in
         let (peerId, changed) = peerIdAndChanged
         if view.peerId != peerId {
             return .complete()

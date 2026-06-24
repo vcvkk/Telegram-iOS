@@ -22,11 +22,6 @@ import EmojiTextAttachmentView
 import TextFormat
 
 public final class ListComposePollOptionComponent: Component {
-    public enum Style {
-        case glass
-        case legacy
-    }
-    
     public final class ResetText: Equatable {
         public let value: NSAttributedString
         
@@ -117,7 +112,6 @@ public final class ListComposePollOptionComponent: Component {
     
     public let externalState: TextFieldComponent.ExternalState?
     public let context: AccountContext
-    public let style: Style
     public let theme: PresentationTheme
     public let strings: PresentationStrings
     public let placeholder: NSAttributedString?
@@ -130,6 +124,7 @@ public final class ListComposePollOptionComponent: Component {
     public let canReorder: Bool
     public let canAdd: Bool
     public let attachment: Attachment?
+    public let formattingAvailable: Bool
     public let emptyLineHandling: TextFieldComponent.EmptyLineHandling
     public let returnKeyType: UIReturnKeyType
     public let returnKeyAction: (() -> Void)?
@@ -141,12 +136,12 @@ public final class ListComposePollOptionComponent: Component {
     public let attachAction: (() -> Void)?
     public let deleteAction: (() -> Void)?
     public let paste: ((TextFieldComponent.PasteData) -> Void)?
+    public let present: ((ViewController) -> Void)?
     public let tag: AnyObject?
     
     public init(
         externalState: TextFieldComponent.ExternalState?,
         context: AccountContext,
-        style: Style = .legacy,
         theme: PresentationTheme,
         strings: PresentationStrings,
         placeholder: NSAttributedString? = nil,
@@ -159,6 +154,7 @@ public final class ListComposePollOptionComponent: Component {
         canReorder: Bool = false,
         canAdd: Bool = false,
         attachment: Attachment? = nil,
+        formattingAvailable: Bool = false,
         emptyLineHandling: TextFieldComponent.EmptyLineHandling,
         returnKeyType: UIReturnKeyType = .next,
         returnKeyAction: (() -> Void)? = nil,
@@ -170,11 +166,11 @@ public final class ListComposePollOptionComponent: Component {
         attachAction: (() -> Void)? = nil,
         deleteAction: (() -> Void)? = nil,
         paste: ((TextFieldComponent.PasteData) -> Void)? = nil,
+        present: ((ViewController) -> Void)? = nil,
         tag: AnyObject? = nil
     ) {
         self.externalState = externalState
         self.context = context
-        self.style = style
         self.theme = theme
         self.strings = strings
         self.placeholder = placeholder
@@ -187,6 +183,7 @@ public final class ListComposePollOptionComponent: Component {
         self.canReorder = canReorder
         self.canAdd = canAdd
         self.attachment = attachment
+        self.formattingAvailable = formattingAvailable
         self.emptyLineHandling = emptyLineHandling
         self.returnKeyType = returnKeyType
         self.returnKeyAction = returnKeyAction
@@ -198,6 +195,7 @@ public final class ListComposePollOptionComponent: Component {
         self.attachAction = attachAction
         self.deleteAction = deleteAction
         self.paste = paste
+        self.present = present
         self.tag = tag
     }
     
@@ -206,9 +204,6 @@ public final class ListComposePollOptionComponent: Component {
             return false
         }
         if lhs.context !== rhs.context {
-            return false
-        }
-        if lhs.style != rhs.style {
             return false
         }
         if lhs.theme !== rhs.theme {
@@ -245,6 +240,9 @@ public final class ListComposePollOptionComponent: Component {
             return false
         }
         if lhs.attachment != rhs.attachment {
+            return false
+        }
+        if lhs.formattingAvailable != rhs.formattingAvailable {
             return false
         }
         if lhs.emptyLineHandling != rhs.emptyLineHandling {
@@ -475,6 +473,8 @@ public final class ListComposePollOptionComponent: Component {
         private var statusNode: RadialStatusNode?
         private var animationLayer: InlineStickerItemLayer?
         private var videoIconView: UIImageView?
+        private var webpageOverlayView: UIView?
+        private var webpageIconView: UIImageView?
         private let imageButton = HighlightTrackingButton()
         
         private var checkView: CheckView?
@@ -670,6 +670,92 @@ public final class ListComposePollOptionComponent: Component {
             }
             component.attachAction?()
         }
+
+        private func updateWebpageIconView(frame: CGRect, tintColor: UIColor, transition: ComponentTransition) {
+            var webpageIconTransition = transition
+            let webpageIconView: UIImageView
+            if let current = self.webpageIconView {
+                webpageIconView = current
+            } else {
+                webpageIconTransition = webpageIconTransition.withAnimation(.none)
+                webpageIconView = UIImageView(image: UIImage(bundleImageName: "Chat/Context Menu/Link")?.withRenderingMode(.alwaysTemplate))
+                webpageIconView.isUserInteractionEnabled = false
+                self.webpageIconView = webpageIconView
+                self.addSubview(webpageIconView)
+
+                if !transition.animation.isImmediate {
+                    let alphaTransition: ComponentTransition = .easeInOut(duration: 0.2)
+                    alphaTransition.animateAlpha(view: webpageIconView, from: 0.0, to: 1.0)
+                    alphaTransition.animateScale(view: webpageIconView, from: 0.01, to: 1.0)
+                }
+            }
+            webpageIconView.tintColor = tintColor
+
+            let iconSize = webpageIconView.image?.size ?? CGSize(width: 30.0, height: 30.0)
+            let iconFrame = CGRect(origin: CGPoint(x: frame.center.x - iconSize.width * 0.5, y: frame.center.y - iconSize.height * 0.5), size: iconSize)
+            webpageIconTransition.setPosition(view: webpageIconView, position: iconFrame.center)
+            webpageIconTransition.setBounds(view: webpageIconView, bounds: CGRect(origin: CGPoint(), size: iconFrame.size))
+            self.bringSubviewToFront(webpageIconView)
+        }
+
+        private func removeWebpageIconView(transition: ComponentTransition) {
+            if let webpageIconView = self.webpageIconView {
+                self.webpageIconView = nil
+                if !transition.animation.isImmediate {
+                    let alphaTransition: ComponentTransition = .easeInOut(duration: 0.2)
+                    alphaTransition.setAlpha(view: webpageIconView, alpha: 0.0, completion: { [weak webpageIconView] _ in
+                        webpageIconView?.removeFromSuperview()
+                    })
+                    alphaTransition.setScale(view: webpageIconView, scale: 0.001)
+                } else {
+                    webpageIconView.removeFromSuperview()
+                }
+            }
+        }
+
+        private func updateWebpageOverlayView(frame: CGRect, transition: ComponentTransition) {
+            var webpageOverlayTransition = transition
+            let webpageOverlayView: UIView
+            if let current = self.webpageOverlayView {
+                webpageOverlayView = current
+            } else {
+                webpageOverlayTransition = webpageOverlayTransition.withAnimation(.none)
+                webpageOverlayView = UIView()
+                webpageOverlayView.isUserInteractionEnabled = false
+                webpageOverlayView.backgroundColor = UIColor(rgb: 0x000000, alpha: 0.3)
+                webpageOverlayView.layer.cornerRadius = 10.0
+                webpageOverlayView.clipsToBounds = true
+                self.webpageOverlayView = webpageOverlayView
+                self.addSubview(webpageOverlayView)
+
+                if !transition.animation.isImmediate {
+                    let alphaTransition: ComponentTransition = .easeInOut(duration: 0.2)
+                    alphaTransition.animateAlpha(view: webpageOverlayView, from: 0.0, to: 1.0)
+                    alphaTransition.animateScale(view: webpageOverlayView, from: 0.01, to: 1.0)
+                }
+            }
+
+            if let webpageIconView = self.webpageIconView {
+                self.insertSubview(webpageOverlayView, belowSubview: webpageIconView)
+            }
+            webpageOverlayTransition.setPosition(view: webpageOverlayView, position: frame.center)
+            webpageOverlayTransition.setBounds(view: webpageOverlayView, bounds: CGRect(origin: CGPoint(), size: frame.size))
+        }
+
+        private func removeWebpageOverlayView(transition: ComponentTransition) {
+            if let webpageOverlayView = self.webpageOverlayView {
+                self.webpageOverlayView = nil
+                if !transition.animation.isImmediate {
+                    let alphaTransition: ComponentTransition = .easeInOut(duration: 0.2)
+                    alphaTransition.setAlpha(view: webpageOverlayView, alpha: 0.0, completion: { [weak webpageOverlayView] _ in
+                        webpageOverlayView?.removeFromSuperview()
+                    })
+                    alphaTransition.setScale(view: webpageOverlayView, scale: 0.001)
+                } else {
+                    webpageOverlayView.removeFromSuperview()
+                }
+            }
+        }
                 
         func update(component: ListComposePollOptionComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
             self.isUpdating = true
@@ -681,10 +767,7 @@ public final class ListComposePollOptionComponent: Component {
             self.component = component
             self.state = state
             
-            var verticalInset: CGFloat = 12.0
-            if case .glass = component.style {
-                verticalInset = 16.0
-            }
+            let verticalInset: CGFloat = 16.0
             var leftInset: CGFloat = 16.0
             var rightInset: CGFloat = 16.0
             let modeSelectorSize = CGSize(width: 32.0, height: 32.0)
@@ -732,11 +815,15 @@ public final class ListComposePollOptionComponent: Component {
                     enableInlineAnimations: component.enableInlineAnimations,
                     emptyLineHandling: component.emptyLineHandling,
                     externalHandlingForMultilinePaste: true,
-                    formatMenuAvailability: .none,
+                    formatMenuAvailability: component.formattingAvailable ? .available([.bold, .italic, .strikethrough, .underline, .monospace, .spoiler, .link]) : .none,
                     returnKeyType: component.returnKeyType,
                     lockedFormatAction: {
                     },
-                    present: { _ in
+                    present: { [weak self] c in
+                        guard let self, let component = self.component else {
+                            return
+                        }
+                        component.present?(c)
                     },
                     paste: { [weak self] data in
                         guard let self, let component = self.component else {
@@ -1048,13 +1135,15 @@ public final class ListComposePollOptionComponent: Component {
                 imageNodeTransition.setBounds(view: imageNode.view, bounds: CGRect(origin: CGPoint(), size: imageNodeFrame.size))
                 
                 var imageSize = imageNodeSize
-                var updateMedia = false
-                if self.appliedMedia != media {
+                let emptyColor = component.theme.list.mediaPlaceholderColor
+                let updateMedia = self.appliedMedia != media || previousComponent?.theme !== component.theme
+                if updateMedia {
                     self.appliedMedia = media
-                    updateMedia = true
                 }
                 
                 var isVideo = false
+                var webpageIconTintColor: UIColor?
+                var webpageHasImageThumbnail = false
                 if let image = media.media as? TelegramMediaImage, let largest = largestImageRepresentation(image.representations), let photoReference = media.concrete(TelegramMediaImage.self) {
                     imageSize = largest.dimensions.cgSize.aspectFilled(imageNodeSize)
                     
@@ -1093,6 +1182,35 @@ public final class ListComposePollOptionComponent: Component {
                             return context
                         }))
                     }
+                } else if let webpage = media.media as? TelegramMediaWebpage {
+                    if case let .Loaded(content) = webpage.content, let image = content.image {
+                        if let largest = largestImageRepresentation(image.representations) {
+                            imageSize = largest.dimensions.cgSize.aspectFilled(imageNodeSize)
+                        }
+                        if updateMedia {
+                            imageNode.setSignal(chatMessagePhoto(postbox: component.context.account.postbox, userLocation: .other, photoReference: .webPage(webPage: WebpageReference(webpage), media: image)))
+                            if let representation = smallestImageRepresentation(image.representations) {
+                                let _ = fetchedMediaResource(mediaBox: component.context.account.postbox.mediaBox, userLocation: .other, userContentType: .image, reference: .media(media: .webPage(webPage: WebpageReference(webpage), media: image), resource: representation.resource)).startStandalone()
+                            }
+                        }
+                        webpageIconTintColor = .white
+                        webpageHasImageThumbnail = true
+                    } else {
+                        if updateMedia {
+                            imageNode.setSignal(.single({ arguments in
+                                let size = arguments.imageSize
+                                let context = DrawingContext(size: size)!
+                                context.withFlippedContext { context in
+                                    context.clear(CGRect(origin: .zero, size: size))
+                                    context.setFillColor(component.theme.list.itemAccentColor.withAlphaComponent(0.1).cgColor)
+                                    context.addPath(CGPath(roundedRect: CGRect(origin: .zero, size: size), cornerWidth: 10.0, cornerHeight: 10.0, transform: nil))
+                                    context.fillPath()
+                                }
+                                return context
+                            }))
+                        }
+                        webpageIconTintColor = component.theme.list.itemAccentColor
+                    }
                 } else if let map = media.media as? TelegramMediaMap {
                     imageSize = CGSize(width: 40.0, height: 40.0)
                     if updateMedia {
@@ -1104,7 +1222,7 @@ public final class ListComposePollOptionComponent: Component {
                 let cornerRadius: CGFloat = 10.0
                 let makeLayout = imageNode.asyncLayout()
                 Queue.concurrentDefaultQueue().async {
-                    let apply = makeLayout(TransformImageArguments(corners: ImageCorners(radius: cornerRadius), imageSize: imageSize, boundingSize: imageNodeSize, intrinsicInsets: UIEdgeInsets(), emptyColor: component.theme.list.mediaPlaceholderColor))
+                    let apply = makeLayout(TransformImageArguments(corners: ImageCorners(radius: cornerRadius), imageSize: imageSize, boundingSize: imageNodeSize, intrinsicInsets: UIEdgeInsets(), emptyColor: emptyColor))
                     Queue.mainQueue().async {
                         apply()
                     }
@@ -1131,6 +1249,8 @@ public final class ListComposePollOptionComponent: Component {
                     statusNode.transitionToState(.progress(color: .white, lineWidth: 2.0 - UIScreenPixel, value: max(0.027, min(1.0, progress)), cancelEnabled: true, animateRotation: true))
                     
                     isVideo = false
+                    self.removeWebpageIconView(transition: transition)
+                    self.removeWebpageOverlayView(transition: transition)
                 } else if let statusNode = self.statusNode {
                     self.statusNode = nil
                     if !transition.animation.isImmediate {
@@ -1144,6 +1264,20 @@ public final class ListComposePollOptionComponent: Component {
                     }
                 }
                 
+                if attachment.progress == nil {
+                    if let webpageIconTintColor {
+                        if webpageHasImageThumbnail {
+                            self.updateWebpageOverlayView(frame: imageNodeFrame, transition: transition)
+                        } else {
+                            self.removeWebpageOverlayView(transition: transition)
+                        }
+                        self.updateWebpageIconView(frame: imageNodeFrame, tintColor: webpageIconTintColor, transition: transition)
+                    } else {
+                        self.removeWebpageIconView(transition: transition)
+                        self.removeWebpageOverlayView(transition: transition)
+                    }
+                }
+
                 if isVideo {
                     let videoIconView: UIImageView
                     if let current = self.videoIconView {
@@ -1186,6 +1320,8 @@ public final class ListComposePollOptionComponent: Component {
                     imageNode.view.removeFromSuperview()
                 }
                 self.imageButton.removeFromSuperview()
+                self.removeWebpageIconView(transition: transition)
+                self.removeWebpageOverlayView(transition: transition)
                 
                 if let videoIconView = self.videoIconView {
                     self.videoIconView = nil
@@ -1212,6 +1348,9 @@ public final class ListComposePollOptionComponent: Component {
                         statusNode.view.removeFromSuperview()
                     }
                 }
+            } else {
+                self.removeWebpageIconView(transition: transition)
+                self.removeWebpageOverlayView(transition: transition)
             }
             
             if let inputMode = component.inputMode {
@@ -1359,10 +1498,7 @@ public final class ListComposePollOptionComponent: Component {
                 return
             }
             
-            var verticalInset: CGFloat = 12.0
-            if case .glass = component.style {
-                verticalInset = 16.0
-            }
+            let verticalInset: CGFloat = 16.0
             var leftInset: CGFloat = 16.0
             let rightInset: CGFloat = 16.0
             

@@ -3,7 +3,6 @@ import UIKit
 import AsyncDisplayKit
 import Display
 import TelegramCore
-import Postbox
 import TelegramAudio
 import AccountContext
 import TelegramPresentationData
@@ -30,7 +29,6 @@ final class CallControllerNodeV2: ViewControllerTracingNode, CallControllerNodeP
     }
     
     private let sharedContext: SharedAccountContext
-    private let account: Account
     private let presentationData: PresentationData
     private let statusBar: StatusBar
     private let call: PresentationCall
@@ -88,7 +86,6 @@ final class CallControllerNodeV2: ViewControllerTracingNode, CallControllerNodeP
     
     init(
         sharedContext: SharedAccountContext,
-        account: Account,
         presentationData: PresentationData,
         statusBar: StatusBar,
         debugInfo: Signal<(String, String), NoError>,
@@ -96,7 +93,6 @@ final class CallControllerNodeV2: ViewControllerTracingNode, CallControllerNodeP
         call: PresentationCall
     ) {
         self.sharedContext = sharedContext
-        self.account = account
         self.presentationData = presentationData
         self.statusBar = statusBar
         self.call = call
@@ -180,6 +176,7 @@ final class CallControllerNodeV2: ViewControllerTracingNode, CallControllerNodeP
             shortName: " ",
             avatarImage: nil,
             audioOutput: .internalSpeaker,
+            canSwitchAudioOutput: true,
             isLocalAudioMuted: false,
             isRemoteAudioMuted: false,
             localVideo: nil,
@@ -275,6 +272,11 @@ final class CallControllerNodeV2: ViewControllerTracingNode, CallControllerNodeP
         self.currentAudioOutput = currentOutput
         
         if var callScreenState = self.callScreenState {
+            var canSwitchAudioOutput = false
+            if availableOutputs.count > 1 {
+                canSwitchAudioOutput = true
+            }
+            
             let mappedOutput: PrivateCallScreen.State.AudioOutput
             if let currentOutput {
                 switch currentOutput {
@@ -305,8 +307,9 @@ final class CallControllerNodeV2: ViewControllerTracingNode, CallControllerNodeP
                 mappedOutput = .internalSpeaker
             }
             
-            if callScreenState.audioOutput != mappedOutput {
+            if callScreenState.audioOutput != mappedOutput || callScreenState.canSwitchAudioOutput != canSwitchAudioOutput {
                 callScreenState.audioOutput = mappedOutput
+                callScreenState.canSwitchAudioOutput = canSwitchAudioOutput
                 self.callScreenState = callScreenState
                 self.update(transition: .animated(duration: 0.3, curve: .spring))
                 
@@ -611,8 +614,8 @@ final class CallControllerNodeV2: ViewControllerTracingNode, CallControllerNodeP
         }
     }
     
-    func updatePeer(accountPeer: Peer, peer: Peer, hasOther: Bool) {
-        self.updatePeer(peer: EnginePeer(peer))
+    func updatePeer(accountPeer: EnginePeer, peer: EnginePeer, hasOther: Bool) {
+        self.updatePeer(peer: peer)
     }
     
     private func updatePeer(peer: EnginePeer) {
@@ -626,7 +629,7 @@ final class CallControllerNodeV2: ViewControllerTracingNode, CallControllerNodeP
             self.peerAvatarDisposable?.dispose()
             
             let size = CGSize(width: 128.0, height: 128.0)
-            if let representation = peer.largeProfileImage, let signal = peerAvatarImage(account: self.call.context.account, peerReference: PeerReference(peer._asPeer()), authorOfMessage: nil, representation: representation, displayDimensions: size, synchronousLoad: self.callScreenState?.avatarImage == nil) {
+            if let representation = peer.largeProfileImage, let signal = peerAvatarImage(account: self.call.context.account, peerReference: PeerReference(peer), authorOfMessage: nil, representation: representation, displayDimensions: size, synchronousLoad: self.callScreenState?.avatarImage == nil) {
                 self.peerAvatarDisposable = (signal
                 |> deliverOnMainQueue).startStrict(next: { [weak self] imageVersions in
                     guard let self else {

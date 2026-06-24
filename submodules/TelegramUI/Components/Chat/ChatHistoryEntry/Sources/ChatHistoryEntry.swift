@@ -1,4 +1,3 @@
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import MergeLists
@@ -18,10 +17,11 @@ public struct ChatMessageEntryAttributes: Equatable {
     public var updatingMedia: ChatUpdatingMessageMedia?
     public var isPlaying: Bool
     public var isCentered: Bool
-    public var authorStoryStats: PeerStoryStats?
+    public var authorStoryStats: EnginePeerStoryStats?
     public var displayContinueThreadFooter: Bool
+    public var pinToTop: Bool
     
-    public init(rank: CachedChannelAdminRank?, isContact: Bool, contentTypeHint: ChatMessageEntryContentType, updatingMedia: ChatUpdatingMessageMedia?, isPlaying: Bool, isCentered: Bool, authorStoryStats: PeerStoryStats?, displayContinueThreadFooter: Bool) {
+    public init(rank: CachedChannelAdminRank?, isContact: Bool, contentTypeHint: ChatMessageEntryContentType, updatingMedia: ChatUpdatingMessageMedia?, isPlaying: Bool, isCentered: Bool, authorStoryStats: EnginePeerStoryStats?, displayContinueThreadFooter: Bool, pinToTop: Bool) {
         self.rank = rank
         self.isContact = isContact
         self.contentTypeHint = contentTypeHint
@@ -30,6 +30,7 @@ public struct ChatMessageEntryAttributes: Equatable {
         self.isCentered = isCentered
         self.authorStoryStats = authorStoryStats
         self.displayContinueThreadFooter = displayContinueThreadFooter
+        self.pinToTop = pinToTop
     }
     
     public init() {
@@ -41,6 +42,7 @@ public struct ChatMessageEntryAttributes: Equatable {
         self.isCentered = false
         self.authorStoryStats = nil
         self.displayContinueThreadFooter = false
+        self.pinToTop = false
     }
 }
 
@@ -51,10 +53,10 @@ public enum ChatInfoData: Equatable {
 }
 
 public enum ChatHistoryEntry: Identifiable, Comparable {
-    case MessageEntry(Message, ChatPresentationData, Bool, MessageHistoryEntryLocation?, ChatHistoryMessageSelection, ChatMessageEntryAttributes)
-    case MessageGroupEntry(Int64, [(Message, Bool, ChatHistoryMessageSelection, ChatMessageEntryAttributes, MessageHistoryEntryLocation?)], ChatPresentationData)
-    case UnreadEntry(MessageIndex, ChatPresentationData)
-    case ReplyCountEntry(MessageIndex, Bool, Int, ChatPresentationData)
+    case MessageEntry(EngineRawMessage, ChatPresentationData, Bool, EngineMessageHistoryEntryLocation?, ChatHistoryMessageSelection, ChatMessageEntryAttributes)
+    case MessageGroupEntry(Int64, [(EngineRawMessage, Bool, ChatHistoryMessageSelection, ChatMessageEntryAttributes, EngineMessageHistoryEntryLocation?)], ChatPresentationData)
+    case UnreadEntry(EngineMessage.Index, ChatPresentationData)
+    case ReplyCountEntry(EngineMessage.Index, Bool, Int, ChatPresentationData)
     case ChatInfoEntry(ChatInfoData, ChatPresentationData)
     
     public var stableId: UInt64 {
@@ -86,7 +88,7 @@ public enum ChatHistoryEntry: Identifiable, Comparable {
         }
     }
     
-    public var index: MessageIndex {
+    public var index: EngineMessage.Index {
         switch self {
         case let .MessageEntry(message, _, _, _, _, _):
             return message.index
@@ -99,14 +101,14 @@ public enum ChatHistoryEntry: Identifiable, Comparable {
         case let .ChatInfoEntry(infoData, _):
             switch infoData {
             case .newThreadInfo:
-                return MessageIndex.absoluteUpperBound()
+                return EngineMessage.Index.absoluteUpperBound()
             default:
-                return MessageIndex.absoluteLowerBound()
+                return EngineMessage.Index.absoluteLowerBound()
             }
         }
     }
     
-    public var firstIndex: MessageIndex {
+    public var firstIndex: EngineMessage.Index {
         switch self {
             case let .MessageEntry(message, _, _, _, _, _):
                 return message.index
@@ -119,9 +121,9 @@ public enum ChatHistoryEntry: Identifiable, Comparable {
             case let .ChatInfoEntry(infoData, _):
                 switch infoData {
                 case .newThreadInfo:
-                    return MessageIndex.absoluteUpperBound()
+                    return EngineMessage.Index.absoluteUpperBound()
                 default:
-                    return MessageIndex.absoluteLowerBound()
+                    return EngineMessage.Index.absoluteLowerBound()
                 }
         }
     }

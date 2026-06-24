@@ -108,9 +108,11 @@ func chatMessageDisplaySendMessageOptions(selfController: ChatControllerImpl, no
                 })
             }
         }, changeTranslationLanguage: { [weak selfController] in
-            guard let selfController else { return }
-            let controller = languageSelectionController(translateOutgoingMessage: true, context: selfController.context, forceTheme: selfController.presentationData.theme, fromLanguage: "", toLanguage: selfController.presentationInterfaceState.translationState?.fromLang ?? "", completion: { _, toLang in
-                guard let peerId = selfController.chatLocation.peerId else {
+            guard let selfController else {
+                return
+            }
+            let controller = sgOutgoingTranslationLanguageSelectionController(context: selfController.context, selectedLanguage: outgoingMessageTranslateToLang, completion: { [weak selfController] toLang in
+                guard let selfController, let peerId = selfController.chatLocation.peerId else {
                     return
                 }
                 var langCode = toLang
@@ -119,13 +121,14 @@ func chatMessageDisplaySendMessageOptions(selfController: ChatControllerImpl, no
                 } else if langCode == "pt-br" {
                     langCode = "pt"
                 }
-                
+
                 if !toLang.isEmpty {
                     EGSimpleSettings.shared.outgoingLanguageTranslation[EGSimpleSettings.makeOutgoingLanguageTranslationKey(accountId: selfController.context.account.peerId.id._internalGetInt64Value(), peerId: peerId.id._internalGetInt64Value())] = langCode
+                    Queue.mainQueue().after(0.35) {
+                        chatMessageDisplaySendMessageOptions(selfController: selfController, node: node, gesture: gesture)
+                    }
                 }
-                chatMessageDisplaySendMessageOptions(selfController: selfController, node: node, gesture: gesture)
             })
-            controller.navigationPresentation = .modal
             selfController.push(controller)
         })
         

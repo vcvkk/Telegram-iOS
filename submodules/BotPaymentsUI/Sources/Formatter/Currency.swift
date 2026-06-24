@@ -136,7 +136,7 @@ public enum Currency: String {
     saudiRiyal = "SAR",
     serbianDinar = "RSD",
     seychellesRupee = "SCR",
-    singaporeDollar = "EGD",
+    singaporeDollar = "SGD",
     sol = "PEN",
     solomonIslandsDollar = "SBD",
     som = "KGS",

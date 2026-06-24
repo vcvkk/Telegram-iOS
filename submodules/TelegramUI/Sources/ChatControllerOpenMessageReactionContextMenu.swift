@@ -1,7 +1,6 @@
 import Foundation
 import TelegramPresentationData
 import AccountContext
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 import ContextUI
@@ -36,7 +35,7 @@ extension ChatControllerImpl {
         self.push(controller)
     }
     
-    func openMessageReactionContextMenu(message: Message, sourceView: ContextExtractedContentContainingView, gesture: ContextGesture?, value: MessageReaction.Reaction) {
+    func openMessageReactionContextMenu(message: EngineMessage, sourceView: ContextExtractedContentContainingView, gesture: ContextGesture?, value: MessageReaction.Reaction) {
         if message.areReactionsTags(accountPeerId: self.context.account.peerId) {
             if !self.presentationInterfaceState.isPremium {
                 self.presentTagPremiumPaywall()
@@ -146,7 +145,7 @@ extension ChatControllerImpl {
                     guard let self else {
                         return
                     }
-                    self.controllerInteraction?.updateMessageReaction(message, .reaction(value), true, nil)
+                    self.controllerInteraction?.updateMessageReaction(message._asMessage(), .reaction(value), true, nil)
                 })))
                 
                 self.canReadHistory.set(false)
@@ -188,25 +187,49 @@ extension ChatControllerImpl {
                 }
                 
                 var dismissController: ((@escaping () -> Void) -> Void)?
+                let canDeleteReactions: Bool
+                if case let .channel(channel) = message.enginePeers[message.id.peerId] {
+                    canDeleteReactions = channel.hasPermission(.deleteAllMessages)
+                } else {
+                    canDeleteReactions = false
+                }
+                let canViewReactions = canViewMessageReactionList(message: message)
+                let deleteReaction: ((EnginePeer, MessageReaction.Reaction) -> Void)?
+                if canDeleteReactions && canViewReactions {
+                    deleteReaction = { [weak self] peer, _ in
+                        dismissController?({ [weak self] in
+                            guard let self else {
+                                return
+                            }
+                            self.presentReactionDeletionOptions(author: peer, messageId: message.id)
+                        })
+                    }
+                } else {
+                    deleteReaction = nil
+                }
                 
                 var items: ContextController.Items
-                if canViewMessageReactionList(message: message) {
+                if canViewReactions {
                     items = ContextController.Items(content: .custom(ReactionListContextMenuContent(
                         context: self.context,
                         displayReadTimestamps: true,
                         availableReactions: availableReactions,
                         animationCache: self.controllerInteraction!.presentationContext.animationCache,
                         animationRenderer: self.controllerInteraction!.presentationContext.animationRenderer,
-                        message: EngineMessage(message),
-                        reaction: value, readStats: nil, back: nil, openPeer: { peer, hasReaction in
+                        message: message,
+                        reaction: value,
+                        readStats: nil,
+                        back: nil,
+                        openPeer: { peer, hasReaction in
                             dismissController?({ [weak self] in
                                 guard let self else {
                                     return
                                 }
                                 
-                                self.openPeer(peer: peer, navigation: .default, fromMessage: MessageReference(message), fromReactionMessageId: hasReaction ? message.id : nil)
+                                self.openPeer(peer: peer, navigation: .default, fromMessage: MessageReference(message._asMessage()), fromReactionMessageId: hasReaction ? message.id : nil)
                             })
-                        }
+                        },
+                        deleteReaction: deleteReaction
                     )))
                 } else {
                     items = ContextController.Items(content: .list([]))
@@ -369,7 +392,11 @@ extension ChatControllerImpl {
         }
     }
     
-    func openMessageSendStarsScreen(message: Message) {
+    func openMessageSendStarsScreen(message: EngineMessage) {
+        guard canSendReactionsToChat(self.presentationInterfaceState) else {
+            return
+        }
+
         if let current = self.currentSendStarsUndoController {
             self.currentSendStarsUndoController = nil
             current.dismiss()

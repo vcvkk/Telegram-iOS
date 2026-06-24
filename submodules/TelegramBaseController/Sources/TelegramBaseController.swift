@@ -4,7 +4,6 @@ import AsyncDisplayKit
 import Display
 import TelegramCore
 import SwiftSignalKit
-import Postbox
 import TelegramPresentationData
 import TelegramUIPreferences
 import UniversalMediaPlayer
@@ -14,7 +13,7 @@ import PresentationDataUtils
 import TelegramCallsUI
 import UndoUI
 
-private func presentLiveLocationController(context: AccountContext, peerId: PeerId, controller: ViewController) {
+private func presentLiveLocationController(context: AccountContext, peerId: EnginePeer.Id, controller: ViewController) {
     let presentImpl: (EngineMessage?) -> Void = { [weak controller] message in
         if let message = message, let strongController = controller {
             let _ = context.sharedContext.openChatMessage(OpenChatMessageParams(context: context, chatLocation: nil, chatFilterTag: nil, chatLocationContextHolder: nil, message: message._asMessage(), standalone: false, reverseMessageGalleryOrder: false, navigationController: strongController.navigationController as? NavigationController, modal: true, dismissInput: {
@@ -189,16 +188,23 @@ open class TelegramBaseController: ViewController, KeyShortcutResponder {
         })]
     }
     
-    open func joinGroupCall(peerId: PeerId, invite: String?, activeCall: EngineGroupCallDescription) {
+    open func joinGroupCall(peerId: EnginePeer.Id, invite: String?, activeCall: EngineGroupCallDescription) {
         let context = self.context
         let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
         
         self.view.endEditing(true)
         
         self.context.joinGroupCall(peerId: peerId, invite: invite, requestJoinAsPeerId: { completion in
-            let currentAccountPeer = context.account.postbox.loadedPeerWithId(context.account.peerId)
+            let currentAccountPeer = context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
+            |> mapToSignal { peer -> Signal<EnginePeer, NoError> in
+                if let peer {
+                    return .single(peer)
+                } else {
+                    return .never()
+                }
+            }
             |> map { peer in
-                return [FoundPeer(peer: EnginePeer(peer), subscribers: nil)]
+                return [FoundPeer(peer: peer, subscribers: nil)]
             }
             
             let _ = (combineLatest(
@@ -217,7 +223,7 @@ open class TelegramBaseController: ViewController, KeyShortcutResponder {
                     return
                 }
                 
-                let defaultJoinAsPeerId: PeerId? = callJoinAsPeerId
+                let defaultJoinAsPeerId: EnginePeer.Id? = callJoinAsPeerId
                                 
                 if peers.count == 1, let peer = peers.first {
                     completion(peer.peer.id)

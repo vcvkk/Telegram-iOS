@@ -1,6 +1,5 @@
 import Foundation
 import UIKit
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 import Display
@@ -13,9 +12,9 @@ public struct ICloudFileResourceId {
     
     public var uniqueId: String {
         if self.thumbnail {
-            return "icloud-thumb-\(persistentHash32(self.urlData))"
+            return "icloud-thumb-\(enginePersistentHash32(self.urlData))"
         } else {
-            return "icloud-\(persistentHash32(self.urlData))"
+            return "icloud-\(enginePersistentHash32(self.urlData))"
         }
     }
     
@@ -37,21 +36,21 @@ public class ICloudFileResource: TelegramMediaResource {
         self.thumbnail = thumbnail
     }
     
-    public required init(decoder: PostboxDecoder) {
+    public required init(decoder: EnginePostboxDecoder) {
         self.urlData = decoder.decodeStringForKey("url", orElse: "")
         self.thumbnail = decoder.decodeBoolForKey("thumb", orElse: false)
     }
     
-    public func encode(_ encoder: PostboxEncoder) {
+    public func encode(_ encoder: EnginePostboxEncoder) {
         encoder.encodeString(self.urlData, forKey: "url")
         encoder.encodeBool(self.thumbnail, forKey: "thumb")
     }
     
-    public var id: MediaResourceId {
-        return MediaResourceId(ICloudFileResourceId(urlData: self.urlData, thumbnail: self.thumbnail).uniqueId)
+    public var id: EngineRawMediaResourceId {
+        return EngineRawMediaResourceId(ICloudFileResourceId(urlData: self.urlData, thumbnail: self.thumbnail).uniqueId)
     }
-    
-    public func isEqual(to: MediaResource) -> Bool {
+
+    public func isEqual(to: EngineRawMediaResource) -> Bool {
         if let to = to as? ICloudFileResource {
             if self.urlData != to.urlData || self.thumbnail != to.thumbnail {
                 return false
@@ -68,12 +67,58 @@ public struct ICloudFileDescription {
         public let title: String?
         public let performer: String?
         public let duration: Int
+        public let hasAudioArtwork: Bool
     }
     
     public let urlData: String
     public let fileName: String
     public let fileSize: Int
     public let audioMetadata: AudioMetadata?
+}
+
+private let audioFileExtensions: Set<String> = ["mp3", "m4a", "aac", "flac"]
+
+private func validatedAudioArtworkData(_ data: Data?) -> Data? {
+    guard let data, UIImage(data: data) != nil else {
+        return nil
+    }
+    return data
+}
+
+private func audioArtworkData(from metadataItem: AVMetadataItem) -> Data? {
+    if let data = validatedAudioArtworkData(metadataItem.value(forKey: "dataValue") as? Data) {
+        return data
+    }
+    if let data = metadataItem.value(forKey: "value") as? Data {
+        return validatedAudioArtworkData(data)
+    }
+    if let data = metadataItem.value(forKey: "value") as? NSData {
+        return validatedAudioArtworkData(data as Data)
+    }
+    return nil
+}
+
+private func audioArtworkData(from asset: AVURLAsset) -> Data? {
+    func firstArtworkData(in metadataItems: [AVMetadataItem]) -> Data? {
+        for item in metadataItems {
+            if item.commonKey == AVMetadataKey.commonKeyArtwork, let data = audioArtworkData(from: item) {
+                return data
+            }
+        }
+        return nil
+    }
+
+    if let data = firstArtworkData(in: asset.commonMetadata) {
+        return data
+    }
+
+    for format in asset.availableMetadataFormats {
+        if let data = firstArtworkData(in: asset.metadata(forFormat: format)) {
+            return data
+        }
+    }
+
+    return nil
 }
 
 private func descriptionWithUrl(_ url: URL) -> ICloudFileDescription? {
@@ -95,17 +140,50 @@ private func descriptionWithUrl(_ url: URL) -> ICloudFileDescription? {
         }
         
         var audioMetadata: ICloudFileDescription.AudioMetadata?
-        if ["mp3", "m4a"].contains(url.pathExtension.lowercased()) {
+        let fileExtension = url.pathExtension.lowercased()
+        var hasAudioArtwork = false
+        let audioAsset: AVURLAsset?
+        if audioFileExtensions.contains(fileExtension) {
             let asset = AVURLAsset(url: url)
+            audioAsset = asset
+            hasAudioArtwork = audioArtworkData(from: asset) != nil
+        } else {
+            audioAsset = nil
+        }
+        if ["mp3", "m4a"].contains(fileExtension), let asset = audioAsset {
             let title = AVMetadataItem.metadataItems(from: asset.commonMetadata, withKey: AVMetadataKey.commonKeyTitle, keySpace: AVMetadataKeySpace.common).first?.stringValue
             let performer = AVMetadataItem.metadataItems(from: asset.commonMetadata, withKey: AVMetadataKey.commonKeyArtist, keySpace: AVMetadataKeySpace.common).first?.stringValue
             let duration = CMTimeGetSeconds(asset.duration)
             if duration > 0 {
-                audioMetadata = ICloudFileDescription.AudioMetadata(title: title, performer: performer, duration: Int(duration))
+                audioMetadata = ICloudFileDescription.AudioMetadata(title: title, performer: performer, duration: Int(duration), hasAudioArtwork: hasAudioArtwork)
+            }
+        } else if fileExtension == "flac", let asset = audioAsset {
+            var title: String?
+            var performer: String?
+            let vorbisComment = AVMetadataFormat(rawValue: "org.xiph.vorbis-comment")
+            if asset.availableMetadataFormats.contains(vorbisComment) {
+                let items = asset.metadata(forFormat: vorbisComment)
+                for item in items {
+                    if item.commonKey == AVMetadataKey.commonKeyTitle {
+                        title = item.stringValue
+                    }
+                    if item.commonKey == AVMetadataKey.commonKeyArtist {
+                        performer = item.stringValue
+                    }
+                }
+            }
+            let duration = CMTimeGetSeconds(asset.duration)
+            if duration > 0 {
+                audioMetadata = ICloudFileDescription.AudioMetadata(title: title, performer: performer, duration: Int(duration), hasAudioArtwork: hasAudioArtwork)
             }
         }
         
-        let result = ICloudFileDescription(urlData: urlData.base64EncodedString(), fileName: fileName, fileSize: fileSize, audioMetadata: audioMetadata)
+        let result = ICloudFileDescription(
+            urlData: urlData.base64EncodedString(),
+            fileName: fileName,
+            fileSize: fileSize,
+            audioMetadata: audioMetadata
+        )
         
         url.stopAccessingSecurityScopedResource()
         
@@ -173,7 +251,7 @@ public func iCloudFileDescription(_ url: URL) -> Signal<ICloudFileDescription?, 
     }
 }
 
-private final class ICloudFileResourceCopyItem: MediaResourceDataFetchCopyLocalItem {
+private final class ICloudFileResourceCopyItem: EngineRawMediaResourceDataFetchCopyLocalItem {
     private let url: URL
     
     init(url: URL) {
@@ -195,7 +273,7 @@ private final class ICloudFileResourceCopyItem: MediaResourceDataFetchCopyLocalI
     }
 }
 
-public func fetchICloudFileResource(resource: ICloudFileResource) -> Signal<MediaResourceDataFetchResult, MediaResourceDataFetchError> {
+public func fetchICloudFileResource(resource: ICloudFileResource) -> Signal<EngineMediaResourceDataFetchResult, EngineMediaResourceDataFetchError> {
     return Signal { subscriber in
         subscriber.putNext(.reset)
         
@@ -227,13 +305,19 @@ public func fetchICloudFileResource(resource: ICloudFileResource) -> Signal<Medi
         
         let complete = {
             if resource.thumbnail {
-                let tempFile = TempBox.shared.tempFile(fileName: "thumb.jpg")
+                let tempFile = EngineTempBox.shared.tempFile(fileName: "thumb.jpg")
                 var data = Data()
-                                
-                if let imageData = try? Data(contentsOf: url, options: .mappedIfSafe), let originalImage = UIImage(data: imageData), let image = generateScaledImage(image: originalImage, size: originalImage.size.fitted(CGSize(width: 256, height: 256.0))), let jpegData = image.jpegData(compressionQuality: 0.5) {
+                let fileExtension = url.pathExtension.lowercased()
+                let isAudioFile = audioFileExtensions.contains(fileExtension)
+
+                if isAudioFile, let artworkData = audioArtworkData(from: AVURLAsset(url: url)), let originalImage = UIImage(data: artworkData), let image = generateScaledImage(image: originalImage, size: originalImage.size.fitted(CGSize(width: 256, height: 256.0))), let jpegData = image.jpegData(compressionQuality: 0.5) {
                     data = jpegData
-                } else if let image = generatePdfPreviewImage(url: url, size: CGSize(width: 256, height: 256.0)), let jpegData = image.jpegData(compressionQuality: 0.5) {
-                    data = jpegData
+                } else if !isAudioFile {
+                    if let imageData = try? Data(contentsOf: url, options: .mappedIfSafe), let originalImage = UIImage(data: imageData), let image = generateScaledImage(image: originalImage, size: originalImage.size.fitted(CGSize(width: 256, height: 256.0))), let jpegData = image.jpegData(compressionQuality: 0.5) {
+                        data = jpegData
+                    } else if let image = generatePdfPreviewImage(url: url, size: CGSize(width: 256, height: 256.0)), let jpegData = image.jpegData(compressionQuality: 0.5) {
+                        data = jpegData
+                    }
                 }
                 if let _ = try? data.write(to: URL(fileURLWithPath: tempFile.path)) {
                     subscriber.putNext(.moveTempFile(file: tempFile))

@@ -1,4 +1,4 @@
-import EGSimpleSettings
+import SGSimpleSettings
 import Foundation
 import UIKit
 import AsyncDisplayKit

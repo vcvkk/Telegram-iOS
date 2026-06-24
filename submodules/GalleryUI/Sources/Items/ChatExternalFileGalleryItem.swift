@@ -1,7 +1,6 @@
 import Foundation
 import UIKit
 import AsyncDisplayKit
-import Postbox
 import Display
 import SwiftSignalKit
 import WebKit
@@ -17,10 +16,10 @@ class ChatExternalFileGalleryItem: GalleryItem {
     
     let context: AccountContext
     let presentationData: PresentationData
-    let message: Message
-    let location: MessageHistoryEntryLocation?
-    
-    init(context: AccountContext, presentationData: PresentationData, message: Message, location: MessageHistoryEntryLocation?) {
+    let message: EngineRawMessage
+    let location: EngineMessageHistoryEntryLocation?
+
+    init(context: AccountContext, presentationData: PresentationData, message: EngineRawMessage, location: EngineMessageHistoryEntryLocation?) {
         self.context = context
         self.presentationData = presentationData
         self.message = message
@@ -30,7 +29,7 @@ class ChatExternalFileGalleryItem: GalleryItem {
     func node(synchronous: Bool) -> GalleryItemNode {
         let node = ChatExternalFileGalleryItemNode(context: self.context, presentationData: self.presentationData)
         
-        for media in self.message.media {
+        for media in self.message.effectiveMedia {
             if let file = media as? TelegramMediaFile {
                 node.setFile(context: context, fileReference: .message(message: MessageReference(self.message), media: file))
                 break
@@ -78,13 +77,13 @@ class ChatExternalFileGalleryItemNode: GalleryItemNode {
     
     private var itemIsVisible = false
     
-    private var message: Message?
+    private var message: EngineRawMessage?
     
     private let footerContentNode: ChatItemGalleryFooterContentNode
     
     private var fetchDisposable = MetaDisposable()
     private let statusDisposable = MetaDisposable()
-    private var status: MediaResourceStatus?
+    private var status: EngineMediaResource.FetchStatus?
     
     init(context: AccountContext, presentationData: PresentationData) {
         self.containerNode = ASDisplayNode()
@@ -164,7 +163,7 @@ class ChatExternalFileGalleryItemNode: GalleryItemNode {
         transition.updateFrame(node: self.statusNode, frame: CGRect(origin: CGPoint(), size: statusSize))
     }
     
-    fileprivate func setMessage(_ message: Message) {
+    fileprivate func setMessage(_ message: EngineRawMessage) {
         self.message = message
         self.footerContentNode.setMessage(message)
     }
@@ -182,8 +181,8 @@ class ChatExternalFileGalleryItemNode: GalleryItemNode {
         }
     }
     
-    private func setupStatus(context: AccountContext, resource: MediaResource) {
-        self.statusDisposable.set((context.account.postbox.mediaBox.resourceStatus(resource)
+    private func setupStatus(context: AccountContext, resource: EngineRawMediaResource) {
+        self.statusDisposable.set((context.engine.resources.status(resource: EngineMediaResource(resource))
         |> deliverOnMainQueue).start(next: { [weak self] status in
             if let strongSelf = self {
                 let previousStatus = strongSelf.status
@@ -320,9 +319,9 @@ class ChatExternalFileGalleryItemNode: GalleryItemNode {
         if let (context, fileReference) = self.contextAndFile, let status = self.status {
             switch status {
                 case .Fetching:
-                    context.account.postbox.mediaBox.cancelInteractiveResourceFetch(fileReference.media.resource)
+                    context.engine.resources.cancelInteractiveResourceFetch(id: EngineMediaResource.Id(fileReference.media.resource.id))
                 case .Remote:
-                    self.fetchDisposable.set(fetchedMediaResource(mediaBox: context.account.postbox.mediaBox, userLocation: (self.message?.id.peerId).flatMap(MediaResourceUserLocation.peer) ?? .other, userContentType: .file, reference: fileReference.resourceReference(fileReference.media.resource)).start())
+                    self.fetchDisposable.set(context.engine.resources.fetch(reference: fileReference.resourceReference(fileReference.media.resource), userLocation: (self.message?.id.peerId).flatMap(MediaResourceUserLocation.peer) ?? .other, userContentType: .file).start())
             default:
                 break
             }

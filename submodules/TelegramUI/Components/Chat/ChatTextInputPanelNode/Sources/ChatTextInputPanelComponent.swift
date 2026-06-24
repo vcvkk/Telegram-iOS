@@ -407,7 +407,7 @@ public final class ChatTextInputPanelComponent: Component {
                     },
                     cancelMessageSelection: { _ in
                     },
-                    deleteSelectedMessages: {
+                    deleteSelectedMessages: { _ in
                     },
                     reportSelectedMessages: {
                     },
@@ -487,7 +487,6 @@ public final class ChatTextInputPanelComponent: Component {
                             mode: .standard(.default),
                             chatLocation: .peer(id: component.chatPeerId),
                             subject: nil,
-                            peerNearbyData: nil,
                             greetingData: nil,
                             pendingUnpinnedAllMessages: false,
                             activeGroupCallInfo: nil,
@@ -665,8 +664,6 @@ public final class ChatTextInputPanelComponent: Component {
                     },
                     openScheduledMessages: {
                     },
-                    openPeersNearby: {
-                    },
                     displaySearchResultsTooltip: { _, _ in
                     },
                     unarchivePeer: {
@@ -799,7 +796,6 @@ public final class ChatTextInputPanelComponent: Component {
                 mode: .standard(.default),
                 chatLocation: .peer(id: component.chatPeerId),
                 subject: nil,
-                peerNearbyData: nil,
                 greetingData: nil,
                 pendingUnpinnedAllMessages: false,
                 activeGroupCallInfo: nil,
@@ -1052,6 +1048,7 @@ public final class ChatTextInputPanelComponent: Component {
                 transition: transition.containedViewLayoutTransition,
                 interfaceState: presentationInterfaceState,
                 metrics: LayoutMetrics(widthClass: .compact, heightClass: .compact, orientation: nil),
+                deviceMetrics: DeviceMetrics.iPhone16Pro,
                 isMediaInputExpanded: false
             )
             

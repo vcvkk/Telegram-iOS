@@ -2,7 +2,6 @@ import Foundation
 import UIKit
 import Display
 import AsyncDisplayKit
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 import TelegramPresentationData
@@ -252,7 +251,7 @@ final class ChatAdPanelNode: ASDisplayNode {
         return panelHeight
     }
     
-    private func enqueueTransition(width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, transition: ContainedViewLayoutTransition, animation: PinnedMessageAnimation?, message: EngineMessage, theme: PresentationTheme, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, dateTimeFormat: PresentationDateTimeFormat, accountPeerId: PeerId, firstTime: Bool, isReplyThread: Bool, translateToLanguage: String?) -> CGFloat {
+    private func enqueueTransition(width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, transition: ContainedViewLayoutTransition, animation: PinnedMessageAnimation?, message: EngineMessage, theme: PresentationTheme, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, dateTimeFormat: PresentationDateTimeFormat, accountPeerId: EnginePeer.Id, firstTime: Bool, isReplyThread: Bool, translateToLanguage: String?) -> CGFloat {
         var animationTransition: ContainedViewLayoutTransition = .immediate
         
         if let animation = animation {
@@ -313,7 +312,7 @@ final class ChatAdPanelNode: ASDisplayNode {
                 } else if let paidContent = media as? TelegramMediaPaidContent, let firstMedia = paidContent.extendedMedia.first {
                     switch firstMedia {
                     case let .preview(dimensions, immediateThumbnailData, _):
-                        let thumbnailMedia = TelegramMediaImage(imageId: MediaId(namespace: 0, id: 0), representations: [], immediateThumbnailData: immediateThumbnailData, reference: nil, partialReference: nil, flags: [])
+                        let thumbnailMedia = TelegramMediaImage(imageId: EngineMedia.Id(namespace: 0, id: 0), representations: [], immediateThumbnailData: immediateThumbnailData, reference: nil, partialReference: nil, flags: [])
                         if let dimensions {
                             imageDimensions = dimensions.cgSize
                         }
@@ -353,7 +352,7 @@ final class ChatAdPanelNode: ASDisplayNode {
         }
                     
         var updateImageSignal: Signal<(TransformImageArguments) -> DrawingContext?, NoError>?
-        var updatedFetchMediaSignal: Signal<FetchResourceSourceType, FetchResourceError>?
+        var updatedFetchMediaSignal: Signal<EngineFetchResourceSourceType, EngineFetchResourceError>?
         if mediaUpdated {
             if let updatedMediaReference = updatedMediaReference, imageDimensions != nil {
                 if let imageReference = updatedMediaReference.concrete(TelegramMediaImage.self) {
@@ -366,7 +365,7 @@ final class ChatAdPanelNode: ASDisplayNode {
                     if fileReference.media.isAnimatedSticker {
                         let dimensions = fileReference.media.dimensions ?? PixelDimensions(width: 512, height: 512)
                         updateImageSignal = chatMessageAnimatedSticker(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), file: fileReference.media, small: false, size: dimensions.cgSize.aspectFitted(CGSize(width: 160.0, height: 160.0)))
-                        updatedFetchMediaSignal = fetchedMediaResource(mediaBox: context.account.postbox.mediaBox, userLocation: .peer(message.id.peerId), userContentType: MediaResourceUserContentType(file: fileReference.media), reference: fileReference.resourceReference(fileReference.media.resource))
+                        updatedFetchMediaSignal = context.engine.resources.fetch(reference: fileReference.resourceReference(fileReference.media.resource), userLocation: .peer(message.id.peerId), userContentType: MediaResourceUserContentType(file: fileReference.media))
                     } else if fileReference.media.isVideo || fileReference.media.isAnimated {
                         updateImageSignal = chatMessageVideoThumbnail(account: context.account, userLocation: .peer(message.id.peerId), fileReference: fileReference, blurred: false)
                     } else if let iconImageRepresentation = smallestImageRepresentation(fileReference.media.previewRepresentations) {
@@ -411,8 +410,6 @@ final class ChatAdPanelNode: ASDisplayNode {
                 switch entity.type {
                 case .CustomEmoji:
                     return true
-                case let .TextUrl(url):
-                    return url.hasPrefix("tg://emoji?id=")
                 default:
                     return false
                 }

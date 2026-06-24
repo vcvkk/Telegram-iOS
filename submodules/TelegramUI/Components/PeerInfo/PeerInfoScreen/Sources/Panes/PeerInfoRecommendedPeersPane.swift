@@ -5,7 +5,6 @@ import Display
 import ComponentFlow
 import TelegramCore
 import SwiftSignalKit
-import Postbox
 import TelegramPresentationData
 import AccountContext
 import ContextUI
@@ -31,7 +30,7 @@ private struct RecommendedPeersListTransaction {
 
 private enum RecommendedPeersListEntryStableId: Hashable {
     case addMember
-    case peer(PeerId)
+    case peer(EnginePeer.Id)
 }
 
 private enum RecommendedPeersListEntry: Comparable, Identifiable {
@@ -65,7 +64,7 @@ private enum RecommendedPeersListEntry: Comparable, Identifiable {
         }
     }
     
-    func item(context: AccountContext, presentationData: PresentationData, action: @escaping (EnginePeer) -> Void, openPeerContextAction: @escaping (Peer, ASDisplayNode, ContextGesture?) -> Void) -> ListViewItem {
+    func item(context: AccountContext, presentationData: PresentationData, action: @escaping (EnginePeer) -> Void, openPeerContextAction: @escaping (EnginePeer, ASDisplayNode, ContextGesture?) -> Void) -> ListViewItem {
         switch self {
         case let .peer(_, _, peer, subscribers):
             let text: ItemListPeerItemText
@@ -85,13 +84,13 @@ private enum RecommendedPeersListEntry: Comparable, Identifiable {
             }, setPeerIdWithRevealedOptions: { _, _ in
             }, removePeer: { _ in
             }, contextAction: { node, gesture in
-                openPeerContextAction(peer._asPeer(), node, gesture)
+                openPeerContextAction(peer, node, gesture)
             }, hasTopStripe: false, noInsets: true, noCorners: true, style: .plain, disableInteractiveTransitionIfNecessary: true)
         }
     }
 }
 
-private func preparedTransition(from fromEntries: [RecommendedPeersListEntry], to toEntries: [RecommendedPeersListEntry], context: AccountContext, presentationData: PresentationData, action: @escaping (EnginePeer) -> Void, openPeerContextAction: @escaping (Peer, ASDisplayNode, ContextGesture?) -> Void) -> RecommendedPeersListTransaction {
+private func preparedTransition(from fromEntries: [RecommendedPeersListEntry], to toEntries: [RecommendedPeersListEntry], context: AccountContext, presentationData: PresentationData, action: @escaping (EnginePeer) -> Void, openPeerContextAction: @escaping (EnginePeer, ASDisplayNode, ContextGesture?) -> Void) -> RecommendedPeersListTransaction {
     let (deleteIndices, indicesAndItems, updateIndices) = mergeListsStableWithUpdates(leftList: fromEntries, rightList: toEntries)
     
     let deletions = deleteIndices.map { ListViewDeleteItem(index: $0, directionHint: nil) }
@@ -116,7 +115,7 @@ extension RecommendedBots: RecommendedPeers {
 final class PeerInfoRecommendedPeersPaneNode: ASDisplayNode, PeerInfoPaneNode {
     private let context: AccountContext
     private let chatControllerInteraction: ChatControllerInteraction
-    private let openPeerContextAction: (Bool, Peer, ASDisplayNode, ContextGesture?) -> Void
+    private let openPeerContextAction: (Bool, EnginePeer, ASDisplayNode, ContextGesture?) -> Void
     
     weak var parentController: ViewController?
     
@@ -152,7 +151,7 @@ final class PeerInfoRecommendedPeersPaneNode: ASDisplayNode, PeerInfoPaneNode {
         
     private var disposable: Disposable?
     
-    init(context: AccountContext, peerId: PeerId, chatControllerInteraction: ChatControllerInteraction, openPeerContextAction: @escaping (Bool, Peer, ASDisplayNode, ContextGesture?) -> Void) {
+    init(context: AccountContext, peerId: EnginePeer.Id, chatControllerInteraction: ChatControllerInteraction, openPeerContextAction: @escaping (Bool, EnginePeer, ASDisplayNode, ContextGesture?) -> Void) {
         self.context = context
         self.chatControllerInteraction = chatControllerInteraction
         self.openPeerContextAction = openPeerContextAction
@@ -208,7 +207,7 @@ final class PeerInfoRecommendedPeersPaneNode: ASDisplayNode, PeerInfoPaneNode {
         self.disposable?.dispose()
     }
     
-    func ensureMessageIsVisible(id: MessageId) {
+    func ensureMessageIsVisible(id: EngineMessage.Id) {
     }
     
     func scrollToTop() -> Bool {
@@ -455,7 +454,7 @@ final class PeerInfoRecommendedPeersPaneNode: ASDisplayNode, PeerInfoPaneNode {
         })
     }
     
-    func findLoadedMessage(id: MessageId) -> Message? {
+    func findLoadedMessage(id: EngineMessage.Id) -> EngineMessage? {
         return nil
     }
     
@@ -471,7 +470,7 @@ final class PeerInfoRecommendedPeersPaneNode: ASDisplayNode, PeerInfoPaneNode {
     func cancelPreviewGestures() {
     }
     
-    func transitionNodeForGallery(messageId: MessageId, media: Media) -> (ASDisplayNode, CGRect, () -> (UIView?, UIView?))? {
+    func transitionNodeForGallery(messageId: EngineMessage.Id, media: EngineMedia) -> (ASDisplayNode, CGRect, () -> (UIView?, UIView?))? {
         return nil
     }
     

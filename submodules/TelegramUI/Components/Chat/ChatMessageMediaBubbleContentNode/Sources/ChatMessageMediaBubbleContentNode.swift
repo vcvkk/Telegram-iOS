@@ -3,7 +3,6 @@ import UIKit
 import AsyncDisplayKit
 import Display
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import TelegramUIPreferences
 import TelegramPresentationData
@@ -27,7 +26,7 @@ public class ChatMessageMediaBubbleContentNode: ChatMessageBubbleContentNode {
     private var selectionNode: GridMessageSelectionNode?
     private var highlightedState: Bool = false
     
-    private var media: Media?
+    private var media: EngineRawMedia?
     private var mediaIndex: Int?
     private var automaticPlayback: Bool?
     
@@ -116,7 +115,7 @@ public class ChatMessageMediaBubbleContentNode: ChatMessageBubbleContentNode {
         let interactiveImageLayout = self.interactiveImageNode.asyncLayout()
         
         return { item, layoutConstants, preparePosition, selection, constrainedSize, _ in
-            var selectedMedia: Media?
+            var selectedMedia: EngineRawMedia?
             var selectedMediaIndex: Int?
             var extendedMedia: TelegramExtendedMedia?
             var automaticDownload: InteractiveMediaNodeAutodownloadMode = .none
@@ -158,13 +157,13 @@ public class ChatMessageMediaBubbleContentNode: ChatMessageBubbleContentNode {
                                         if case .full = automaticDownload {
                                             automaticPlayback = true
                                         } else {
-                                            automaticPlayback = item.context.account.postbox.mediaBox.completedResourcePath(telegramFile.resource) != nil
+                                            automaticPlayback = item.context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(telegramFile.resource.id)) != nil
                                         }
                                     } else if (telegramFile.isVideo && !telegramFile.isAnimated) && item.context.sharedContext.energyUsageSettings.autoplayVideo {
                                         if case .full = automaticDownload {
                                             automaticPlayback = true
                                         } else {
-                                            automaticPlayback = item.context.account.postbox.mediaBox.completedResourcePath(telegramFile.resource) != nil
+                                            automaticPlayback = item.context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(telegramFile.resource.id)) != nil
                                         }
                                     }
                                 }
@@ -184,7 +183,7 @@ public class ChatMessageMediaBubbleContentNode: ChatMessageBubbleContentNode {
                                 if case .full = automaticDownload {
                                     automaticPlayback = true
                                 } else {
-                                    automaticPlayback = item.context.account.postbox.mediaBox.completedResourcePath(telegramFile.resource) != nil
+                                    automaticPlayback = item.context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(telegramFile.resource.id)) != nil
                                 }
                             } else if (telegramFile.isVideo && !telegramFile.isAnimated) && item.context.sharedContext.energyUsageSettings.autoplayVideo {
                                 if let _ = telegramFile.videoCover {
@@ -194,7 +193,7 @@ public class ChatMessageMediaBubbleContentNode: ChatMessageBubbleContentNode {
                                 } else if case .full = automaticDownload {
                                     automaticPlayback = true
                                 } else {
-                                    automaticPlayback = item.context.account.postbox.mediaBox.completedResourcePath(telegramFile.resource) != nil
+                                    automaticPlayback = item.context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(telegramFile.resource.id)) != nil
                                 }
                             }
                         }
@@ -240,7 +239,7 @@ public class ChatMessageMediaBubbleContentNode: ChatMessageBubbleContentNode {
                                 } else if case .full = automaticDownload {
                                     automaticPlayback = true
                                 } else {
-                                    automaticPlayback = item.context.account.postbox.mediaBox.completedResourcePath(telegramFile.resource) != nil
+                                    automaticPlayback = item.context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(telegramFile.resource.id)) != nil
                                 }
                             }
                         }
@@ -265,7 +264,7 @@ public class ChatMessageMediaBubbleContentNode: ChatMessageBubbleContentNode {
                             if case .full = automaticDownload {
                                 automaticPlayback = true
                             } else {
-                                automaticPlayback = item.context.account.postbox.mediaBox.completedResourcePath(telegramFile.resource) != nil
+                                automaticPlayback = item.context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(telegramFile.resource.id)) != nil
                             }
                         } else if (telegramFile.isVideo && !telegramFile.isAnimated) && item.context.sharedContext.energyUsageSettings.autoplayVideo {
                             if let _ = telegramFile.videoCover {
@@ -275,7 +274,7 @@ public class ChatMessageMediaBubbleContentNode: ChatMessageBubbleContentNode {
                             } else if case .full = automaticDownload {
                                 automaticPlayback = true
                             } else {
-                                automaticPlayback = item.context.account.postbox.mediaBox.completedResourcePath(telegramFile.resource) != nil
+                                automaticPlayback = item.context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(telegramFile.resource.id)) != nil
                             }
                         }
                     }
@@ -378,7 +377,7 @@ public class ChatMessageMediaBubbleContentNode: ChatMessageBubbleContentNode {
             } else {
                 dateFormat = .regular
             }
-            let dateText = stringForMessageTimestampStatus(accountPeerId: item.context.account.peerId, message: item.message, dateTimeFormat: item.presentationData.dateTimeFormat, nameDisplayOrder: item.presentationData.nameDisplayOrder, strings: item.presentationData.strings, format: dateFormat, associatedData: item.associatedData)
+            let dateText = stringForMessageTimestampStatus(accountPeerId: item.context.account.peerId, message: EngineMessage(item.message), dateTimeFormat: item.presentationData.dateTimeFormat, nameDisplayOrder: item.presentationData.nameDisplayOrder, strings: item.presentationData.strings, format: dateFormat, associatedData: item.associatedData)
 
             let statusType: ChatMessageDateAndStatusType?
             if case .customChatContents = item.associatedData.subject {
@@ -512,7 +511,7 @@ public class ChatMessageMediaBubbleContentNode: ChatMessageBubbleContentNode {
         }
     }
     
-    override public func transitionNode(messageId: MessageId, media: Media, adjustRect: Bool) -> (ASDisplayNode, CGRect, () -> (UIView?, UIView?))? {
+    override public func transitionNode(messageId: EngineMessage.Id, media: EngineRawMedia, adjustRect: Bool) -> (ASDisplayNode, CGRect, () -> (UIView?, UIView?))? {
         if self.item?.message.id == messageId, var currentMedia = self.media {
             if let invoice = currentMedia as? TelegramMediaInvoice, let extendedMedia = invoice.extendedMedia, case let .full(fullMedia) = extendedMedia {
                 currentMedia = fullMedia
@@ -527,7 +526,7 @@ public class ChatMessageMediaBubbleContentNode: ChatMessageBubbleContentNode {
         return nil
     }
     
-    override public func updateHiddenMedia(_ media: [Media]?) -> Bool {
+    override public func updateHiddenMedia(_ media: [EngineRawMedia]?) -> Bool {
         var mediaHidden = false
         
         var currentMedia = self.media

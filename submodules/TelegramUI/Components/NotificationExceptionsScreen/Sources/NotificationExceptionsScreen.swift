@@ -3,7 +3,6 @@ import UIKit
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -100,7 +99,7 @@ private enum NotificationsPeerCategoryEntry: ItemListNodeEntry {
   
     case exceptionsHeader(String)
     case addException(String)
-    case exception(Int32, PresentationDateTimeFormat, PresentationPersonNameOrder, EnginePeer, Int64, TelegramCore.EngineMessageHistoryThread.Info, String, TelegramPeerNotificationSettings, Bool, Bool)
+    case exception(Int32, PresentationDateTimeFormat, PresentationPersonNameOrder, EnginePeer, Int64, EngineMessageHistoryThread.Info, String, TelegramPeerNotificationSettings, Bool, Bool)
     case removeAllExceptions(String)
     
     var section: ItemListSectionId {
@@ -373,9 +372,9 @@ private extension EnginePeer.NotificationSettings {
 private struct NotificationExceptionState: Equatable {
     var revealedThreadId: Int64? = nil
     var editing: Bool = false
-    var notificationExceptions: [TelegramCore.EngineMessageHistoryThread.NotificationException] = []
+    var notificationExceptions: [EngineMessageHistoryThread.NotificationException] = []
     
-    mutating func updateSound(threadId: Int64, info: TelegramCore.EngineMessageHistoryThread.Info, sound: PeerMessageSound) {
+    mutating func updateSound(threadId: Int64, info: EngineMessageHistoryThread.Info, sound: PeerMessageSound) {
         if let index = self.notificationExceptions.firstIndex(where: { $0.threadId == threadId }) {
             self.notificationExceptions[index].notificationSettings.messageSound = EnginePeer.NotificationSettings.MessageSound(sound)
             if self.notificationExceptions[index].notificationSettings.isDefault {
@@ -385,12 +384,12 @@ private struct NotificationExceptionState: Equatable {
             var settings = EnginePeer.NotificationSettings(.defaultSettings)
             settings.messageSound = EnginePeer.NotificationSettings.MessageSound(sound)
             if !settings.isDefault {
-                notificationExceptions.insert(TelegramCore.EngineMessageHistoryThread.NotificationException(threadId: threadId, info: info, notificationSettings: settings), at: 0)
+                notificationExceptions.insert(EngineMessageHistoryThread.NotificationException(threadId: threadId, info: info, notificationSettings: settings), at: 0)
             }
         }
     }
     
-    mutating func updateMuteInterval(threadId: Int64, info: TelegramCore.EngineMessageHistoryThread.Info, muteInterval: Int32?) {
+    mutating func updateMuteInterval(threadId: Int64, info: EngineMessageHistoryThread.Info, muteInterval: Int32?) {
         if let index = self.notificationExceptions.firstIndex(where: { $0.threadId == threadId }) {
             self.notificationExceptions[index].notificationSettings.muteState = muteInterval.flatMap { .muted(until: $0) } ?? .unmuted
             if self.notificationExceptions[index].notificationSettings.isDefault {
@@ -400,12 +399,12 @@ private struct NotificationExceptionState: Equatable {
             var settings = EnginePeer.NotificationSettings(.defaultSettings)
             settings.muteState = muteInterval.flatMap { .muted(until: $0) } ?? .unmuted
             if !settings.isDefault {
-                notificationExceptions.insert(TelegramCore.EngineMessageHistoryThread.NotificationException(threadId: threadId, info: info, notificationSettings: settings), at: 0)
+                notificationExceptions.insert(EngineMessageHistoryThread.NotificationException(threadId: threadId, info: info, notificationSettings: settings), at: 0)
             }
         }
     }
     
-    mutating func updateDisplayPreviews(threadId: Int64, info: TelegramCore.EngineMessageHistoryThread.Info, displayPreviews: PeerNotificationDisplayPreviews) {
+    mutating func updateDisplayPreviews(threadId: Int64, info: EngineMessageHistoryThread.Info, displayPreviews: PeerNotificationDisplayPreviews) {
         if let index = self.notificationExceptions.firstIndex(where: { $0.threadId == threadId }) {
             self.notificationExceptions[index].notificationSettings.displayPreviews = EnginePeer.NotificationSettings.DisplayPreviews(displayPreviews)
             if self.notificationExceptions[index].notificationSettings.isDefault {
@@ -415,13 +414,13 @@ private struct NotificationExceptionState: Equatable {
             var settings = EnginePeer.NotificationSettings(.defaultSettings)
             settings.displayPreviews = EnginePeer.NotificationSettings.DisplayPreviews(displayPreviews)
             if !settings.isDefault {
-                notificationExceptions.insert(TelegramCore.EngineMessageHistoryThread.NotificationException(threadId: threadId, info: info, notificationSettings: settings), at: 0)
+                notificationExceptions.insert(EngineMessageHistoryThread.NotificationException(threadId: threadId, info: info, notificationSettings: settings), at: 0)
             }
         }
     }
 }
 
-public func threadNotificationExceptionsScreen(context: AccountContext, peerId: EnginePeer.Id, notificationExceptions: [TelegramCore.EngineMessageHistoryThread.NotificationException], updated: @escaping ([TelegramCore.EngineMessageHistoryThread.NotificationException]) -> Void) -> ViewController {
+public func threadNotificationExceptionsScreen(context: AccountContext, peerId: EnginePeer.Id, notificationExceptions: [EngineMessageHistoryThread.NotificationException], updated: @escaping ([EngineMessageHistoryThread.NotificationException]) -> Void) -> ViewController {
     var presentControllerImpl: ((ViewController, Any?) -> Void)?
     var pushControllerImpl: ((ViewController) -> Void)?
     
@@ -451,7 +450,7 @@ public func threadNotificationExceptionsScreen(context: AccountContext, peerId: 
         return context.engine.peers.updatePeerDisplayPreviewsSetting(peerId: peerId, threadId: threadId, displayPreviews: displayPreviews) |> deliverOnMainQueue
     }
     
-    let presentThreadSettings: (TelegramCore.EngineMessageHistoryThread.NotificationException, @escaping () -> Void) -> Void = { item, completion in
+    let presentThreadSettings: (EngineMessageHistoryThread.NotificationException, @escaping () -> Void) -> Void = { item, completion in
         let _ = (context.engine.data.get(
             TelegramEngine.EngineData.Item.Peer.Peer(id: peerId),
             TelegramEngine.EngineData.Item.NotificationSettings.Global()
@@ -537,7 +536,7 @@ public func threadNotificationExceptionsScreen(context: AccountContext, peerId: 
                     return
                 }
                 
-                presentThreadSettings(TelegramCore.EngineMessageHistoryThread.NotificationException(threadId: threadId, info: threadData.info, notificationSettings: EnginePeer.NotificationSettings(.defaultSettings)), {
+                presentThreadSettings(EngineMessageHistoryThread.NotificationException(threadId: threadId, info: threadData.info, notificationSettings: EnginePeer.NotificationSettings(.defaultSettings)), {
                     controller?.dismiss()
                 })
             })
@@ -614,7 +613,7 @@ public func threadNotificationExceptionsScreen(context: AccountContext, peerId: 
         if !state.notificationExceptions.isEmpty {
             if state.editing {
                 leftNavigationButton = ItemListNavigationButton(content: .none, style: .regular, enabled: false, action: {})
-                rightNavigationButton = ItemListNavigationButton(content: .text(presentationData.strings.Common_Done), style: .bold, enabled: true, action: {
+                rightNavigationButton = ItemListNavigationButton(content: .icon(.done), style: .bold, enabled: true, action: {
                     updateState { value in
                         var value = value
                         value.editing = false

@@ -3,7 +3,6 @@ import UIKit
 import AsyncDisplayKit
 import Display
 import TelegramCore
-import Postbox
 import SwiftSignalKit
 import TelegramNotices
 import TelegramPresentationData
@@ -32,9 +31,10 @@ final class ChatTagSearchInputPanelNode: ChatInputPanelNode {
         var isSecondary: Bool
         var interfaceState: ChatPresentationInterfaceState
         var metrics: LayoutMetrics
+        var deviceMetrics: DeviceMetrics
         var isMediaInputExpanded: Bool
 
-        init(width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, bottomInset: CGFloat, additionalSideInsets: UIEdgeInsets, maxHeight: CGFloat, maxOverlayHeight: CGFloat, isSecondary: Bool, interfaceState: ChatPresentationInterfaceState, metrics: LayoutMetrics, isMediaInputExpanded: Bool) {
+        init(width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, bottomInset: CGFloat, additionalSideInsets: UIEdgeInsets, maxHeight: CGFloat, maxOverlayHeight: CGFloat, isSecondary: Bool, interfaceState: ChatPresentationInterfaceState, metrics: LayoutMetrics, deviceMetrics: DeviceMetrics, isMediaInputExpanded: Bool) {
             self.width = width
             self.leftInset = leftInset
             self.rightInset = rightInset
@@ -45,6 +45,7 @@ final class ChatTagSearchInputPanelNode: ChatInputPanelNode {
             self.isSecondary = isSecondary
             self.interfaceState = interfaceState
             self.metrics = metrics
+            self.deviceMetrics = deviceMetrics
             self.isMediaInputExpanded = isMediaInputExpanded
         }
     }
@@ -73,7 +74,7 @@ final class ChatTagSearchInputPanelNode: ChatInputPanelNode {
     
     private var currentLayout: Layout?
     
-    private var tagMessageCount: (tag: MemoryBuffer, count: Int?, disposable: Disposable?)?
+    private var tagMessageCount: (tag: EngineMemoryBuffer, count: Int?, disposable: Disposable?)?
     
     private var totalMessageCount: Int?
     private var totalMessageCountDisposable: Disposable?
@@ -110,16 +111,15 @@ final class ChatTagSearchInputPanelNode: ChatInputPanelNode {
         self.totalMessageCountDisposable?.dispose()
     }
     
-    override func updateLayout(width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, bottomInset: CGFloat, additionalSideInsets: UIEdgeInsets, maxHeight: CGFloat, maxOverlayHeight: CGFloat, isSecondary: Bool, transition: ContainedViewLayoutTransition, interfaceState: ChatPresentationInterfaceState, metrics: LayoutMetrics, isMediaInputExpanded: Bool) -> CGFloat {
+    override func updateLayout(width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, bottomInset: CGFloat, additionalSideInsets: UIEdgeInsets, maxHeight: CGFloat, maxOverlayHeight: CGFloat, isSecondary: Bool, transition: ContainedViewLayoutTransition, interfaceState: ChatPresentationInterfaceState, metrics: LayoutMetrics, deviceMetrics: DeviceMetrics, isMediaInputExpanded: Bool) -> CGFloat {
         var leftInset = leftInset + 8.0
         var rightInset = rightInset + 8.0
         
-        if bottomInset <= 32.0 {
-            leftInset += 18.0
-            rightInset += 18.0
-        }
+        let compactBottomSideInset = self.compactBottomSideInset(bottomInset: bottomInset, deviceMetrics: deviceMetrics)
+        leftInset += compactBottomSideInset
+        rightInset += compactBottomSideInset
         
-        let params = Params(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, interfaceState: interfaceState, metrics: metrics, isMediaInputExpanded: isMediaInputExpanded)
+        let params = Params(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, interfaceState: interfaceState, metrics: metrics, deviceMetrics: deviceMetrics, isMediaInputExpanded: isMediaInputExpanded)
         if let currentLayout = self.currentLayout, currentLayout.params == params {
             return currentLayout.height
         }
@@ -130,7 +130,7 @@ final class ChatTagSearchInputPanelNode: ChatInputPanelNode {
         return height
     }
     
-    func prepareSwitchToFilter(tag: MemoryBuffer, count: Int) {
+    func prepareSwitchToFilter(tag: EngineMemoryBuffer, count: Int) {
         self.tagMessageCount?.disposable?.dispose()
         self.tagMessageCount = (tag, count, nil)
     }

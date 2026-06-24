@@ -355,7 +355,7 @@ private enum InviteLinksEditEntry: ItemListNodeEntry {
             case let .timeHeader(_, text):
                 return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
             case let .timePicker(_, value, enabled):
-                return ItemListInviteLinkTimeLimitItem(theme: presentationData.theme, strings: presentationData.strings, value: value, enabled: enabled, sectionId: self.section, updated: { value in
+                return ItemListInviteLinkTimeLimitItem(theme: presentationData.theme, systemStyle: .glass, strings: presentationData.strings, value: value, enabled: enabled, sectionId: self.section, updated: { value in
                     arguments.updateState({ state in
                         var updatedState = state
                         if value != updatedState.time {
@@ -418,7 +418,7 @@ private enum InviteLinksEditEntry: ItemListNodeEntry {
             case let .usageHeader(_, text):
                 return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
             case let .usagePicker(_, dateTimeFormat, value, enabled):
-                return ItemListInviteLinkUsageLimitItem(theme: presentationData.theme, strings: presentationData.strings, dateTimeFormat: dateTimeFormat, value: value, enabled: enabled, sectionId: self.section, updated: { value in
+                return ItemListInviteLinkUsageLimitItem(theme: presentationData.theme, systemStyle: .glass, strings: presentationData.strings, dateTimeFormat: dateTimeFormat, value: value, enabled: enabled, sectionId: self.section, updated: { value in
                     arguments.dismissInput()
                     arguments.updateState({ state in
                         var updatedState = state
@@ -479,7 +479,7 @@ private enum InviteLinksEditEntry: ItemListNodeEntry {
     }
 }
 
-private func inviteLinkEditControllerEntries(invite: ExportedInvitation?, state: InviteLinkEditControllerState, isGroup: Bool, isPublic: Bool, presentationData: PresentationData, configuration: StarsSubscriptionConfiguration) -> [InviteLinksEditEntry] {
+private func inviteLinkEditControllerEntries(invite: ExportedInvitation?, state: InviteLinkEditControllerState, isGroup: Bool, isPublic: Bool, globalRequestApproval: Bool, presentationData: PresentationData, configuration: StarsSubscriptionConfiguration) -> [InviteLinksEditEntry] {
     var entries: [InviteLinksEditEntry] = []
     
     entries.append(.titleHeader(presentationData.theme, presentationData.strings.InviteLink_Create_LinkNameTitle.uppercased()))
@@ -507,17 +507,14 @@ private func inviteLinkEditControllerEntries(invite: ExportedInvitation?, state:
         entries.append(.subscriptionFeeInfo(presentationData.theme, infoText))
     }
     
-    if !isPublic {
-        entries.append(.requestApproval(presentationData.theme, presentationData.strings.InviteLink_Create_RequestApproval, state.requestApproval, isEditingEnabled && !isSubscription))
-        var requestApprovalInfoText = presentationData.strings.InviteLink_Create_RequestApprovalOffInfoChannel
+    if !isPublic || isGroup {
+        let requestApprovalEnabled = isEditingEnabled && !isSubscription && !(isPublic && isGroup && !globalRequestApproval)
+        entries.append(.requestApproval(presentationData.theme, isGroup ? presentationData.strings.Group_Setup_ApproveNewMembers : presentationData.strings.Channel_Setup_ApproveNewSubscribers, state.requestApproval, requestApprovalEnabled))
+        var requestApprovalInfoText = presentationData.strings.InviteLink_Create_RequestApprovalInfo
         if isSubscription {
             requestApprovalInfoText = presentationData.strings.InviteLink_Create_RequestApprovalFeeUnavailable
-        } else {
-            if state.requestApproval {
-                requestApprovalInfoText = isGroup ? presentationData.strings.InviteLink_Create_RequestApprovalOnInfoGroup : presentationData.strings.InviteLink_Create_RequestApprovalOnInfoChannel
-            } else {
-                requestApprovalInfoText = isGroup ? presentationData.strings.InviteLink_Create_RequestApprovalOnInfoGroup : presentationData.strings.InviteLink_Create_RequestApprovalOffInfoChannel
-            }
+        } else if isPublic && isGroup && !globalRequestApproval {
+            requestApprovalInfoText = presentationData.strings.InviteLink_Create_RequestApprovalPublicGroupUnavailable
         }
         entries.append(.requestApprovalInfo(presentationData.theme, requestApprovalInfoText))
     }
@@ -538,7 +535,7 @@ private func inviteLinkEditControllerEntries(invite: ExportedInvitation?, state:
     }
     entries.append(.timeInfo(presentationData.theme, presentationData.strings.InviteLink_Create_TimeLimitInfo))
     
-    if !state.requestApproval || isPublic {
+    if !state.requestApproval {
         entries.append(.usageHeader(presentationData.theme,  presentationData.strings.InviteLink_Create_UsersLimit.uppercased()))
         entries.append(.usagePicker(presentationData.theme, presentationData.dateTimeFormat, state.usage, isEditingEnabled))
         
@@ -624,10 +621,17 @@ public func inviteLinkEditController(context: AccountContext, updatedPresentatio
         guard let inviteLink = invite?.link else {
             return
         }
-        let _ = (context.account.postbox.loadedPeerWithId(peerId)
+        let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
+        |> mapToSignal { peer -> Signal<EnginePeer, NoError> in
+            if let peer {
+                return .single(peer)
+            } else {
+                return .never()
+            }
+        }
         |> deliverOnMainQueue).start(next: { peer in
             let isGroup: Bool
-            if let peer = peer as? TelegramChannel, case .broadcast = peer.info {
+            if case let .channel(channel) = peer, case .broadcast = channel.info {
                 isGroup = false
             } else {
                 isGroup = true
@@ -689,7 +693,7 @@ public func inviteLinkEditController(context: AccountContext, updatedPresentatio
     |> map { presentationData, state, peer -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let isPublic = !(peer?.addressName?.isEmpty ?? true)
         
-        let leftNavigationButton = ItemListNavigationButton(content: .text(presentationData.strings.Common_Cancel), style: .regular, enabled: true, action: {
+        let leftNavigationButton = ItemListNavigationButton(content: .icon(.close), style: .regular, enabled: true, action: {
             dismissImpl?()
         })
         
@@ -700,7 +704,7 @@ public func inviteLinkEditController(context: AccountContext, updatedPresentatio
             }
         }
         
-        let rightNavigationButton = ItemListNavigationButton(content: .text(invite == nil ? presentationData.strings.Common_Create : presentationData.strings.Common_Save), style: state.updating ? .activity : .bold, enabled: doneIsEnabled, action: {
+        let rightNavigationButton = ItemListNavigationButton(content: .icon(.done), style: state.updating ? .activity : .bold, enabled: doneIsEnabled, action: {
             updateState { state in
                 var updatedState = state
                 updatedState.updating = true
@@ -720,7 +724,7 @@ public func inviteLinkEditController(context: AccountContext, updatedPresentatio
             let titleString = state.title.trimmingCharacters(in: .whitespacesAndNewlines)
             let title = titleString.isEmpty ? nil : titleString
             var usageLimit = state.usage.value
-            var requestNeeded: Bool? = state.requestApproval && !isPublic
+            var requestNeeded: Bool? = state.requestApproval
             
             if invite == nil {
                 let subscriptionPricing: StarsSubscriptionPricing?
@@ -785,14 +789,20 @@ public func inviteLinkEditController(context: AccountContext, updatedPresentatio
         }
         
         let isGroup: Bool
+        let globalRequestApproval: Bool
         if case let .channel(channel) = peer, case .broadcast = channel.info {
             isGroup = false
+            globalRequestApproval = channel.flags.contains(.requestToJoin)
+        } else if case let .channel(channel) = peer {
+            isGroup = true
+            globalRequestApproval = channel.flags.contains(.requestToJoin)
         } else {
             isGroup = true
+            globalRequestApproval = false
         }
         
         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(invite == nil ? presentationData.strings.InviteLink_Create_Title : presentationData.strings.InviteLink_Create_EditTitle), leftNavigationButton: leftNavigationButton, rightNavigationButton: rightNavigationButton, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back), animateChanges: true)
-        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: inviteLinkEditControllerEntries(invite: invite, state: state, isGroup: isGroup, isPublic: isPublic, presentationData: presentationData, configuration: configuration), style: .blocks, emptyStateItem: nil, crossfadeState: false, animateChanges: animateChanges)
+        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: inviteLinkEditControllerEntries(invite: invite, state: state, isGroup: isGroup, isPublic: isPublic, globalRequestApproval: globalRequestApproval, presentationData: presentationData, configuration: configuration), style: .blocks, emptyStateItem: nil, crossfadeState: false, animateChanges: animateChanges)
         
         return (controllerState, (listState, arguments))
     }

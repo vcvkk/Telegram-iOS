@@ -313,9 +313,16 @@ public func channelBlacklistController(context: AccountContext, updatedPresentat
                         }
                 }
             }
-            let _ = (context.account.postbox.loadedPeerWithId(peerId)
+            let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
+            |> mapToSignal { peer -> Signal<EnginePeer, NoError> in
+                if let peer {
+                    return .single(peer)
+                } else {
+                    return .never()
+                }
+            }
             |> deliverOnMainQueue).start(next: { channel in
-                guard let _ = channel as? TelegramChannel else {
+                guard case .channel = channel else {
                     return
                 }
                 
@@ -371,7 +378,7 @@ public func channelBlacklistController(context: AccountContext, updatedPresentat
                     if let navigationController = getNavigationControllerImpl?() {
                         context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: context, chatLocation: .peer(participant.peer)))
                     }
-                } else if let infoController = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: participant.peer._asPeer(), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+                } else if let infoController = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: participant.peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
                     pushControllerImpl?(infoController)
                 }
             }))
@@ -424,7 +431,7 @@ public func channelBlacklistController(context: AccountContext, updatedPresentat
         })
     })
     
-    let (listDisposable, loadMoreControl) = context.peerChannelMemberCategoriesContextsManager.banned(engine: context.engine, postbox: context.account.postbox, network: context.account.network, accountPeerId: context.account.peerId, peerId: peerId, updated: { listState in
+    let (listDisposable, loadMoreControl) = context.peerChannelMemberCategoriesContextsManager.banned(engine: context.engine, accountPeerId: context.account.peerId, peerId: peerId, updated: { listState in
         if case .loading(true) = listState.loadingState, listState.list.isEmpty {
             blacklistPromise.set(.single(nil))
         } else {
@@ -447,7 +454,7 @@ public func channelBlacklistController(context: AccountContext, updatedPresentat
         var secondaryRightNavigationButton: ItemListNavigationButton?
         if let participants = participants, !participants.isEmpty {
             if state.editing {
-                rightNavigationButton = ItemListNavigationButton(content: .text(presentationData.strings.Common_Done), style: .bold, enabled: true, action: {
+                rightNavigationButton = ItemListNavigationButton(content: .icon(.done), style: .bold, enabled: true, action: {
                     updateState { state in
                         return state.withUpdatedEditing(false)
                     }

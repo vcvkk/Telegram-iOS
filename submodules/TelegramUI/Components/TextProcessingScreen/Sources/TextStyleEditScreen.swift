@@ -24,7 +24,6 @@ import CheckComponent
 import PlainButtonComponent
 import EntityKeyboard
 import EmojiStatusComponent
-import EmojiStatusSelectionComponent
 
 final class TextStyleEditContentComponent: Component {
     typealias EnvironmentType = ViewControllerComponentContainer.Environment
@@ -162,7 +161,7 @@ final class TextStyleEditContentComponent: Component {
             guard let iconBackgroundView = self.iconBackground.view else {
                 return
             }
-            let emojiController = EmojiStatusSelectionController(
+            self.environment?.controller()?.present(component.context.sharedContext.makeEmojiStatusSelectionController(
                 context: component.context,
                 mode: .backgroundSelection(completion: { [weak self] file in
                     guard let self, let component = self.component else {
@@ -199,8 +198,7 @@ final class TextStyleEditContentComponent: Component {
                     }
                     return self.emojiIcon?.view
                 }
-            )
-            self.environment?.controller()?.present(emojiController, in: .window(.root))
+            ), in: .window(.root))
         }
 
         func update(component: TextStyleEditContentComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<ViewControllerComponentContainer.Environment>, transition: ComponentTransition) -> CGSize {

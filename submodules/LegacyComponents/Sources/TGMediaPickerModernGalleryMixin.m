@@ -142,7 +142,7 @@
                 strongSelf.completeWithItem(item, false, 0);
         };
         
-        model.interfaceView.doneLongPressed = ^(TGMediaPickerGalleryItem *item) {
+        model.interfaceView.doneLongPressed = ^(TGMediaPickerGalleryItem *item, UIView *sourceView) {
             __strong TGMediaPickerModernGalleryMixin *strongSelf = weakSelf;
             if (strongSelf == nil || !(hasSilentPosting || hasSchedule))
                 return;
@@ -201,7 +201,7 @@
                 if (strongSelf == nil)
                     return;
                 
-                strongSelf.presentScheduleController(true, ^(int32_t time) {
+                strongSelf.presentScheduleController(true, ^(int32_t time, bool silentPosting) {
                     __strong TGMediaPickerModernGalleryMixin *strongSelf = weakSelf;
                     if (strongSelf == nil)
                         return;
@@ -209,7 +209,7 @@
                     strongSelf->_galleryModel.dismiss(true, false);
                     
                     if (strongSelf.completeWithItem != nil)
-                        strongSelf.completeWithItem(item, false, time);
+                        strongSelf.completeWithItem(item, silentPosting, time);
                 });
             };
             controller.sendWithTimer = ^{
@@ -236,6 +236,19 @@
                         strongSelf.completeWithItem(item, false, 0);
                 });
             };
+            if (sourceView != nil && strongSelf->_stickersContext.presentMediaPickerSendActionMenu != nil && strongSelf->_stickersContext.presentMediaPickerSendActionMenu(sourceView, hasSilentPosting, effectiveHasSchedule, effectiveHasSchedule, reminder, false, ^{
+                if (controller.sendSilently != nil)
+                    controller.sendSilently();
+            }, ^{
+                if (controller.sendWhenOnline != nil)
+                    controller.sendWhenOnline();
+            }, ^{
+                if (controller.schedule != nil)
+                    controller.schedule();
+            }, ^{
+            })) {
+                return;
+            }
             
             TGOverlayControllerWindow *controllerWindow = [[TGOverlayControllerWindow alloc] initWithManager:[strongSelf->_context makeOverlayWindowManager] parentController:strongSelf->_parentController contentController:controller];
             controllerWindow.hidden = false;

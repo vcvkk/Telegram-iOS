@@ -337,7 +337,7 @@ public class ChatMessageJoinedChannelBubbleContentNode: ChatMessageBubbleContent
                             jsonString += "}"
                             
                             if let data = jsonString.data(using: .utf8), let json = JSON(data: data) {
-                                addAppLogEvent(postbox: item.context.account.postbox, type: "channels.open_recommended_channel", data: json)
+                                item.context.engine.accountData.addAppLogEvent(type: "channels.open_recommended_channel", data: json)
                             }
                             item.controllerInteraction.openPeer(peer, .chat(textInputState: nil, subject: nil, peekData: nil), nil, .default)
                         } else {
@@ -777,7 +777,7 @@ private final class ChannelItemComponent: Component {
                     self.mergedAvatarsNode = mergedAvatarsNode
                 }
                 
-                mergedAvatarsNode.update(context: component.context, peers: component.peers.map { $0._asPeer() }, synchronousLoad: false, imageSize: 60.0, imageSpacing: 10.0, borderWidth: 2.0, avatarFontSize: 26.0)
+                mergedAvatarsNode.update(context: component.context, peers: component.peers, synchronousLoad: false, imageSize: 60.0, imageSpacing: 10.0, borderWidth: 2.0, avatarFontSize: 26.0)
                 let avatarsSize = CGSize(width: avatarSize.width + 20.0, height: avatarSize.height)
                 mergedAvatarsNode.updateLayout(size: avatarsSize)
                 mergedAvatarsNode.frame = CGRect(origin: CGPoint(x: avatarFrame.midX - avatarsSize.width / 2.0, y: avatarFrame.minY), size: avatarsSize)

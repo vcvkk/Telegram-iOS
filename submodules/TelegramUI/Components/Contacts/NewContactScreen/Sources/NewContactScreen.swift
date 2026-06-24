@@ -3,7 +3,6 @@ import UIKit
 import Display
 import AccountContext
 import TelegramCore
-import Postbox
 import SwiftSignalKit
 import TelegramPresentationData
 import ComponentFlow
@@ -252,7 +251,7 @@ final class NewContactScreenComponent: Component {
             let themeUpdated = self.environment?.theme !== environment.theme
             self.environment = environment
             
-            let theme = environment.theme
+            let theme = environment.theme.withModalBlocksBackground()
             let strings = environment.strings
             
             var initialCountryCode: Int32?
@@ -583,7 +582,7 @@ final class NewContactScreenComponent: Component {
                                 return
                             }
                             if case let .peer(peer, _) = self.resolvedPeer {
-                                if let infoController = component.context.sharedContext.makePeerInfoController(context: component.context, updatedPresentationData: nil, peer: peer._asPeer(), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+                                if let infoController = component.context.sharedContext.makePeerInfoController(context: component.context, updatedPresentationData: nil, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
                                     if let navigationController = component.context.sharedContext.mainWindow?.viewController as? NavigationController {
                                         navigationController.pushViewController(infoController)
                                     }
@@ -716,7 +715,6 @@ final class NewContactScreenComponent: Component {
                             ListComposePollOptionComponent(
                                 externalState: nil,
                                 context: component.context,
-                                style: .glass,
                                 theme: theme,
                                 strings: strings,
                                 placeholder: NSAttributedString(string: strings.AddContact_NotePlaceholder, font: Font.regular(17.0), textColor: theme.list.itemPlaceholderTextColor),
@@ -863,7 +861,7 @@ final class NewContactScreenComponent: Component {
             let edgeEffectHeight: CGFloat = 66.0
             let edgeEffectFrame = CGRect(origin: CGPoint(x: 0.0, y: 0.0), size: CGSize(width: availableSize.width, height: edgeEffectHeight))
             transition.setFrame(view: self.edgeEffectView, frame: edgeEffectFrame)
-            self.edgeEffectView.update(content: environment.theme.list.blocksBackgroundColor, alpha: 1.0, rect: edgeEffectFrame, edge: .top, edgeSize: edgeEffectFrame.height, transition: transition)
+            self.edgeEffectView.update(content: theme.list.blocksBackgroundColor, alpha: 1.0, rect: edgeEffectFrame, edge: .top, edgeSize: edgeEffectFrame.height, transition: transition)
             
             let titleSize = self.title.update(
                 transition: transition,

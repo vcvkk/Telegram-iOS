@@ -2,7 +2,6 @@ import Foundation
 import UIKit
 import SwiftSignalKit
 import TelegramCore
-import Postbox
 import TelegramUIPreferences
 import LegacyComponents
 import TextFormat
@@ -14,7 +13,7 @@ import TelegramNotices
 import ChatPresentationInterfaceState
 import ChatContextQuery
 
-func contextQueryResultStateForChatInterfacePresentationState(_ chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, currentQueryStates: inout [ChatPresentationInputQueryKind: (ChatPresentationInputQuery, Disposable)], requestBotLocationStatus: @escaping (PeerId) -> Void) -> [ChatPresentationInputQueryKind: ChatContextQueryUpdate] {
+func contextQueryResultStateForChatInterfacePresentationState(_ chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, currentQueryStates: inout [ChatPresentationInputQueryKind: (ChatPresentationInputQuery, Disposable)], requestBotLocationStatus: @escaping (EnginePeer.Id) -> Void) -> [ChatPresentationInputQueryKind: ChatContextQueryUpdate] {
     let inputQueries = inputContextQueriesForChatPresentationIntefaceState(chatPresentationInterfaceState).filter({ query in
         if chatPresentationInterfaceState.editMessageState != nil {
             switch query {
@@ -54,7 +53,7 @@ func contextQueryResultStateForChatInterfacePresentationState(_ chatPresentation
     return updates
 }
 
-private func updatedContextQueryResultStateForQuery(context: AccountContext, peer: Peer?, chatLocation: ChatLocation, inputQuery: ChatPresentationInputQuery, previousQuery: ChatPresentationInputQuery?, requestBotLocationStatus: @escaping (PeerId) -> Void) -> Signal<(ChatPresentationInputQueryResult?) -> ChatPresentationInputQueryResult?, ChatContextQueryError> {
+private func updatedContextQueryResultStateForQuery(context: AccountContext, peer: EngineRawPeer?, chatLocation: ChatLocation, inputQuery: ChatPresentationInputQuery, previousQuery: ChatPresentationInputQuery?, requestBotLocationStatus: @escaping (EnginePeer.Id) -> Void) -> Signal<(ChatPresentationInputQueryResult?) -> ChatPresentationInputQueryResult?, ChatContextQueryError> {
     switch inputQuery {
         case let .emoji(query):
             var signal: Signal<(ChatPresentationInputQueryResult?) -> ChatPresentationInputQueryResult?, ChatContextQueryError> = .complete()
@@ -69,9 +68,9 @@ private func updatedContextQueryResultStateForQuery(context: AccountContext, pee
                 signal = .single({ _ in return .stickers([]) })
             }
             
-            let stickerConfiguration = context.account.postbox.preferencesView(keys: [PreferencesKeys.appConfiguration])
+            let stickerConfiguration = context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.appConfiguration))
             |> map { preferencesView -> StickersSearchConfiguration in
-                let appConfiguration: AppConfiguration = preferencesView.values[PreferencesKeys.appConfiguration]?.get(AppConfiguration.self) ?? .defaultValue
+                let appConfiguration: AppConfiguration = preferencesView?.get(AppConfiguration.self) ?? .defaultValue
                 return StickersSearchConfiguration.with(appConfiguration: appConfiguration)
             }
             let stickerSettings = context.sharedContext.accountManager.transaction { transaction -> StickerSettings in
@@ -375,14 +374,14 @@ private func updatedContextQueryResultStateForQuery(context: AccountContext, pee
         
             if query.isSingleEmoji {
                 return combineLatest(
-                    context.account.postbox.itemCollectionsView(orderedItemListCollectionIds: [], namespaces: [Namespaces.ItemCollection.CloudEmojiPacks], aroundIndex: nil, count: 10000000),
+                    context.engine.itemCollections.allItems(namespace: Namespaces.ItemCollection.CloudEmojiPacks),
                     hasPremium
                 )
-                |> map { view, hasPremium -> [(String, TelegramMediaFile?, String)] in
+                |> map { items, hasPremium -> [(String, TelegramMediaFile?, String)] in
                     var result: [(String, TelegramMediaFile?, String)] = []
-                    
-                    for entry in view.entries {
-                        guard let item = entry.item as? StickerPackItem, !item.file.isPremiumEmoji || hasPremium else {
+
+                    for entry in items {
+                        guard let item = entry as? StickerPackItem, !item.file.isPremiumEmoji || hasPremium else {
                             continue
                         }
                         let stringRepresentations = item.getStringRepresentationsOfIndexKeys()
@@ -418,21 +417,21 @@ private func updatedContextQueryResultStateForQuery(context: AccountContext, pee
                 |> castError(ChatContextQueryError.self)
                 |> mapToSignal { keywords -> Signal<(ChatPresentationInputQueryResult?) -> ChatPresentationInputQueryResult?, ChatContextQueryError> in
                     return combineLatest(
-                        context.account.postbox.itemCollectionsView(orderedItemListCollectionIds: [], namespaces: [Namespaces.ItemCollection.CloudEmojiPacks], aroundIndex: nil, count: 10000000),
+                        context.engine.itemCollections.allItems(namespace: Namespaces.ItemCollection.CloudEmojiPacks),
                         hasPremium
                     )
-                    |> map { view, hasPremium -> [(String, TelegramMediaFile?, String)] in
+                    |> map { items, hasPremium -> [(String, TelegramMediaFile?, String)] in
                         var result: [(String, TelegramMediaFile?, String)] = []
-                        
+
                         var allEmoticons: [String: String] = [:]
                         for keyword in keywords {
                             for emoticon in keyword.emoticons {
                                 allEmoticons[emoticon] = keyword.keyword
                             }
                         }
-                        
-                        for entry in view.entries {
-                            guard let item = entry.item as? StickerPackItem, !item.file.isPremiumEmoji || hasPremium else {
+
+                        for entry in items {
+                            guard let item = entry as? StickerPackItem, !item.file.isPremiumEmoji || hasPremium else {
                                 continue
                             }
                             let stringRepresentations = item.getStringRepresentationsOfIndexKeys()
@@ -556,7 +555,7 @@ struct UrlPreviewState {
     var detectedUrls: [String]
 }
 
-func urlPreviewStateForInputText(_ inputText: NSAttributedString?, context: AccountContext, currentQuery: UrlPreviewState?, forPeerId: PeerId?) -> (UrlPreviewState?, Signal<(TelegramMediaWebpage?) -> (TelegramMediaWebpage, String)?, NoError>)? {
+func urlPreviewStateForInputText(_ inputText: NSAttributedString?, context: AccountContext, currentQuery: UrlPreviewState?, forPeerId: EnginePeer.Id?) -> (UrlPreviewState?, Signal<(TelegramMediaWebpage?) -> (TelegramMediaWebpage, String)?, NoError>)? {
     guard let _ = inputText else {
         if currentQuery != nil {
             return (nil, .single({ _ in return nil }))

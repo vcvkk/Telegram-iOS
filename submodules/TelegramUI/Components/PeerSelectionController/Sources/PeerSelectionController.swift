@@ -3,7 +3,6 @@ import UIKit
 import SwiftSignalKit
 import Display
 import TelegramCore
-import Postbox
 import TelegramPresentationData
 import ProgressNavigationButtonNode
 import AccountContext
@@ -267,7 +266,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
     override public func loadDisplayNode() {
         self.navigationBar?.secondaryContentHeight = 44.0 + 10.0
         
-        self.displayNode = PeerSelectionControllerNode(context: self.context, forceHideNames: self.forceHideNames, controller: self, presentationData: self.presentationData, filter: self.filter, forumPeerId: self.forumPeerId, hasFilters: self.hasFilters, hasChatListSelector: self.hasChatListSelector, hasContactSelector: self.hasContactSelector, hasGlobalSearch: self.hasGlobalSearch, forwardedMessageIds: self.forwardedMessageIds, hasTypeHeaders: self.hasTypeHeaders, requestPeerType: self.requestPeerType, hasCreation: self.hasCreation, createNewGroup: self.createNewGroup, present: { [weak self] c, a in
+        self.displayNode = PeerSelectionControllerNode(context: self.context, forceHideNames: self.forceHideNames, controller: self, presentationData: self.presentationData, filter: self.filter, forumPeerId: self.forumPeerId, hasFilters: self.hasFilters, hasChatListSelector: self.hasChatListSelector, hasContactSelector: self.hasContactSelector, hasGlobalSearch: self.hasGlobalSearch, forwardedMessageIds: self.forwardedMessageIds, hasTypeHeaders: self.hasTypeHeaders, requestPeerType: self.requestPeerType, hasCreation: self.hasCreation, createNewGroup: self.createNewGroup, suggestedPeers: self.suggestedPeers, present: { [weak self] c, a in
             self?.present(c, in: .window(.root), with: a)
         }, presentInGlobalOverlay: { [weak self] c, a in
             self?.presentInGlobalOverlay(c, with: a)

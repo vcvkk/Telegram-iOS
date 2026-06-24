@@ -1,4 +1,4 @@
-import EGStrings
+import SGStrings
 import Foundation
 import UIKit
 import Display

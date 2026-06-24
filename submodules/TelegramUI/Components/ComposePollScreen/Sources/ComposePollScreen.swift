@@ -35,6 +35,9 @@ import ContextUI
 import StickerPeekUI
 import EdgeEffect
 import LocationUI
+import CountrySelectionUI
+import ShareWithPeersScreen
+import ChatTextLinkEditUI
 
 public final class ComposedPoll {
     public struct Text {
@@ -54,6 +57,8 @@ public final class ComposedPoll {
     public let revotingDisabled: Bool
     public let shuffleAnswers: Bool
     public let hideResultsUntilClose: Bool
+    public let restrictToSubscribers: Bool
+    public let limitToCountries: [String]
 
     public let text: Text
     public let description: Text
@@ -72,6 +77,8 @@ public final class ComposedPoll {
         revotingDisabled: Bool,
         shuffleAnswers: Bool,
         hideResultsUntilClose: Bool,
+        restrictToSubscribers: Bool,
+        limitToCountries: [String],
         text: Text,
         description: Text,
         media: AnyMediaReference?,
@@ -88,6 +95,8 @@ public final class ComposedPoll {
         self.revotingDisabled = revotingDisabled
         self.shuffleAnswers = shuffleAnswers
         self.hideResultsUntilClose = hideResultsUntilClose
+        self.restrictToSubscribers = restrictToSubscribers
+        self.limitToCountries = limitToCountries
         self.text = text
         self.description = description
         self.media = media
@@ -139,11 +148,18 @@ final class ComposePollScreenComponent: Component {
             self.media = media
         }
         
+        deinit {
+            self.uploadDisposable?.dispose()
+        }
+        
         var requiresUpload: Bool {
             if let image = self.media.media as? TelegramMediaImage, let largest = largestImageRepresentation(image.representations), !(largest.resource is CloudPhotoSizeMediaResource) {
                 return true
             }
             if let file = self.media.media as? TelegramMediaFile, !(file.resource is CloudDocumentMediaResource) {
+                return true
+            }
+            if let webpage = self.media.media as? TelegramMediaWebpage, webpage.id?.namespace == Namespaces.Media.LocalFile {
                 return true
             }
             return false
@@ -229,11 +245,17 @@ final class ComposePollScreenComponent: Component {
         private var canAddOptions: Bool = false
         private var canRevote: Bool = false
         private var shuffleOptions: Bool = false
-        private var isQuiz: Bool = false
+        private(set) var isQuiz: Bool = false
         private var selectedQuizOptionIds = Set<Int>()
         private var limitDuration: Bool = false
         private var timeLimit: TimeLimit = .duration(24 * 60 * 60)
         private var hideResults: Bool = false
+        private var restrictToSubscribers: Bool = false
+        private var limitByCountry: Bool = false
+        private var limitToCountries: [String] = []
+        
+        private var currentLocale: Locale?
+        private var didSetupCountries = false
         
         private var currentInputMode: ListComposePollOptionComponent.InputMode = .keyboard
         
@@ -258,6 +280,8 @@ final class ComposePollScreenComponent: Component {
         private var cachedShuffleIcon: UIImage?
         private var cachedQuizIcon: UIImage?
         private var cachedDurationIcon: UIImage?
+        private var cachedSubscribersIcon: UIImage?
+        private var cachedCountryIcon: UIImage?
         private var cachedEmptyIcon: UIImage?
         
         private var reorderRecognizer: ReorderGestureRecognizer?
@@ -460,6 +484,7 @@ final class ComposePollScreenComponent: Component {
             case questionNeeded
             case optionsNeeded
             case quizCorrectOptionNeeded
+            case countriesNeeded
         }
         
         var hasAnyData: Bool {
@@ -490,14 +515,7 @@ final class ComposePollScreenComponent: Component {
             if self.pollTextInputState.text.length == 0 {
                 return .questionNeeded
             }
-            
-            let mappedKind: TelegramMediaPollKind
-            if self.isQuiz {
-                mappedKind = .quiz(multipleAnswers: self.effectiveIsMultiAnswer)
-            } else {
-                mappedKind = .poll(multipleAnswers: self.effectiveIsMultiAnswer)
-            }
-            
+                        
             var mappedOptions: [TelegramMediaPollOption] = []
             var selectedQuizOptions: [Data] = []
             for pollOption in self.pollOptions {
@@ -532,8 +550,19 @@ final class ComposePollScreenComponent: Component {
                 ))
             }
             
-            if self.isQuiz && mappedOptions.count < 2 {
+            let mappedKind: TelegramMediaPollKind
+            if self.isQuiz {
+                mappedKind = .quiz(multipleAnswers: self.effectiveIsMultiAnswer)
+            } else {
+                mappedKind = .poll(multipleAnswers: self.effectiveIsMultiAnswer && mappedOptions.count > 1)
+            }
+            
+            if mappedOptions.count < 1 {
                 return .optionsNeeded
+            }
+            
+            if self.limitByCountry && self.limitToCountries.isEmpty {
+                return .countriesNeeded
             }
             
             var mappedCorrectAnswers: [Data]?
@@ -608,6 +637,8 @@ final class ComposePollScreenComponent: Component {
                 revotingDisabled: !self.canRevote,
                 shuffleAnswers: self.shuffleOptions,
                 hideResultsUntilClose: self.hideResults,
+                restrictToSubscribers: self.restrictToSubscribers,
+                limitToCountries: self.limitByCountry ? self.limitToCountries : [],
                 text: ComposedPoll.Text(string: self.pollTextInputState.text.string, entities: textEntities),
                 description: ComposedPoll.Text(string: self.pollDescriptionInputState.text.string, entities: descriptionEntities),
                 media: self.pollDescriptionMedia?.media,
@@ -734,7 +765,6 @@ final class ComposePollScreenComponent: Component {
                     mode: .standard(.default),
                     chatLocation: .peer(id: component.context.account.peerId),
                     subject: nil,
-                    peerNearbyData: nil,
                     greetingData: nil,
                     pendingUnpinnedAllMessages: false,
                     activeGroupCallInfo: nil,
@@ -745,8 +775,6 @@ final class ComposePollScreenComponent: Component {
                     accountPeerColor: nil,
                     businessIntro: nil
                 )
-                
-                //self.inputMediaNodeBackground.backgroundColor = presentationData.theme.rootController.navigationBar.opaqueBackgroundColor.cgColor
                 
                 let heightAndOverflow = inputMediaNode.updateLayout(width: availableSize.width, leftInset: 0.0, rightInset: 0.0, bottomInset: bottomInset, standardInputHeight: deviceMetrics.standardInputHeight(inLandscape: false), inputHeight: inputHeight < 100.0 ? inputHeight - bottomContainerInset : inputHeight, maximumHeight: availableSize.height, inputPanelHeight: 0.0, transition: .immediate, interfaceState: presentationInterfaceState, layoutMetrics: metrics, deviceMetrics: deviceMetrics, isVisible: true, isExpanded: false)
                 let inputNodeHeight = heightAndOverflow.0
@@ -889,6 +917,11 @@ final class ComposePollScreenComponent: Component {
             
             self.deactivateInput()
             
+            if !replace, case .pollOption = subject, let webpage = self.attachedMedia(for: subject)?.media.media as? TelegramMediaWebpage, let link = webpage.content.url {
+                self.openAttachedLinkMedia(subject: subject, link: link)
+                return
+            }
+
             guard replace || !self.openAttachMediaContextMenu(subject: subject) else {
                 return
             }
@@ -898,7 +931,7 @@ final class ComposePollScreenComponent: Component {
             case .description, .quizAnswer:
                 availableButtons = [.gallery, .file, .location]
             default:
-                availableButtons = [.gallery, .sticker, .location]
+                availableButtons = [.gallery, .sticker, .location, .link]
             }
             
             let pollAttachmentSubject: PollAttachmentSubject
@@ -938,11 +971,46 @@ final class ComposePollScreenComponent: Component {
             })
         }
         
+        private func openAttachedLinkMedia(subject: MediaAttachSubject, link: String) {
+            guard let component = self.component else {
+                return
+            }
+
+            let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }
+            let controller = chatTextLinkEditController(
+                context: component.context,
+                updatedPresentationData: (presentationData, .never()),
+                text: presentationData.strings.CreatePoll_Link_Description,
+                link: link,
+                preview: true,
+                apply: { [weak self] link, webpage in
+                    guard let self, let link else {
+                        return
+                    }
+
+                    if link.isEmpty {
+                        self.setAttachedMedia(nil, for: subject)
+                        self.state?.updated(transition: .easeInOut(duration: 0.2))
+                        return
+                    }
+
+                    let attachedMedia = AttachedMedia(media: .standalone(media: webpage ?? makePollAttachmentLinkWebpage(link: link)))
+                    self.setAttachedMedia(attachedMedia, for: subject)
+                    self.uploadAttachedMediaIfNeeded(attachedMedia)
+                    self.state?.updated(transition: .easeInOut(duration: 0.2))
+                }
+            )
+            (self.environment?.controller() as? ComposePollScreen)?.parentController()?.present(controller, in: .window(.root))
+        }
+
         private func uploadAttachedMediaIfNeeded(_ media: AttachedMedia) {
             guard let component = self.component, media.requiresUpload, media.uploadDisposable == nil else {
                 return
             }
-            media.progress = 0.0
+            if media.media.media is TelegramMediaWebpage {
+            } else {
+                media.progress = 0.0
+            }
             
             if let image = media.media.media as? TelegramMediaImage, let largest = largestImageRepresentation(image.representations) {
                 media.uploadDisposable = (standaloneUploadedImage(
@@ -965,7 +1033,7 @@ final class ComposePollScreenComponent: Component {
                         switch result {
                         case let .media(resultMedia):
                             if let resultImage = resultMedia.media as? TelegramMediaImage, let resultLargest = largestImageRepresentation(resultImage.representations) {
-                                component.context.account.postbox.mediaBox.moveResourceData(from: largest.resource.id, to: resultLargest.resource.id, synchronous: true)
+                                component.context.engine.resources.moveResourceData(from: EngineMediaResource.Id(largest.resource.id), to: EngineMediaResource.Id(resultLargest.resource.id), synchronous: true)
                             }
                             
                             media.media = resultMedia
@@ -1004,7 +1072,7 @@ final class ComposePollScreenComponent: Component {
                         switch result {
                         case let .media(resultMedia):
                             if let resultFile = resultMedia.media as? TelegramMediaFile {
-                                component.context.account.postbox.mediaBox.moveResourceData(from: file.resource.id, to: resultFile.resource.id, synchronous: true)
+                                component.context.engine.resources.moveResourceData(from: EngineMediaResource.Id(file.resource.id), to: EngineMediaResource.Id(resultFile.resource.id), synchronous: true)
                             }
                             media.media = resultMedia
                             media.progress = nil
@@ -1012,6 +1080,29 @@ final class ComposePollScreenComponent: Component {
                             media.uploadDisposable = nil
                             transition = .easeInOut(duration: 0.2)
                         }
+                    }
+                    if !self.isUpdating {
+                        self.state?.updated(transition: transition)
+                    }
+                })
+            }
+            if let webpage = media.media.media as? TelegramMediaWebpage, case let .Loaded(content) = webpage.content {
+                media.uploadDisposable = (webpagePreview(account: component.context.account, urls: [content.url])
+                |> deliverOnMainQueue).startStrict(next: { [weak self] result in
+                    guard let self else {
+                        return
+                    }
+                    var transition: ComponentTransition = .immediate
+                    switch result {
+                    case let .result(result):
+                        if let result {
+                            media.media = .standalone(media: result.webpage)
+                        }
+//                        media.uploadDisposable?.dispose()
+//                        media.uploadDisposable = nil
+                        transition = .easeInOut(duration: 0.2)
+                    default:
+                        break
                     }
                     if !self.isUpdating {
                         self.state?.updated(transition: transition)
@@ -1218,6 +1309,41 @@ final class ComposePollScreenComponent: Component {
             (self.environment?.controller() as? ComposePollScreen)?.parentController()?.push(controller)
         }
         
+        private func openCountriesSelection() {
+            guard let component = self.component else {
+                return
+            }
+            
+            let maxCount: Int32
+            if let data = component.context.currentAppConfiguration.with({ $0 }).data, let value = data["poll_countries_max"] as? Double {
+                maxCount = Int32(value)
+            } else {
+                maxCount = 12
+            }
+            
+            let stateContext = CountriesMultiselectionScreen.StateContext(
+                context: component.context,
+                subject: .countries,
+                maxCount: maxCount,
+                initialSelectedCountries: self.limitToCountries,
+                showFragment: true
+            )
+            let _ = (stateContext.ready |> filter { $0 } |> take(1) |> deliverOnMainQueue).startStandalone(next: { [weak self] _ in
+                let controller = CountriesMultiselectionScreen(
+                    context: component.context,
+                    stateContext: stateContext,
+                    completion: { [weak self] countries in
+                        guard let self else {
+                            return
+                        }
+                        self.limitToCountries = countries
+                        self.state?.updated()
+                    }
+                )
+                (self?.environment?.controller() as? ComposePollScreen)?.parentController()?.push(controller)
+            })
+        }
+        
         func deactivateInput() {
             self.currentInputMode = .keyboard
             if hasFirstResponder(self) {
@@ -1250,6 +1376,8 @@ final class ComposePollScreenComponent: Component {
             }
             
             if self.component == nil {
+                self.currentLocale = localeWithStrings(environment.strings)
+                
                 self.isQuiz = component.isQuiz ?? false
                 if !self.isQuiz {
                     self.isMultiAnswer = true
@@ -1416,6 +1544,8 @@ final class ComposePollScreenComponent: Component {
                 self.cachedShuffleIcon = renderSettingsIcon(name: "Item List/Icons/Shuffle", backgroundColors: [UIColor(rgb: 0xAF52DE)])
                 self.cachedQuizIcon = renderSettingsIcon(name: "Item List/Icons/Checkbox", backgroundColors: [UIColor(rgb: 0x34C759)])
                 self.cachedDurationIcon = renderSettingsIcon(name: "Item List/Icons/Timer", backgroundColors: [UIColor(rgb: 0xFF453A)])
+                self.cachedSubscribersIcon = renderSettingsIcon(name: "Item List/Icons/Profile", backgroundColors: [UIColor(rgb: 0x0A84FF)])
+                self.cachedCountryIcon = renderSettingsIcon(name: "Item List/Icons/Flag", backgroundColors: [UIColor(rgb: 0xFF9F0A)])
                 
                 self.cachedEmptyIcon = generateSingleColorImage(size: CGSize(width: 30.0, height: 30.0), color: .clear)
                 
@@ -1446,7 +1576,6 @@ final class ComposePollScreenComponent: Component {
             pollTextSectionItems.append(AnyComponentWithIdentity(id: 0, component: AnyComponent(ListComposePollOptionComponent(
                 externalState: self.pollTextInputState,
                 context: component.context,
-                style: .glass,
                 theme: theme,
                 strings: environment.strings,
                 resetText: self.resetPollText.flatMap { resetText in
@@ -1482,7 +1611,6 @@ final class ComposePollScreenComponent: Component {
             pollTextSectionItems.append(AnyComponentWithIdentity(id: 1, component: AnyComponent(ListComposePollOptionComponent(
                 externalState: self.pollDescriptionInputState,
                 context: component.context,
-                style: .glass,
                 theme: theme,
                 strings: environment.strings,
                 resetText: nil,
@@ -1598,7 +1726,6 @@ final class ComposePollScreenComponent: Component {
                 pollOptionsSectionItems.append(AnyComponentWithIdentity(id: pollOption.id, component: AnyComponent(ListComposePollOptionComponent(
                     externalState: pollOption.textInputState,
                     context: component.context,
-                    style: .glass,
                     theme: theme,
                     strings: environment.strings,
                     resetText: pollOption.resetText.flatMap { resetText in
@@ -2257,6 +2384,140 @@ final class ComposePollScreenComponent: Component {
                     maximumNumberOfLines: 0
                 ))
             }
+            
+            if isChannel {
+                pollSettingsSectionItems.append(AnyComponentWithIdentity(id: "subscribers", component: AnyComponent(ListActionItemComponent(
+                    theme: theme,
+                    style: .glass,
+                    title: AnyComponent(VStack([
+                        AnyComponentWithIdentity(id: AnyHashable(0), component: AnyComponent(MultilineTextComponent(
+                            text: .plain(NSAttributedString(
+                                string: environment.strings.CreatePoll_RestrictToSubscribers,
+                                font: Font.regular(presentationData.listsFontSize.baseDisplaySize),
+                                textColor: theme.list.itemPrimaryTextColor
+                            )),
+                            maximumNumberOfLines: 2
+                        ))),
+                        AnyComponentWithIdentity(id: AnyHashable(1), component: AnyComponent(MultilineTextComponent(
+                            text: .plain(NSAttributedString(
+                                string: environment.strings.CreatePoll_RestrictToSubscribersInfo,
+                                font: Font.regular(presentationData.listsFontSize.baseDisplaySize * 13.0 / 17.0),
+                                textColor: theme.list.itemSecondaryTextColor
+                            )),
+                            maximumNumberOfLines: 3,
+                            lineSpacing: 0.1
+                        )))
+                    ], alignment: .left, spacing: 4.0)),
+                    verticalAlignment: .middle,
+                    contentInsets: UIEdgeInsets(top: 10.0, left: 0.0, bottom: 10.0, right: 0.0),
+                    leftIcon: .custom(AnyComponentWithIdentity(id: 0, component: AnyComponent(
+                        Image(image: self.cachedSubscribersIcon, size: CGSize(width: 30.0, height: 30.0))
+                    )), false),
+                    accessory: .toggle(ListActionItemComponent.Toggle(style: .regular, isOn: self.restrictToSubscribers, action: { [weak self] _ in
+                        guard let self else {
+                            return
+                        }
+                        self.restrictToSubscribers = !self.restrictToSubscribers
+                        self.state?.updated(transition: .spring(duration: 0.4))
+                    })),
+                    action: nil
+                ))))
+                
+                pollSettingsSectionItems.append(AnyComponentWithIdentity(id: "limitCountry", component: AnyComponent(ListActionItemComponent(
+                    theme: theme,
+                    style: .glass,
+                    title: AnyComponent(VStack([
+                        AnyComponentWithIdentity(id: AnyHashable(0), component: AnyComponent(MultilineTextComponent(
+                            text: .plain(NSAttributedString(
+                                string: environment.strings.CreatePoll_LimitCountry,
+                                font: Font.regular(presentationData.listsFontSize.baseDisplaySize),
+                                textColor: theme.list.itemPrimaryTextColor
+                            )),
+                            maximumNumberOfLines: 2
+                        ))),
+                        AnyComponentWithIdentity(id: AnyHashable(1), component: AnyComponent(MultilineTextComponent(
+                            text: .plain(NSAttributedString(
+                                string: environment.strings.CreatePoll_LimitCountryInfo,
+                                font: Font.regular(presentationData.listsFontSize.baseDisplaySize * 13.0 / 17.0),
+                                textColor: theme.list.itemSecondaryTextColor
+                            )),
+                            maximumNumberOfLines: 3,
+                            lineSpacing: 0.1
+                        )))
+                    ], alignment: .left, spacing: 4.0)),
+                    verticalAlignment: .middle,
+                    contentInsets: UIEdgeInsets(top: 10.0, left: 0.0, bottom: 10.0, right: 0.0),
+                    leftIcon: .custom(AnyComponentWithIdentity(id: 0, component: AnyComponent(
+                        Image(image: self.cachedCountryIcon, size: CGSize(width: 30.0, height: 30.0))
+                    )), false),
+                    accessory: .toggle(ListActionItemComponent.Toggle(style: .regular, isOn: self.limitByCountry, action: { [weak self] _ in
+                        guard let self else {
+                            return
+                        }
+                        self.limitByCountry = !self.limitByCountry
+                        self.state?.updated(transition: .spring(duration: 0.4))
+                        
+                        if self.limitByCountry {
+                            if !self.didSetupCountries {
+                                let countriesConfiguration = component.context.currentCountriesConfiguration.with { $0 }
+                                AuthorizationSequenceCountrySelectionController.setupCountryCodes(countries: countriesConfiguration.countries, codesByPrefix: countriesConfiguration.countriesByPrefix)
+                            }
+                            self.scrollView.setContentOffset(CGPoint(x: 0.0, y: self.scrollView.contentSize.height - self.scrollView.bounds.size.height), animated: true)
+                        }
+                    })),
+                    action: nil
+                ))))
+                
+                if self.limitByCountry {
+                    var value: String
+                    if self.limitToCountries.count > 1 {
+                        value = environment.strings.CreatePoll_AllowedCountries_Countries(Int32(self.limitToCountries.count))
+                    } else if self.limitToCountries.count == 1, let countryCode = self.limitToCountries.first {
+                        if countryCode == "FT" {
+                            value = "Fragment"
+                        } else {
+                            value = self.currentLocale?.localizedString(forRegionCode: countryCode) ?? countryCode
+                        }
+                    } else {
+                        value = ""
+                    }
+                    
+                    pollSettingsSectionItems.append(AnyComponentWithIdentity(id: "countries", component: AnyComponent(ListActionItemComponent(
+                        theme: theme,
+                        style: .glass,
+                        title: AnyComponent(VStack([
+                            AnyComponentWithIdentity(id: AnyHashable(0), component: AnyComponent(MultilineTextComponent(
+                                text: .plain(NSAttributedString(
+                                    string: environment.strings.CreatePoll_AllowedCountries,
+                                    font: Font.regular(presentationData.listsFontSize.baseDisplaySize),
+                                    textColor: theme.list.itemPrimaryTextColor
+                                )),
+                                maximumNumberOfLines: 2
+                            )))
+                        ], alignment: .left, spacing: 4.0)),
+                        verticalAlignment: .middle,
+                        leftIcon: .custom(AnyComponentWithIdentity(id: 0, component: AnyComponent(
+                            Image(image: self.cachedEmptyIcon, size: CGSize(width: 30.0, height: 30.0))
+                        )), false),
+                        icon: ListActionItemComponent.Icon(component: AnyComponentWithIdentity(id: 0, component: AnyComponent(MultilineTextComponent(
+                            text: .plain(NSAttributedString(
+                                string: value,
+                                font: Font.regular(presentationData.listsFontSize.baseDisplaySize),
+                                textColor: environment.theme.list.itemSecondaryTextColor
+                            )),
+                            maximumNumberOfLines: 1
+                        )))),
+                        accessory: .arrow,
+                        action: { [weak self] view in
+                            guard let self else {
+                                return
+                            }
+                            self.deactivateInput()
+                            self.openCountriesSelection()
+                        }
+                    ))))
+                }
+            }
                     
             let pollSettingsSectionSize = self.pollSettingsSection.update(
                 transition: transition,
@@ -2317,7 +2578,6 @@ final class ComposePollScreenComponent: Component {
                         AnyComponentWithIdentity(id: 0, component: AnyComponent(ListComposePollOptionComponent(
                             externalState: self.quizAnswerTextInputState,
                             context: component.context,
-                            style: .glass,
                             theme: theme,
                             strings: environment.strings,
                             resetText: self.resetQuizAnswerText.flatMap { resetText in
@@ -2912,7 +3172,7 @@ public class ComposePollScreen: ViewControllerComponentContainer, AttachmentCont
             text = presentationData.strings.CreatePoll_QuestionNeeded
         case .optionsNeeded:
             title = nil
-            text = presentationData.strings.CreatePoll_OptionsNeeded
+            text = componentView.isQuiz ? presentationData.strings.CreatePoll_OptionsNeeded : presentationData.strings.CreatePoll_OptionsNeededOne
         case .quizCorrectOptionNeeded:
             title = nil
             if componentView.effectiveIsMultiAnswer {
@@ -2920,6 +3180,9 @@ public class ComposePollScreen: ViewControllerComponentContainer, AttachmentCont
             } else {
                 text = presentationData.strings.CreatePoll_QuizCorrectOptionNeeded
             }
+        case .countriesNeeded:
+            title = nil
+            text = presentationData.strings.CreatePoll_QuizCountryNeeded
         }
         
         let controller = UndoOverlayController(

@@ -20,6 +20,111 @@ import SafariServices
 import ShareController
 
 extension ChatControllerImpl {
+    private func presentOpenLinkConfirmation(_ url: String, target: ChatLinkReverseOpenTarget) {
+        var exceptionAdded = false
+        let disposable = self.context.sharedContext.openUserGeneratedUrl(
+            context: self.context,
+            peerId: self.contentData?.state.peerView?.peerId,
+            url: url,
+            webpage: nil,
+            concealed: false,
+            forceConcealed: true,
+            skipUrlAuth: false,
+            skipConcealedAlert: false,
+            forceDark: false,
+            present: { [weak self] c in
+                self?.present(c, in: .window(.root))
+            },
+            openResolved: { [weak self] result in
+                guard let self else {
+                    return
+                }
+                switch target {
+                case .inApp:
+                    if case let .externalUrl(resolvedUrl) = result, let navigationController = self.effectiveNavigationController {
+                        self.chatDisplayNode.dismissInput()
+                        let controller = BrowserScreen(context: self.context, subject: .webPage(url: resolvedUrl))
+                        navigationController.pushViewController(controller)
+
+                        if exceptionAdded {
+                            Queue.mainQueue().after(0.5) {
+                                let tooltipScreen = UndoOverlayController(
+                                    presentationData: self.presentationData,
+                                    content: .actionSucceeded(title: "Exception Added", text: "This site will always open in-app.", cancel: "", destructive: false),
+                                    elevatedLayout: false,
+                                    animateInAsReplacement: false,
+                                    action: { _ in
+                                        return false
+                                    }
+                                )
+                                controller.present(tooltipScreen, in: .current)
+                            }
+                        }
+                    } else {
+                        self.openResolved(result: result, sourceMessageId: nil, forceExternal: false, concealed: true)
+                    }
+                case .externalBrowser:
+                    if case .externalUrl = result {
+                        let _ = (self.context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.webBrowserSettings])
+                        |> take(1)
+                        |> deliverOnMainQueue).startStandalone(next: { [weak self] sharedData in
+                            guard let self else {
+                                return
+                            }
+                            self.chatDisplayNode.dismissInput()
+
+                            let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.webBrowserSettings]?.get(WebBrowserSettings.self) ?? WebBrowserSettings.defaultSettings
+                            var defaultWebBrowser = settings.defaultWebBrowser
+                            if defaultWebBrowser == nil || defaultWebBrowser == "inAppSafari" {
+                                defaultWebBrowser = "safari"
+                            }
+
+                            let targetUrl = chatLinkContextMenuCanonicalUrl(from: url)?.absoluteString ?? url
+                            // MARK: exteraGram
+                            if settings.defaultWebBrowser == "inApp", let parsedUrl = URL(string: targetUrl) {
+                                let controller = SFSafariViewController(url: parsedUrl)
+                                controller.preferredBarTintColor = self.presentationData.theme.rootController.navigationBar.opaqueBackgroundColor
+                                controller.preferredControlTintColor = self.presentationData.theme.rootController.navigationBar.accentTextColor
+                                self.view.window?.rootViewController?.present(controller, animated: true)
+                            } else {
+                                let openInOptions = availableOpenInOptions(context: self.context, item: .url(url: targetUrl))
+                                if let option = openInOptions.first(where: { $0.identifier == defaultWebBrowser }) {
+                                    if case let .openUrl(openInUrl) = option.action() {
+                                        self.context.sharedContext.applicationBindings.openUrl(openInUrl)
+                                    } else {
+                                        self.context.sharedContext.applicationBindings.openUrl(targetUrl)
+                                    }
+                                } else {
+                                    self.context.sharedContext.applicationBindings.openUrl(targetUrl)
+                                }
+                            }
+                            //
+                        })
+                    } else {
+                        self.openResolved(result: result, sourceMessageId: nil, forceExternal: true, concealed: false)
+                    }
+                }
+            },
+            progress: nil,
+            alertDisplayUpdated: nil,
+            concealedAlertOption: OpenUserGeneratedUrlConcealedAlertOption(title: target.checkboxTitle, action: { [weak self] in
+                guard let self else {
+                    return
+                }
+                let _ = toggleWebBrowserSettingsException(
+                    postbox: self.context.account.postbox,
+                    network: self.context.account.network,
+                    openExternalBrowser: target.openExternalBrowser,
+                    delete: false,
+                    url: url
+                ).startStandalone()
+
+                exceptionAdded = true
+            })
+        )
+        self.navigationActionDisposable.set(disposable)
+    }
+
     func openLinkContextMenu(url: String, params: ChatControllerInteraction.LongTapParams) -> Void {
         guard let message = params.message, let contentNode = params.contentNode else {
             var (cleanUrl, _) = parseUrl(url: url, wasConcealed: false)

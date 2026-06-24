@@ -4,7 +4,6 @@ import Display
 import AsyncDisplayKit
 import ComponentFlow
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import AccountContext
 import TelegramPresentationData
@@ -19,7 +18,7 @@ public class StatsMessageItem: ListViewItem, ItemListItem {
     let context: AccountContext
     let presentationData: ItemListPresentationData
     let systemStyle: ItemListSystemStyle
-    let peer: Peer
+    let peer: EnginePeer
     let item: StatsPostItem
     let views: Int32
     let reactions: Int32
@@ -31,7 +30,7 @@ public class StatsMessageItem: ListViewItem, ItemListItem {
     let openStory: (UIView) -> Void
     let contextAction: ((ASDisplayNode, ContextGesture?) -> Void)?
     
-    init(context: AccountContext, presentationData: ItemListPresentationData, systemStyle: ItemListSystemStyle = .glass, peer: Peer, item: StatsPostItem, views: Int32, reactions: Int32, forwards: Int32, isPeer: Bool = false, sectionId: ItemListSectionId, style: ItemListStyle, action: (() -> Void)?, openStory: @escaping (UIView) -> Void, contextAction: ((ASDisplayNode, ContextGesture?) -> Void)?) {
+    init(context: AccountContext, presentationData: ItemListPresentationData, systemStyle: ItemListSystemStyle = .glass, peer: EnginePeer, item: StatsPostItem, views: Int32, reactions: Int32, forwards: Int32, isPeer: Bool = false, sectionId: ItemListSectionId, style: ItemListStyle, action: (() -> Void)?, openStory: @escaping (UIView) -> Void, contextAction: ((ASDisplayNode, ContextGesture?) -> Void)?) {
         self.context = context
         self.presentationData = presentationData
         self.systemStyle = systemStyle
@@ -124,7 +123,7 @@ final class StatsMessageItemNode: ListViewItemNode, ItemListItemNode {
     private let activateArea: AccessibilityAreaNode
     
     private var item: StatsMessageItem?
-    private var contentImageMedia: Media?
+    private var contentImageMedia: EngineRawMedia?
     
     override public var canBeSelected: Bool {
         return true
@@ -307,7 +306,7 @@ final class StatsMessageItemNode: ListViewItemNode, ItemListItemNode {
             let presentationData = item.context.sharedContext.currentPresentationData.with { $0 }
             
             var text: String
-            var contentImageMedia: Media?
+            var contentImageMedia: EngineRawMedia?
             let timestamp: Int32
             
             switch item.item {
@@ -351,7 +350,7 @@ final class StatsMessageItemNode: ListViewItemNode, ItemListItemNode {
             }
             
             if item.isPeer {
-                text = EnginePeer(item.peer).displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                text = item.peer.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
             } else {
                 text = foldLineBreaks(text)
             }
@@ -476,7 +475,7 @@ final class StatsMessageItemNode: ListViewItemNode, ItemListItemNode {
                             strongSelf.offsetContainerNode.addSubnode(avatarNode)
                             strongSelf.avatarNode = avatarNode
                         }
-                        avatarNode.setPeer(context: item.context, theme: item.presentationData.theme, peer: EnginePeer(item.peer))
+                        avatarNode.setPeer(context: item.context, theme: item.presentationData.theme, peer: item.peer)
                         
                         if case .story = item.item {
                             contentImageInset += 3.0

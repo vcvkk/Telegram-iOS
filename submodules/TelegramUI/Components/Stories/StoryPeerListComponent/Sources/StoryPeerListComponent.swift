@@ -6,7 +6,6 @@ import AppBundle
 import BundleIconComponent
 import AccountContext
 import TelegramCore
-import Postbox
 import SwiftSignalKit
 import TelegramPresentationData
 import StoryContainerScreen
@@ -377,6 +376,7 @@ public final class StoryPeerListComponent: Component {
             self.scrollView.alwaysBounceVertical = false
             self.scrollView.alwaysBounceHorizontal = true
             self.scrollView.clipsToBounds = false
+            self.scrollView.scrollsToTop = false
             
             self.scrollContainerView = UIView()
             self.scrollContainerView.clipsToBounds = true
@@ -443,7 +443,7 @@ public final class StoryPeerListComponent: Component {
             }
         }
         
-        public func setPreviewedItem(signal: Signal<StoryId?, NoError>) {
+        public func setPreviewedItem(signal: Signal<EngineStoryId?, NoError>) {
             self.previewedItemDisposable?.dispose()
             self.previewedItemDisposable = (signal |> map(\.?.peerId) |> distinctUntilChanged |> deliverOnMainQueue).start(next: { [weak self] itemId in
                 guard let self, let component = self.component else {

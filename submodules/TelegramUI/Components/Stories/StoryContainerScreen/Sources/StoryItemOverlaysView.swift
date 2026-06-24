@@ -2,7 +2,6 @@ import Foundation
 import UIKit
 import AccountContext
 import TelegramCore
-import Postbox
 import SwiftSignalKit
 import ComponentFlow
 import TinyThumbnail
@@ -307,7 +306,7 @@ final class StoryItemOverlaysView: UIView {
             flags: MediaArea.ReactionFlags,
             counter: Int,
             availableReactions: StoryAvailableReactions?,
-            entityFiles: [MediaId: TelegramMediaFile],
+            entityFiles: [EngineMedia.Id: TelegramMediaFile],
             synchronous: Bool,
             size: CGSize,
             isActive: Bool
@@ -347,7 +346,7 @@ final class StoryItemOverlaysView: UIView {
                 case let .custom(fileId):
                     if let resolvedFile = self.resolvedFile, resolvedFile.fileId.id == fileId {
                         file = resolvedFile
-                    } else if let value = entityFiles[MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)] {
+                    } else if let value = entityFiles[EngineMedia.Id(namespace: Namespaces.Media.CloudFile, id: fileId)] {
                         file = value
                     } else {
                         if self.requestStickerDisposable == nil {
@@ -425,7 +424,7 @@ final class StoryItemOverlaysView: UIView {
                         self.directStickerView = directStickerView
                         
                         self.customEmojiLoadDisposable?.dispose()
-                        self.customEmojiLoadDisposable = fetchedMediaResource(mediaBox: context.account.postbox.mediaBox, userLocation: .other, userContentType: .sticker, reference: .standalone(resource: file.resource)).start()
+                        self.customEmojiLoadDisposable = context.engine.resources.fetch(reference: .standalone(resource: file.resource), userLocation: .other, userContentType: .sticker).start()
                     }
                     var color: UIColor?
                     if file.isCustomTemplateEmoji {
@@ -474,7 +473,7 @@ final class StoryItemOverlaysView: UIView {
                         customEmojiView.updateTextColor(flags.contains(.isDark) ? .white : .black)
                         
                         self.customEmojiLoadDisposable?.dispose()
-                        self.customEmojiLoadDisposable = fetchedMediaResource(mediaBox: context.account.postbox.mediaBox, userLocation: .other, userContentType: .sticker, reference: .standalone(resource: file.resource)).start()
+                        self.customEmojiLoadDisposable = context.engine.resources.fetch(reference: .standalone(resource: file.resource), userLocation: .other, userContentType: .sticker).start()
                         
                         customEmojiView.isUserInteractionEnabled = false
                         self.customEmojiView = customEmojiView
@@ -594,7 +593,7 @@ final class StoryItemOverlaysView: UIView {
                 self.file = file
                 
                 self.customEmojiLoadDisposable?.dispose()
-                self.customEmojiLoadDisposable = fetchedMediaResource(mediaBox: context.account.postbox.mediaBox, userLocation: .other, userContentType: .sticker, reference: .standalone(resource: file.resource)).start()
+                self.customEmojiLoadDisposable = context.engine.resources.fetch(reference: .standalone(resource: file.resource), userLocation: .other, userContentType: .sticker).start()
                 
                 let _ = self.directStickerView.update(
                     transition: .immediate,
@@ -701,7 +700,7 @@ final class StoryItemOverlaysView: UIView {
         peer: EnginePeer,
         story: EngineStoryItem,
         availableReactions: StoryAvailableReactions?,
-        entityFiles: [MediaId: TelegramMediaFile],
+        entityFiles: [EngineMedia.Id: TelegramMediaFile],
         size: CGSize,
         isCaptureProtected: Bool,
         attemptSynchronous: Bool,

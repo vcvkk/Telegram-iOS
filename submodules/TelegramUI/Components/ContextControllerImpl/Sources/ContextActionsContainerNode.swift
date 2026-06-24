@@ -424,6 +424,12 @@ final class InnerTextSelectionTipContainerNode: ASDisplayNode {
             self.text = self.presentationData.strings.Camera_CollageReorderingInfo
             self.targetSelectionIndex = nil
             icon = UIImage(bundleImageName: "Chat/Context Menu/Tip")
+        case .deleteReaction:
+            self.action = nil
+            self.text = self.presentationData.strings.Chat_DeleteReactionInfo
+            self.targetSelectionIndex = nil
+            icon = nil
+            isUserInteractionEnabled = false
         }
         
         self.iconNode = ASImageNode()
@@ -732,6 +738,7 @@ final class ContextActionsContainerNode: ASDisplayNode {
         if #available(iOS 11.0, *) {
             self.scrollNode.view.contentInsetAdjustmentBehavior = .never
         }
+        self.scrollNode.view.scrollsToTop = false
         
         super.init()
         

@@ -3,7 +3,6 @@ import UIKit
 import Display
 import AccountContext
 import TelegramCore
-import Postbox
 import SwiftSignalKit
 import TelegramPresentationData
 import LegacyComponents
@@ -16,11 +15,40 @@ import LocationUI
 import AttachmentFileController
 import ChatEntityKeyboardInputNode
 import ICloudResources
+import ChatTextLinkEditUI
 
 public enum PollAttachmentSubject {
     case description
     case quizAnswer
     case option
+}
+
+func makePollAttachmentLinkWebpage(link: String) -> TelegramMediaWebpage {
+    let mediaId = Int64.random(in: Int64.min ... Int64.max)
+    return TelegramMediaWebpage(
+        webpageId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: mediaId),
+        content: .Loaded(TelegramMediaWebpageLoadedContent(
+            url: link,
+            displayUrl: link,
+            hash: 0,
+            type: nil,
+            websiteName: nil,
+            title: nil,
+            text: nil,
+            embedUrl: nil,
+            embedType: nil,
+            embedSize: nil,
+            duration: nil,
+            author: nil,
+            isMediaLargeByDefault: nil,
+            imageIsVideoCover: false,
+            image: nil,
+            file: nil,
+            story: nil,
+            attributes: [],
+            instantPage: nil
+        ))
+    )
 }
 
 public func presentPollAttachmentScreen(
@@ -39,10 +67,7 @@ public func presentPollAttachmentScreen(
         chatLocation: nil,
         isScheduledMessages: false,
         buttons: availableButtons,
-        initialButton: .gallery,
-        makeEntityInputView: {
-            return nil
-        }
+        initialButton: .gallery
     )
     let inputMediaNodeDataPromise = Promise<ChatEntityKeyboardInputNode.InputData?>(nil)
     if let inputMediaNodeData {
@@ -64,7 +89,7 @@ public func presentPollAttachmentScreen(
             |> map(Optional.init)
         ))
     }
-    
+
     attachmentController.requestController = { [weak attachmentController] type, controllerCompletion in
         let mediaPickerPollSubject: MediaPickerScreenImpl.Subject.AssetsMode.PollMode
         let filePickerPollSubject: AttachmentFileControllerSource.PollMode
@@ -87,7 +112,7 @@ public func presentPollAttachmentScreen(
             locationPickerPollSubject = .option
             stickerPickerPollSubject = .option
         }
-        
+
         switch type {
         case .gallery:
             let controller = MediaPickerScreenImpl(
@@ -122,7 +147,7 @@ public func presentPollAttachmentScreen(
                 bannedSendMedia: nil,
                 presentGallery: { [weak attachmentController] in
                     attachmentController?.dismiss(animated: true)
-                    
+
                     let controller = MediaPickerScreenImpl(
                         context: context,
                         updatedPresentationData: updatedPresentationData,
@@ -150,7 +175,7 @@ public func presentPollAttachmentScreen(
                 },
                 presentFiles: { [weak attachmentController] in
                     attachmentController?.dismiss(animated: true)
-                    
+
                     let presentationData = updatedPresentationData?.initial ?? context.sharedContext.currentPresentationData.with { $0 }
                     let controller = legacyICloudFilePicker(theme: presentationData.theme, documentTypes: ["public.item"], completion: { urls in
                         guard let url = urls.first else {
@@ -172,8 +197,8 @@ public func presentPollAttachmentScreen(
                             if let audioMetadata = item.audioMetadata {
                                 attributes.append(.Audio(isVoice: false, duration: audioMetadata.duration, title: audioMetadata.title, performer: audioMetadata.performer, waveform: nil))
                             }
-                            
-                            let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: fileId), partialReference: nil, resource: ICloudFileResource(urlData: item.urlData, thumbnail: false), previewRepresentations: previewRepresentations, videoThumbnails: [], immediateThumbnailData: nil, mimeType: mimeType, size: Int64(item.fileSize), attributes: attributes, alternativeRepresentations: [])
+
+                            let file = TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: fileId), partialReference: nil, resource: ICloudFileResource(urlData: item.urlData, thumbnail: false), previewRepresentations: previewRepresentations, videoThumbnails: [], immediateThumbnailData: nil, mimeType: mimeType, size: Int64(item.fileSize), attributes: attributes, alternativeRepresentations: [])
                             completion(.standalone(media: file))
                         })
                     })
@@ -236,6 +261,29 @@ public func presentPollAttachmentScreen(
                 controllerCompletion(controller, controller.mediaPickerContext)
             })
             return true
+        case .link:
+            attachmentController?.dismiss(animated: true)
+
+            let presentationData = updatedPresentationData?.initial ?? context.sharedContext.currentPresentationData.with { $0 }
+            let controller = chatTextLinkEditController(
+                context: context,
+                updatedPresentationData: updatedPresentationData,
+                text: presentationData.strings.CreatePoll_Link_Description,
+                link: nil,
+                preview: true,
+                apply: { link, webpage in
+                    guard let link else {
+                        return
+                    }
+                    if let webpage {
+                        completion(.standalone(media: webpage))
+                        return
+                    }
+                    completion(.standalone(media: makePollAttachmentLinkWebpage(link: link)))
+                }
+            )
+            present(controller, false)
+            return false
         default:
             return false
         }

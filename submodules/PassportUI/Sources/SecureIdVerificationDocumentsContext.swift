@@ -1,15 +1,14 @@
 import Foundation
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 
 private final class DocumentContext {
     private let disposable: Disposable
-
+    
     init(disposable: Disposable) {
         self.disposable = disposable
     }
-
+    
     deinit {
         self.disposable.dispose()
     }
@@ -21,16 +20,16 @@ final class SecureIdVerificationDocumentsContext {
     private let update: (Int64, SecureIdVerificationLocalDocumentState) -> Void
     private var contexts: [Int64: DocumentContext] = [:]
     private(set) var uploadedFiles: [Data: Data] = [:]
-
+    
     init(engine: TelegramEngine, context: SecureIdAccessContext, update: @escaping (Int64, SecureIdVerificationLocalDocumentState) -> Void) {
         self.engine = engine
         self.context = context
         self.update = update
     }
-
+    
     func stateUpdated(_ documents: [SecureIdVerificationDocument]) {
         var validIds = Set<Int64>()
-
+        
         for document in documents {
             switch document {
                 case let .local(info):
@@ -60,7 +59,7 @@ final class SecureIdVerificationDocumentsContext {
                     break
             }
         }
-
+        
         var removeIds: [Int64] = []
         for (id, _) in self.contexts {
             if !validIds.contains(id) {

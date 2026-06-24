@@ -427,7 +427,7 @@ public func channelRecentActionsFilterController(context: AccountContext, update
     
     adminsPromise.set(.single(nil))
     
-    let (membersDisposable, _) = context.peerChannelMemberCategoriesContextsManager.admins(engine: context.engine, postbox: context.account.postbox, network: context.account.network, accountPeerId: context.account.peerId, peerId: peer.id) { membersState in
+    let (membersDisposable, _) = context.peerChannelMemberCategoriesContextsManager.admins(engine: context.engine, accountPeerId: context.account.peerId, peerId: peer.id) { membersState in
         if case .loading = membersState.loadingState, membersState.list.isEmpty {
             adminsPromise.set(.single(nil))
         } else {
@@ -442,7 +442,7 @@ public func channelRecentActionsFilterController(context: AccountContext, update
         antiSpamBotPeerPromise.set(context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: antiSpamBotId))
         |> map { peer in
             if let peer = peer, case let .user(user) = peer {
-                return RenderedChannelParticipant(participant: .member(id: user.id, invitedAt: 0, adminInfo: nil, banInfo: nil, rank: nil, subscriptionUntilDate: nil), peer: EnginePeer(user))
+                return RenderedChannelParticipant(participant: .member(id: user.id, invitedAt: 0, adminInfo: nil, banInfo: nil, rank: nil, subscriptionUntilDate: nil), peer: peer)
             } else {
                 return nil
             }
@@ -455,13 +455,13 @@ public func channelRecentActionsFilterController(context: AccountContext, update
     let signal = combineLatest(presentationData, statePromise.get(), adminsPromise.get(), antiSpamBotPeerPromise.get())
     |> deliverOnMainQueue
     |> map { presentationData, state, admins, antiSpamBot -> (ItemListControllerState, (ItemListNodeState, Any)) in
-        let leftNavigationButton = ItemListNavigationButton(content: .text(presentationData.strings.Common_Cancel), style: .regular, enabled: true, action: {
+        let leftNavigationButton = ItemListNavigationButton(content: .icon(.close), style: .regular, enabled: true, action: {
             dismissImpl?()
         })
         
         let doneEnabled = !state.events.isEmpty
         
-        let rightNavigationButton = ItemListNavigationButton(content: .text(presentationData.strings.Common_Done), style: .bold, enabled: doneEnabled, action: {
+        let rightNavigationButton = ItemListNavigationButton(content: .icon(.done), style: .bold, enabled: doneEnabled, action: {
             var resultState: ChatRecentActionsFilterControllerState?
             updateState { current in
                 resultState = current
@@ -501,4 +501,3 @@ public func channelRecentActionsFilterController(context: AccountContext, update
     }
     return controller
 }
-

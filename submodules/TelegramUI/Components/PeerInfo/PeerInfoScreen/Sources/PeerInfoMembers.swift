@@ -14,8 +14,8 @@ enum PeerInfoMemberRole {
 enum PeerInfoMember: Equatable {
     case channelMember(participant: RenderedChannelParticipant, storyStats: PeerStoryStats?)
     case legacyGroupMember(peer: RenderedPeer, role: PeerInfoMemberRole, invitedBy: PeerId?, presence: TelegramUserPresence?, storyStats: PeerStoryStats?, rank: String?)
-    case account(peer: RenderedPeer)
-    
+    case account(peer: EngineRenderedPeer)
+
     var id: PeerId {
         switch self {
         case let .channelMember(participant, _):
@@ -26,15 +26,15 @@ enum PeerInfoMember: Equatable {
             return peer.peerId
         }
     }
-    
-    var peer: Peer {
+
+    var peer: EnginePeer {
         switch self {
         case let .channelMember(participant, _):
-            return participant.peer._asPeer()
+            return participant.peer
         case let .legacyGroupMember(peer, _, _, _, _, _):
-            return peer.peers[peer.peerId]!
+            return EnginePeer(peer.peers[peer.peerId]!)
         case let .account(peer):
-            return peer.peers[peer.peerId]!
+            return peer.peer!
         }
     }
     
@@ -162,7 +162,7 @@ private final class PeerInfoMembersContextImpl {
         self.pushState()
         
         if peerId.namespace == Namespaces.Peer.CloudChannel {
-            let (disposable, control) = context.peerChannelMemberCategoriesContextsManager.recent(engine: context.engine, postbox: context.account.postbox, network: context.account.network, accountPeerId: context.account.peerId, peerId: peerId, requestUpdate: true, updated: { [weak self] state in
+            let (disposable, control) = context.peerChannelMemberCategoriesContextsManager.recent(engine: context.engine, accountPeerId: context.account.peerId, peerId: peerId, requestUpdate: true, updated: { [weak self] state in
                 queue.async {
                     guard let strongSelf = self else {
                         return

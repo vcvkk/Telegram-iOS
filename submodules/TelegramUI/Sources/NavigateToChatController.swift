@@ -3,7 +3,6 @@ import UIKit
 import Display
 import SwiftSignalKit
 import TelegramCore
-import Postbox
 import AccountContext
 import GalleryUI
 import InstantPageUI
@@ -51,13 +50,10 @@ public func navigateToChatControllerImpl(_ params: NavigateToChatControllerParam
         if channel.flags.contains(.displayForumAsTabs) {
             viewForumAsMessages = .single(true)
         } else {
-            viewForumAsMessages = params.context.account.postbox.combinedView(keys: [.cachedPeerData(peerId: peer.id)])
+            viewForumAsMessages = params.context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.CachedData(id: peer.id))
             |> take(1)
-            |> map { combinedView in
-                guard let cachedDataView = combinedView.views[.cachedPeerData(peerId: peer.id)] as? CachedPeerDataView else {
-                    return false
-                }
-                if let cachedData = cachedDataView.cachedPeerData as? CachedChannelData, case let .known(viewForumAsMessages) = cachedData.viewForumAsMessages, viewForumAsMessages {
+            |> map { cachedPeerData in
+                if let cachedData = cachedPeerData as? CachedChannelData, case let .known(viewForumAsMessages) = cachedData.viewForumAsMessages, viewForumAsMessages {
                     return true
                 } else {
                     return false
@@ -140,7 +136,7 @@ public func navigateToChatControllerImpl(_ params: NavigateToChatControllerParam
         }
         
         if !params.forceOpenChat, !viewForumAsMessages, params.subject == nil, case let .peer(peer) = params.chatLocation, peer.id == params.context.account.peerId {
-            if let controller = params.context.sharedContext.makePeerInfoController(context: params.context, updatedPresentationData: nil, peer: peer._asPeer(), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+            if let controller = params.context.sharedContext.makePeerInfoController(context: params.context, updatedPresentationData: nil, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
                 params.navigationController.pushViewController(controller, animated: params.animated, completion: {
                 })
                 return
@@ -182,6 +178,7 @@ public func navigateToChatControllerImpl(_ params: NavigateToChatControllerParam
                             controller.navigateToMessage(messageLocation: .id(messageId, NavigateToMessageParams(timestamp: timecode, quote: (highlight?.quote).flatMap { quote in NavigateToMessageParams.Quote(string: quote.string, offset: quote.offset) }, subject: highlight?.subject, setupReply: setupReply)), animated: isFirst || params.forceAnimatedScroll, completion: { [weak navigationController, weak controller] in
                                 if let navigationController = navigationController, let controller = controller {
                                     let _ = navigationController.popToViewController(controller, animated: animated)
+                                    params.completion(controller)
                                 }
                             }, customPresentProgress: { [weak navigationController] c, a in
                                 (navigationController?.viewControllers.last as? ViewController)?.present(c, in: .window(.root), with: a)
@@ -252,20 +249,18 @@ public func navigateToChatControllerImpl(_ params: NavigateToChatControllerParam
                         controller.presentBotApp(botApp: botAppStart.botApp, botPeer: peer, payload: botAppStart.payload, mode: botAppStart.mode)
                     }
                 }
+                
+                if controller.chatLocation.peerId == params.chatLocation.asChatLocation.peerId && controller.chatLocation.threadId == params.chatLocation.asChatLocation.threadId && (controller.subject != .scheduledMessages || controller.subject == params.subject) {
+                    if let updateTextInputState = params.updateTextInputState {
+                        controller.updateTextInputState(updateTextInputState)
+                    }
+                }
             } else {
-                controller = ChatControllerImpl(context: params.context, chatLocation: params.chatLocation.asChatLocation, chatLocationContextHolder: params.chatLocationContextHolder, subject: params.subject, botStart: params.botStart, attachBotStart: params.attachBotStart, botAppStart: params.botAppStart, peekData: params.peekData, peerNearbyData: params.peerNearbyData, chatListFilter: params.chatListFilter, chatNavigationStack: params.chatNavigationStack, customChatNavigationStack: params.customChatNavigationStack)
+                controller = ChatControllerImpl(context: params.context, chatLocation: params.chatLocation.asChatLocation, chatLocationContextHolder: params.chatLocationContextHolder, subject: params.subject, botStart: params.botStart, attachBotStart: params.attachBotStart, botAppStart: params.botAppStart, peekData: params.peekData, chatListFilter: params.chatListFilter, chatNavigationStack: params.chatNavigationStack, customChatNavigationStack: params.customChatNavigationStack, initialTextInputState: params.updateTextInputState)
                 
                 if let botAppStart = params.botAppStart, case let .peer(peer) = params.chatLocation {
                     Queue.mainQueue().after(0.1) {
                         controller.presentBotApp(botApp: botAppStart.botApp, botPeer: peer, payload: botAppStart.payload, mode: botAppStart.mode)
-                    }
-                }
-            }
-            
-            if controller.chatLocation.peerId == params.chatLocation.asChatLocation.peerId && controller.chatLocation.threadId == params.chatLocation.asChatLocation.threadId && (controller.subject != .scheduledMessages || controller.subject == params.subject) {
-                if let updateTextInputState = params.updateTextInputState {
-                    Queue.mainQueue().after(0.1) {
-                        controller.updateTextInputState(updateTextInputState)
                     }
                 }
             }
@@ -416,7 +411,7 @@ public func isOverlayControllerForChatNotificationOverlayPresentation(_ controll
 }
 
 public func navigateToForumThreadImpl(context: AccountContext, peerId: EnginePeer.Id, threadId: Int64, messageId: EngineMessage.Id?, navigationController: NavigationController, activateInput: ChatControllerActivateInput?, scrollToEndIfExists: Bool, keepStack: NavigateToChatKeepStack, animated: Bool) -> Signal<Never, NoError> {
-    return fetchAndPreloadReplyThreadInfo(context: context, subject: .groupMessage(MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: Int32(clamping: threadId))), atMessageId: messageId, preload: false)
+    return fetchAndPreloadReplyThreadInfo(context: context, subject: .groupMessage(EngineMessage.Id(peerId: peerId, namespace: Namespaces.Message.Cloud, id: Int32(clamping: threadId))), atMessageId: messageId, preload: false)
     |> deliverOnMainQueue
     |> beforeNext { [weak context, weak navigationController] result in
         guard let context = context, let navigationController = navigationController else {
@@ -448,7 +443,7 @@ public func navigateToForumThreadImpl(context: AccountContext, peerId: EnginePee
     }
 }
 
-public func chatControllerForForumThreadImpl(context: AccountContext, peerId: EnginePeer.Id, threadId: Int64) -> Signal<ChatController, NoError> {
+public func chatControllerForForumThreadImpl(context: AccountContext, peerId: EnginePeer.Id, threadId: Int64, initialTextInputState: ChatTextInputState? = nil) -> Signal<ChatController, NoError> {
     return context.engine.data.get(
         TelegramEngine.EngineData.Item.Peer.Peer(id: peerId)
     )
@@ -476,10 +471,11 @@ public func chatControllerForForumThreadImpl(context: AccountContext, peerId: En
                     initialAnchor: .automatic,
                     isNotAvailable: false
                 )),
-                chatLocationContextHolder: Atomic(value: nil)
+                chatLocationContextHolder: Atomic(value: nil),
+                initialTextInputState: initialTextInputState
             ))
         } else {
-            return fetchAndPreloadReplyThreadInfo(context: context, subject: .groupMessage(MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: Int32(clamping: threadId))), atMessageId: nil, preload: false)
+            return fetchAndPreloadReplyThreadInfo(context: context, subject: .groupMessage(EngineMessage.Id(peerId: peerId, namespace: Namespaces.Message.Cloud, id: Int32(clamping: threadId))), atMessageId: nil, preload: false)
             |> deliverOnMainQueue
             |> `catch` { _ -> Signal<ReplyThreadInfo, NoError> in
                 return .complete()
@@ -488,7 +484,8 @@ public func chatControllerForForumThreadImpl(context: AccountContext, peerId: En
                 return ChatControllerImpl(
                     context: context,
                     chatLocation: .replyThread(message: result.message),
-                    chatLocationContextHolder: result.contextHolder
+                    chatLocationContextHolder: result.contextHolder,
+                    initialTextInputState: initialTextInputState
                 )
             }
         }

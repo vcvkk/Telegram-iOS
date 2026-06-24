@@ -179,7 +179,7 @@ private final class ThemeSettingsAppIconNode : ASDisplayNode {
         self.iconNode.frame = CGRect(origin: CGPoint(x: floorToScreenPixels((bounds.width - iconSize.width) / 2.0), y: 13.0), size: iconSize)
         self.overlayNode.frame = self.iconNode.frame
         
-        let textSize = self.textNode.updateLayout(bounds.size)
+        let textSize = self.textNode.updateLayout(CGSize(width: bounds.size.width + 8.0, height: bounds.size.height))
         let textFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((bounds.width - textSize.width) / 2.0), y: 81.0), size: textSize)
         self.textNode.frame = textFrame
         
@@ -376,53 +376,53 @@ class ThemeSettingsAppIconItemNode: ListViewItemNode, ItemListItemNode {
                             var name = "Icon"
                             var bordered = true
                             switch icon.name {
-                                case "EGDefault":
+                                case "SGDefault":
                                     name = item.strings.Appearance_AppIconDefault
                                     bordered = false
-                                case "EGBlack":
+                                case "SGBlack":
                                     name = "Black"
                                     bordered = false
-                                case "EGLegacy":
+                                case "SGLegacy":
                                     name = "Legacy"
                                     bordered = false
-                                case "EGInverted":
+                                case "SGInverted":
                                     name = "Inverted"
-                                case "EGWhite":
+                                case "SGWhite":
                                     name = "White"
-                                case "EGNight":
+                                case "SGNight":
                                     name = "Night"
                                     bordered = false
-                                case "EGSky":
+                                case "SGSky":
                                     name = "Sky"
                                     bordered = false
-                                case "EGTitanium":
+                                case "SGTitanium":
                                     name = "Titanium"
                                     bordered = false
-                                case "EGNeon":
+                                case "SGNeon":
                                     name = "Neon"
                                     bordered = false
-                                case "EGNeonBlue":
+                                case "SGNeonBlue":
                                     name = "Neon Blue"
                                     bordered = false
-                                case "EGGlass":
+                                case "SGGlass":
                                     name = "Glass"
                                     bordered = false
-                                case "EGSparkling":
+                                case "SGSparkling":
                                     name = "Sparkling"
                                     bordered = false
-                                case "EGBeta":
+                                case "SGBeta":
                                     name = "β Beta"
                                     bordered = false
-                                case "EGPro":
+                                case "SGPro":
                                     name = "Pro"
                                     bordered = false
-                                case "EGGold":
+                                case "SGGold":
                                     name = "Gold"
                                     bordered = false
-                                case "EGDucky":
+                                case "SGDucky":
                                     name = "Ducky"
                                     bordered = false
-                                case "EGDay":
+                                case "SGDay":
                                     name = "Day"
                                     bordered = false
                                 case "BlueIcon":
@@ -455,7 +455,7 @@ class ThemeSettingsAppIconItemNode: ListViewItemNode, ItemListItemNode {
                                     name = icon.name
                             }
                         
-                            imageNode.setup(theme: item.theme, icon: image, title: NSAttributedString(string: name, font: selected ? selectedTextFont : textFont, textColor: selected  ? item.theme.list.itemAccentColor : item.theme.list.itemPrimaryTextColor, paragraphAlignment: .center), locked: false, color: item.theme.list.itemPrimaryTextColor, bordered: bordered, selected: selected, action: {
+                            imageNode.setup(theme: item.theme, icon: image, title: NSAttributedString(string: name, font: selected ? selectedTextFont : textFont, textColor: selected  ? item.theme.list.itemAccentColor : item.theme.list.itemPrimaryTextColor, paragraphAlignment: .center), locked: !item.isPremium && icon.isSGPro, color: item.theme.list.itemPrimaryTextColor, bordered: bordered, selected: selected, action: {
                                 item.updated(icon)
                             })
                         }

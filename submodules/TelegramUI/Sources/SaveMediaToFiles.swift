@@ -2,7 +2,6 @@ import Foundation
 import AVFoundation
 import Display
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import AccountContext
 import OverlayStatusController
@@ -24,7 +23,7 @@ func saveMediaToFiles(context: AccountContext, fileReference: FileMediaReference
         }
     }
     
-    var signal = fetchMediaData(context: context, postbox: context.account.postbox, userLocation: .other, mediaReference: fileReference.abstract)
+    var signal = fetchMediaData(context: context, userLocation: .other, mediaReference: fileReference.abstract)
     
     var cancelImpl: (() -> Void)?
     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
@@ -60,11 +59,9 @@ func saveMediaToFiles(context: AccountContext, fileReference: FileMediaReference
         case .progress:
             break
         case let .data(data):
-            if data.complete {
+            if data.isComplete {
                 var symlinkPath = data.path + ".mp3"
-                if fileSize(symlinkPath) != nil {
-                    try? FileManager.default.removeItem(atPath: symlinkPath)
-                }
+                try? FileManager.default.removeItem(atPath: symlinkPath)
                 let _ = try? FileManager.default.linkItem(atPath: data.path, toPath: symlinkPath)
                 
                 let audioUrl = URL(fileURLWithPath: symlinkPath)

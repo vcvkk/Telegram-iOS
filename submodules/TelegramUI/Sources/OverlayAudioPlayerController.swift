@@ -1,7 +1,6 @@
 import Foundation
 import UIKit
 import TelegramCore
-import Postbox
 import Display
 import SwiftSignalKit
 import TelegramUIPreferences
@@ -15,7 +14,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
     private let context: AccountContext
     let chatLocation: ChatLocation
     let type: MediaManagerPlayerType
-    let initialMessageId: MessageId
+    let initialMessageId: EngineMessage.Id
     let initialOrder: MusicPlaybackSettingsOrder
     let playlistLocation: SharedMediaPlaylistLocation?
     
@@ -33,7 +32,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
         context: AccountContext,
         chatLocation: ChatLocation,
         type: MediaManagerPlayerType,
-        initialMessageId: MessageId,
+        initialMessageId: EngineMessage.Id,
         initialOrder: MusicPlaybackSettingsOrder,
         playlistLocation: SharedMediaPlaylistLocation? = nil,
         parentNavigationController: NavigationController?
@@ -180,7 +179,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                                 let fileId = Int64.random(in: Int64.min ... Int64.max)
                                 let mimeType = guessMimeTypeByFileExtension((item.fileName as NSString).pathExtension)
                                 var previewRepresentations: [TelegramMediaImageRepresentation] = []
-                                if mimeType.hasPrefix("image/") || mimeType == "application/pdf" {
+                                if mimeType.hasPrefix("image/") || mimeType == "application/pdf" || item.audioMetadata?.hasAudioArtwork == true {
                                     previewRepresentations.append(TelegramMediaImageRepresentation(dimensions: PixelDimensions(width: 320, height: 320), resource: ICloudFileResource(urlData: item.urlData, thumbnail: true), progressiveSizes: [], immediateThumbnailData: nil, hasVideo: false, isPersonal: false))
                                 }
                                 var attributes: [TelegramMediaFileAttribute] = []
@@ -189,7 +188,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                                     attributes.append(.Audio(isVoice: false, duration: audioMetadata.duration, title: audioMetadata.title, performer: audioMetadata.performer, waveform: nil))
                                 }
                                 
-                                let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: fileId), partialReference: nil, resource: ICloudFileResource(urlData: item.urlData, thumbnail: false), previewRepresentations: previewRepresentations, videoThumbnails: [], immediateThumbnailData: nil, mimeType: mimeType, size: Int64(item.fileSize), attributes: attributes, alternativeRepresentations: [])
+                                let file = TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: fileId), partialReference: nil, resource: ICloudFileResource(urlData: item.urlData, thumbnail: false), previewRepresentations: previewRepresentations, videoThumbnails: [], immediateThumbnailData: nil, mimeType: mimeType, size: Int64(item.fileSize), attributes: attributes, alternativeRepresentations: [])
                                 
                                 let _ = (standaloneUploadedFile(
                                     postbox: self.context.account.postbox,
@@ -211,7 +210,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                                         switch result {
                                         case let .media(resultMedia):
                                             if let resultFile = resultMedia.media as? TelegramMediaFile {
-                                                self.context.account.postbox.mediaBox.moveResourceData(from: file.resource.id, to: resultFile.resource.id, synchronous: true)
+                                                self.context.engine.resources.moveResourceData(from: EngineMediaResource.Id(file.resource.id), to: EngineMediaResource.Id(resultFile.resource.id), synchronous: true)
                                                 self.controllerNode.addToSavedMusic(file: .standalone(media: file))
                                             }
                                         }

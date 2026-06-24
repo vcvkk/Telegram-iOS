@@ -7,11 +7,9 @@ import Postbox
 import TelegramCore
 import SwiftSignalKit
 import AccountContext
-import SolidRoundedButtonNode
 import TelegramPresentationData
 import TelegramUIPreferences
 import TelegramNotices
-import PresentationDataUtils
 import AnimationUI
 import MergeLists
 import MediaResources
@@ -36,6 +34,8 @@ import AnimatedCountLabelNode
 import HexColor
 import QrCodeUI
 import ComponentFlow
+import ButtonComponent
+import ComponentDisplayAdapters
 import GlassBarButtonComponent
 import SheetComponent
 import BundleIconComponent
@@ -245,7 +245,7 @@ private func generateBorderImage(theme: PresentationTheme, bordered: Bool, selec
     if let image = cachedBorderImages[key] {
         return image
     } else {
-        let image = generateImage(CGSize(width: 18.0, height: 18.0), rotatedContext: { size, context in
+        let image = generateImage(CGSize(width: 32.0, height: 32.0), rotatedContext: { size, context in
             let bounds = CGRect(origin: CGPoint(), size: size)
             context.clear(bounds)
 
@@ -271,7 +271,7 @@ private func generateBorderImage(theme: PresentationTheme, bordered: Bool, selec
                 context.setLineWidth(lineWidth)
                 context.strokeEllipse(in: bounds.insetBy(dx: 1.0 + lineWidth / 2.0, dy: 1.0 + lineWidth / 2.0))
             }
-        })?.stretchableImage(withLeftCapWidth: 9, topCapHeight: 9)
+        })?.stretchableImage(withLeftCapWidth: 16, topCapHeight: 16)
         cachedBorderImages[key] = image
         return image
     }
@@ -314,7 +314,7 @@ private final class ThemeSettingsThemeItemIconNode : ListViewItemNode {
         self.imageNode = TransformImageNode()
         self.imageNode.frame = CGRect(origin: CGPoint(), size: CGSize(width: 82.0, height: 108.0))
         self.imageNode.isLayerBacked = true
-        self.imageNode.cornerRadius = 8.0
+        //self.imageNode.cornerRadius = 16.0
         self.imageNode.clipsToBounds = true
         
         self.overlayNode = ASImageNode()
@@ -488,7 +488,7 @@ private final class ThemeSettingsThemeItemIconNode : ListViewItemNode {
 
                     let imageSize = CGSize(width: 82.0, height: 108.0)
                     strongSelf.imageNode.frame = CGRect(origin: CGPoint(x: 4.0, y: 6.0), size: imageSize)
-                    let applyLayout = makeImageLayout(TransformImageArguments(corners: ImageCorners(), imageSize: imageSize, boundingSize: imageSize, intrinsicInsets: UIEdgeInsets(), emptyColor: .clear))
+                    let applyLayout = makeImageLayout(TransformImageArguments(corners: ImageCorners(radius: 16.0), imageSize: imageSize, boundingSize: imageSize, intrinsicInsets: UIEdgeInsets(), emptyColor: .clear))
                     applyLayout()
                     
                     strongSelf.overlayNode.frame = strongSelf.imageNode.frame.insetBy(dx: -1.0, dy: -1.0)
@@ -511,7 +511,7 @@ private final class ThemeSettingsThemeItemIconNode : ListViewItemNode {
                             }
                             strongSelf.animatedStickerNode = animatedStickerNode
                             strongSelf.emojiContainerNode.insertSubnode(animatedStickerNode, belowSubnode: strongSelf.placeholderNode)
-                            let pathPrefix = item.context.account.postbox.mediaBox.shortLivedResourceCachePathPrefix(file.resource.id)
+                            let pathPrefix = item.context.engine.resources.shortLivedResourceCachePathPrefix(id: EngineMediaResource.Id(file.resource.id))
                             animatedStickerNode.setup(source: AnimatedStickerResourceSource(account: item.context.account, resource: file.resource), width: 128, height: 128, playbackMode: .still(.start), mode: .direct(cachePathPrefix: pathPrefix))
                             
                             animatedStickerNode.anchorPoint = CGPoint(x: 0.5, y: 1.0)
@@ -519,7 +519,7 @@ private final class ThemeSettingsThemeItemIconNode : ListViewItemNode {
                         animatedStickerNode.autoplay = true
                         animatedStickerNode.visibility = strongSelf.visibilityStatus
                         
-                        strongSelf.stickerFetchedDisposable.set(fetchedMediaResource(mediaBox: item.context.account.postbox.mediaBox, userLocation: .other, userContentType: .sticker, reference: MediaResourceReference.media(media: .standalone(media: file), resource: file.resource)).startStrict())
+                        strongSelf.stickerFetchedDisposable.set(item.context.engine.resources.fetch(reference: MediaResourceReference.media(media: .standalone(media: file), resource: file.resource), userLocation: .other, userContentType: .sticker).startStrict())
                         
                         let thumbnailDimensions = PixelDimensions(width: 512, height: 512)
                         strongSelf.placeholderNode.update(backgroundColor: nil, foregroundColor: UIColor(rgb: 0xffffff, alpha: 0.2), shimmeringColor: UIColor(rgb: 0xffffff, alpha: 0.3), data: file.immediateThumbnailData, size: emojiFrame.size, enableEffect: item.context.sharedContext.energyUsageSettings.fullTranslucency, imageSize: thumbnailDimensions.cgSize)
@@ -571,7 +571,7 @@ public final class ChatQrCodeScreenImpl: ViewController, ChatQrCodeScreen {
     public static let themeCrossfadeDelay: Double = 0.05
     
     public enum Subject {
-        case peer(peer: Peer, threadId: Int64?, temporary: Bool)
+        case peer(peer: EnginePeer, threadId: Int64?, temporary: Bool)
         case messages([Message])
         
         public var fileName: String {
@@ -580,7 +580,7 @@ public final class ChatQrCodeScreenImpl: ViewController, ChatQrCodeScreen {
                 var result: String
                 if let addressName = peer.addressName, !addressName.isEmpty {
                     result = "t_me-\(peer.addressName ?? "")"
-                } else if let peer = peer as? TelegramUser {
+                } else if case let .user(peer) = peer {
                     result = "t_me-\(peer.phone ?? "")"
                 } else {
                     result = "t_me-\(Int32.random(in: 0 ..< Int32.max))"
@@ -770,8 +770,11 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
     private let switchThemeButtonNode: HighlightTrackingButtonNode
     private let animationContainerNode: ASDisplayNode
     private var animationNode: AnimationNode
-    private let doneButton: SolidRoundedButtonNode
-    private let scanButton: SolidRoundedButtonNode
+    private let doneButton = ComponentView<Empty>()
+    private let scanButton = ComponentView<Empty>()
+    private let doneButtonTitle: String
+    private let scanButtonTitle: String
+    private let fileName: String
     
     private let listNode: ListView
     private var entries: [ThemeSettingsThemeEntry]?
@@ -811,11 +814,20 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
         self.context = context
         self.controller = controller
         self.presentationData = presentationData
+        self.fileName = controller.subject.fileName
+        self.scanButtonTitle = presentationData.strings.PeerInfo_QRCode_Scan
+        switch controller.subject {
+        case .peer:
+            self.doneButtonTitle = presentationData.strings.InviteLink_QRCode_Share
+        case .messages:
+            self.doneButtonTitle = presentationData.strings.Share_ShareMessage
+        }
         
         self.wrappingScrollNode = ASScrollNode()
         self.wrappingScrollNode.view.alwaysBounceVertical = true
         self.wrappingScrollNode.view.delaysContentTouches = false
         self.wrappingScrollNode.view.canCancelContentTouches = true
+        self.wrappingScrollNode.view.scrollsToTop = false
         
         self.scrollNodeContentNode = ASDisplayNode()
         self.scrollNodeContentNode.clipsToBounds = true
@@ -870,19 +882,7 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
         
         self.animationNode = AnimationNode(animation: self.isDarkAppearance ? "anim_sun_reverse" : "anim_sun", colors: iconColors(theme: self.presentationData.theme), scale: 1.0)
         self.animationNode.isUserInteractionEnabled = false
-        
-        self.doneButton = SolidRoundedButtonNode(theme: SolidRoundedButtonTheme(theme: self.presentationData.theme), glass: true, height: 52.0, cornerRadius: 26.0)
-        switch controller.subject {
-        case .peer:
-            self.doneButton.title = self.presentationData.strings.InviteLink_QRCode_Share
-        case .messages:
-            self.doneButton.title = self.presentationData.strings.Share_ShareMessage
-        }
-        
-        self.scanButton = SolidRoundedButtonNode(theme: SolidRoundedButtonTheme(backgroundColor: .clear, foregroundColor: self.presentationData.theme.actionSheet.controlAccentColor), font: .regular, height: 42.0, cornerRadius: 0.0)
-        self.scanButton.title = presentationData.strings.PeerInfo_QRCode_Scan
-        self.scanButton.icon = UIImage(bundleImageName: "Settings/ScanQr")
-        
+
         self.listNode = ListViewImpl()
         self.listNode.transform = CATransform3DMakeRotation(-CGFloat.pi / 2.0, 0.0, 0.0, 1.0)
         
@@ -903,8 +903,6 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
         
         self.contentContainerNode.addSubnode(self.titleNode)
         self.contentContainerNode.addSubnode(self.segmentedNode)
-        self.contentContainerNode.addSubnode(self.doneButton)
-        self.contentContainerNode.addSubnode(self.scanButton)
         
         self.topContentContainerNode.addSubnode(self.animationContainerNode)
         self.animationContainerNode.addSubnode(self.animationNode)
@@ -925,74 +923,6 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
                 videoNode.pause()
                 videoNode.seek(0)
             }
-        }
-        
-        let fileName = controller.subject.fileName
-        self.doneButton.pressed = { [weak self] in
-            guard let strongSelf = self else {
-                return
-            }
-            strongSelf.doneButton.isUserInteractionEnabled = false
-            
-            if strongSelf.segmentedNode.selectedIndex == 0 {
-                strongSelf.contentNode.generateVideo { [weak self] url in
-                    if let strongSelf = self {
-                        let tempFilePath = NSTemporaryDirectory() + "\(fileName).mp4"
-                        try? FileManager.default.removeItem(atPath: tempFilePath)
-                        let tempFileUrl = URL(fileURLWithPath: tempFilePath)
-                        try? FileManager.default.moveItem(at: url, to: tempFileUrl)
-                        
-                        let activityController = UIActivityViewController(activityItems: [tempFileUrl], applicationActivities: [ShareToInstagramActivity(context: strongSelf.context)])
-                        activityController.completionWithItemsHandler = { [weak self] _, finished, _, _ in
-                            if let strongSelf = self {
-                                if finished {
-                                    strongSelf.completion?(strongSelf.selectedEmoticon)
-                                } else {
-                                    strongSelf.doneButton.isUserInteractionEnabled = true
-                                }
-                            }
-                        }
-                        if let window = strongSelf.view.window {
-                            activityController.popoverPresentationController?.sourceView = window
-                            activityController.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
-                        }
-                        context.sharedContext.applicationBindings.presentNativeController(activityController)
-                    }
-                }
-            } else {
-                strongSelf.contentNode.generateImage { [weak self] image in
-                    if let strongSelf = self, let image = image, let jpgData = image.jpegData(compressionQuality: 0.9) {
-                        let tempFilePath = NSTemporaryDirectory() + "\(fileName).jpg"
-                        try? FileManager.default.removeItem(atPath: tempFilePath)
-                        let tempFileUrl = URL(fileURLWithPath: tempFilePath)
-                        try? jpgData.write(to: tempFileUrl)
-
-                        let activityController = UIActivityViewController(activityItems: [tempFileUrl], applicationActivities: [ShareToInstagramActivity(context: strongSelf.context)])
-                        activityController.completionWithItemsHandler = { [weak self] _, finished, _, _ in
-                            if let strongSelf = self {
-                                if finished {
-                                    strongSelf.completion?(strongSelf.selectedEmoticon)
-                                } else {
-                                    strongSelf.doneButton.isUserInteractionEnabled = true
-                                }
-                            }
-                        }
-                        if let window = strongSelf.view.window {
-                            activityController.popoverPresentationController?.sourceView = window
-                            activityController.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
-                        }
-                        context.sharedContext.applicationBindings.presentNativeController(activityController)
-                    }
-                }
-            }
-        }
-        
-        self.scanButton.pressed = { [weak self] in
-            guard let self else {
-                return
-            }
-            let controller = QrCodeScanScreen(context: self.context, subject: .peer)
-            self.controller?.push(controller)
         }
         
         let animatedEmojiStickers = context.engine.stickers.loadedStickerPack(reference: .animatedEmoji, forceActualized: false)
@@ -1259,8 +1189,6 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
         }
         
         self.cancelButtonNode.setImage(closeButtonImage(theme: self.presentationData.theme), for: .normal)
-        self.doneButton.updateTheme(SolidRoundedButtonTheme(theme: self.presentationData.theme))
-        self.scanButton.updateTheme(SolidRoundedButtonTheme(backgroundColor: .clear, foregroundColor: self.presentationData.theme.actionSheet.controlAccentColor))
         
         let previousIconColors = iconColors(theme: previousTheme)
         let newIconColors = iconColors(theme: self.presentationData.theme)
@@ -1297,6 +1225,67 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
     
     @objc private func cancelButtonPressed() {
         self.cancel?()
+    }
+
+    private func doneButtonPressed() {
+        self.doneButton.view?.isUserInteractionEnabled = false
+
+        if self.segmentedNode.selectedIndex == 0 {
+            self.contentNode.generateVideo { [weak self] url in
+                if let strongSelf = self {
+                    let tempFilePath = NSTemporaryDirectory() + "\(strongSelf.fileName).mp4"
+                    try? FileManager.default.removeItem(atPath: tempFilePath)
+                    let tempFileUrl = URL(fileURLWithPath: tempFilePath)
+                    try? FileManager.default.moveItem(at: url, to: tempFileUrl)
+
+                    let activityController = UIActivityViewController(activityItems: [tempFileUrl], applicationActivities: [ShareToInstagramActivity(context: strongSelf.context)])
+                    activityController.completionWithItemsHandler = { [weak self] _, finished, _, _ in
+                        if let strongSelf = self {
+                            if finished {
+                                strongSelf.completion?(strongSelf.selectedEmoticon)
+                            } else {
+                                strongSelf.doneButton.view?.isUserInteractionEnabled = true
+                            }
+                        }
+                    }
+                    if let window = strongSelf.view.window {
+                        activityController.popoverPresentationController?.sourceView = window
+                        activityController.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
+                    }
+                    strongSelf.context.sharedContext.applicationBindings.presentNativeController(activityController)
+                }
+            }
+        } else {
+            self.contentNode.generateImage { [weak self] image in
+                if let strongSelf = self, let image = image, let jpgData = image.jpegData(compressionQuality: 0.9) {
+                    let tempFilePath = NSTemporaryDirectory() + "\(strongSelf.fileName).jpg"
+                    try? FileManager.default.removeItem(atPath: tempFilePath)
+                    let tempFileUrl = URL(fileURLWithPath: tempFilePath)
+                    try? jpgData.write(to: tempFileUrl)
+
+                    let activityController = UIActivityViewController(activityItems: [tempFileUrl], applicationActivities: [ShareToInstagramActivity(context: strongSelf.context)])
+                    activityController.completionWithItemsHandler = { [weak self] _, finished, _, _ in
+                        if let strongSelf = self {
+                            if finished {
+                                strongSelf.completion?(strongSelf.selectedEmoticon)
+                            } else {
+                                strongSelf.doneButton.view?.isUserInteractionEnabled = true
+                            }
+                        }
+                    }
+                    if let window = strongSelf.view.window {
+                        activityController.popoverPresentationController?.sourceView = window
+                        activityController.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
+                    }
+                    strongSelf.context.sharedContext.applicationBindings.presentNativeController(activityController)
+                }
+            }
+        }
+    }
+
+    private func scanButtonPressed() {
+        let controller = QrCodeScanScreen(context: self.context, subject: .peer)
+        self.controller?.push(controller)
     }
 
     @objc private func switchThemePressed() {
@@ -1352,11 +1341,12 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
             })
         }
         
-//        Queue.mainQueue().after(ChatQrCodeScreenImpl.themeCrossfadeDelay) {
-//            let previousColor = self.contentBackgroundNode.backgroundColor ?? .clear
-//            self.contentBackgroundNode.backgroundColor = self.presentationData.theme.actionSheet.opaqueItemBackgroundColor
-//            self.contentBackgroundNode.layer.animate(from: previousColor.cgColor, to: (self.contentBackgroundNode.backgroundColor ?? .clear).cgColor, keyPath: "backgroundColor", timingFunction: CAMediaTimingFunctionName.linear.rawValue, duration: ChatQrCodeScreenImpl.themeCrossfadeDuration)
-//        }
+        if let snapshotView = self.contentBackgroundView.snapshotView(afterScreenUpdates: false) {
+            self.contentBackgroundView.superview?.insertSubview(snapshotView, aboveSubview: self.contentBackgroundView)
+            snapshotView.layer.animateAlpha(from: 1.0, to: 0.0, duration: ChatQrCodeScreenImpl.themeCrossfadeDuration, delay: ChatQrCodeScreenImpl.themeCrossfadeDelay, timingFunction: CAMediaTimingFunctionName.linear.rawValue, removeOnCompletion: false, completion: { [weak snapshotView] _ in
+                snapshotView?.removeFromSuperview()
+            })
+        }
                 
         if let snapshotView = self.contentContainerNode.view.snapshotView(afterScreenUpdates: false) {
             snapshotView.frame = self.contentContainerNode.frame
@@ -1435,13 +1425,13 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
     public func containerLayoutUpdated(_ layout: ContainerViewLayout, navigationBarHeight: CGFloat, transition: ContainedViewLayoutTransition) {
         self.containerLayout = (layout, navigationBarHeight)
         
-        var insets = layout.insets(options: [.statusBar, .input])
         let cleanInsets = layout.insets(options: [.statusBar])
-        insets.top = max(10.0, insets.top)
         
-        let bottomInset: CGFloat = 10.0 + cleanInsets.bottom
         let titleHeight: CGFloat = 54.0
-        let contentHeight = titleHeight + bottomInset + 188.0 + 52.0
+        let buttonHeight: CGFloat = 52.0
+        let buttonSpacing: CGFloat = 8.0
+        let buttonInsets = ContainerViewLayout.concentricInsets(bottomInset: cleanInsets.bottom, innerDiameter: buttonHeight, sideInset: 30.0)
+        let contentHeight = titleHeight + 10.0 + 188.0 + buttonHeight + buttonSpacing + buttonInsets.bottom
         
         let width = horizontalContainerFillingSizeForLayout(layout: layout, sideInset: 0.0)
         
@@ -1459,14 +1449,14 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
         self.contentBackgroundView.update(size: contentFrame.size, color: self.presentationData.theme.actionSheet.opaqueItemBackgroundColor, topCornerRadius: 38.0, bottomCornerRadius: layout.deviceMetrics.screenCornerRadius - 2.0, transition: .immediate)
         transition.updateFrame(view: self.contentBackgroundView, frame: CGRect(origin: CGPoint(), size: backgroundFrame.size))
         
-        let barButtonSize = CGSize(width: 40.0, height: 40.0)
+        let barButtonSize = CGSize(width: 44.0, height: 44.0)
         let cancelButtonSize = self.cancelButton.update(
             transition: .immediate,
             component: AnyComponent(GlassBarButtonComponent(
                 size: barButtonSize,
-                backgroundColor: self.presentationData.theme.rootController.navigationBar.glassBarButtonBackgroundColor,
+                backgroundColor: nil,
                 isDark: self.presentationData.theme.overallDarkAppearance,
-                state: .generic,
+                state: .glass,
                 component: AnyComponentWithIdentity(id: "close", component: AnyComponent(
                     BundleIconComponent(
                         name: "Navigation/Close",
@@ -1493,9 +1483,9 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
             transition: .immediate,
             component: AnyComponent(GlassBarButtonComponent(
                 size: barButtonSize,
-                backgroundColor: self.presentationData.theme.rootController.navigationBar.glassBarButtonBackgroundColor,
+                backgroundColor: nil,
                 isDark: self.presentationData.theme.overallDarkAppearance,
-                state: .generic,
+                state: .glass,
                 component: AnyComponentWithIdentity(id: "switchTheme", component: AnyComponent(
                     Rectangle(color: .clear)
                 )),
@@ -1517,7 +1507,7 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
         }
         
         transition.updateFrame(node: self.wrappingScrollNode, frame: CGRect(origin: CGPoint(), size: layout.size))
-        transition.updateFrame(node: self.scrollNodeContentNode, frame: CGRect(origin: CGPoint(), size: CGSize(width: layout.size.width, height: layout.size.height + 2000.0)))
+        transition.updateFrame(node: self.scrollNodeContentNode, frame: CGRect(origin: CGPoint(), size: CGSize(width: layout.size.width, height: layout.size.height)))
         
         let titleSize = self.titleNode.measure(CGSize(width: width - 90.0, height: titleHeight))
         let titleFrame = CGRect(origin: CGPoint(x: floor((contentFrame.width - titleSize.width) / 2.0), y: 36.0 - titleSize.height / 2.0), size: titleSize)
@@ -1536,12 +1526,83 @@ private class ChatQrCodeScreenNode: ViewControllerTracingNode, ASScrollViewDeleg
         let cancelFrame = CGRect(origin: CGPoint(x: contentFrame.width - cancelSize.width - 3.0, y: 6.0), size: cancelSize)
         transition.updateFrame(node: self.cancelButtonNode, frame: cancelFrame)
         
-        let buttonInset: CGFloat = 30.0
-        let scanButtonHeight = self.scanButton.updateLayout(width: contentFrame.width - buttonInset * 2.0, transition: transition)
-        transition.updateFrame(node: self.scanButton, frame: CGRect(x: buttonInset, y: contentHeight - scanButtonHeight - insets.bottom, width: contentFrame.width, height: scanButtonHeight))
+        let buttonTransition = ComponentTransition(transition)
+        let buttonWidth = contentFrame.width - buttonInsets.left - buttonInsets.right
+        let primaryBackgroundColor = self.presentationData.theme.list.itemCheckColors.fillColor
+        let primaryForegroundColor = self.presentationData.theme.list.itemCheckColors.foregroundColor
+        let doneButtonSize = self.doneButton.update(
+            transition: buttonTransition,
+            component: AnyComponent(ButtonComponent(
+                background: ButtonComponent.Background(
+                    style: .glass,
+                    color: primaryBackgroundColor,
+                    foreground: primaryForegroundColor,
+                    pressedColor: primaryBackgroundColor.withMultipliedAlpha(0.8)
+                ),
+                content: AnyComponentWithIdentity(id: AnyHashable(0 as Int), component: AnyComponent(
+                    Text(text: self.doneButtonTitle, font: Font.semibold(17.0), color: primaryForegroundColor)
+                )),
+                isEnabled: true,
+                displaysProgress: false,
+                action: { [weak self] in
+                    self?.doneButtonPressed()
+                }
+            )),
+            environment: {},
+            containerSize: CGSize(width: buttonWidth, height: buttonHeight)
+        )
+
+        let secondaryForegroundColor = self.presentationData.theme.list.itemCheckColors.fillColor
+        let scanButtonContents: [AnyComponentWithIdentity<Empty>] = [
+            AnyComponentWithIdentity(id: "icon", component: AnyComponent(
+                BundleIconComponent(name: "Settings/ScanQr", tintColor: secondaryForegroundColor)
+            )),
+            AnyComponentWithIdentity(id: "text", component: AnyComponent(
+                Text(text: self.scanButtonTitle, font: Font.semibold(17.0), color: secondaryForegroundColor)
+            ))
+        ]
+        let scanButtonSize = self.scanButton.update(
+            transition: buttonTransition,
+            component: AnyComponent(ButtonComponent(
+                background: ButtonComponent.Background(
+                    style: .glass,
+                    color: secondaryForegroundColor.withMultipliedAlpha(0.1),
+                    foreground: secondaryForegroundColor,
+                    pressedColor: secondaryForegroundColor.withMultipliedAlpha(0.8)
+                ),
+                content: AnyComponentWithIdentity(id: AnyHashable(0 as Int), component: AnyComponent(
+                    HStack(scanButtonContents, spacing: 6.0)
+                )),
+                isEnabled: true,
+                displaysProgress: false,
+                action: { [weak self] in
+                    self?.scanButtonPressed()
+                }
+            )),
+            environment: {},
+            containerSize: CGSize(width: buttonWidth, height: buttonHeight)
+        )
         
-        let doneButtonHeight = self.doneButton.updateLayout(width: contentFrame.width - buttonInset * 2.0, transition: transition)
-        transition.updateFrame(node: self.doneButton, frame: CGRect(x: buttonInset, y: contentHeight - doneButtonHeight - scanButtonHeight - 10.0 - insets.bottom, width: contentFrame.width, height: doneButtonHeight))
+        let scanButtonFrame = CGRect(origin: CGPoint(x: buttonInsets.left, y: contentHeight - scanButtonSize.height - buttonInsets.bottom), size: scanButtonSize)
+        let doneButtonFrame = CGRect(origin: CGPoint(x: buttonInsets.left, y: scanButtonFrame.minY - buttonSpacing - doneButtonSize.height), size: doneButtonSize)
+        if let doneButtonView = self.doneButton.view {
+            if doneButtonView.superview == nil {
+                self.contentContainerNode.view.addSubview(doneButtonView)
+            }
+            doneButtonView.isAccessibilityElement = true
+            doneButtonView.accessibilityLabel = self.doneButtonTitle
+            doneButtonView.accessibilityTraits = [.button]
+            transition.updateFrame(view: doneButtonView, frame: doneButtonFrame)
+        }
+        if let scanButtonView = self.scanButton.view {
+            if scanButtonView.superview == nil {
+                self.contentContainerNode.view.addSubview(scanButtonView)
+            }
+            scanButtonView.isAccessibilityElement = true
+            scanButtonView.accessibilityLabel = self.scanButtonTitle
+            scanButtonView.accessibilityTraits = [.button]
+            transition.updateFrame(view: scanButtonView, frame: scanButtonFrame)
+        }
                 
         transition.updateFrame(node: self.contentContainerNode, frame: contentContainerFrame)
         transition.updateFrame(node: self.topContentContainerNode, frame: contentContainerFrame)
@@ -1576,7 +1637,7 @@ private protocol ContentNode: ASDisplayNode {
 
 private class QrContentNode: ASDisplayNode, ContentNode {
     private let context: AccountContext
-    private let peer: Peer
+    private let peer: EnginePeer
     private let threadId: Int64?
     private let isStatic: Bool
     private let temporary: Bool
@@ -1618,7 +1679,7 @@ private class QrContentNode: ASDisplayNode, ContentNode {
     private var tokenUpdated = false
     var requestNextToken: () -> Void = {}
     
-    init(context: AccountContext, peer: Peer, threadId: Int64?, isStatic: Bool = false, temporary: Bool) {
+    init(context: AccountContext, peer: EnginePeer, threadId: Int64?, isStatic: Bool = false, temporary: Bool) {
         self.context = context
         self.peer = peer
         self.threadId = threadId
@@ -1706,7 +1767,7 @@ private class QrContentNode: ASDisplayNode, ContentNode {
         
         self.avatarNode = ImageNode()
         self.avatarNode.displaysAsynchronously = false
-        self.avatarNode.setSignal(peerAvatarCompleteImage(account: context.account, peer: EnginePeer(peer), size: CGSize(width: 180.0, height: 180.0), font: avatarPlaceholderFont(size: 78.0), fullSize: true))
+        self.avatarNode.setSignal(peerAvatarCompleteImage(account: context.account, peer: peer, size: CGSize(width: 180.0, height: 180.0), font: avatarPlaceholderFont(size: 78.0), fullSize: true))
         
         super.init()
         
@@ -1739,9 +1800,9 @@ private class QrContentNode: ASDisplayNode, ContentNode {
         var codeLink: String
         if let addressName = peer.addressName, !addressName.isEmpty {
             codeLink = "https://t.me/\(peer.addressName ?? "")"
-        } else if let peer = peer as? TelegramUser {
+        } else if case let .user(peer) = peer {
             codeLink = "https://t.me/+\(peer.phone ?? "")"
-        } else if let _ = peer as? TelegramChannel {
+        } else if case .channel = peer {
             codeLink = "https://t.me/c/\(peer.id.id._internalGetInt64Value())"
         } else {
             codeLink = ""
@@ -2502,9 +2563,9 @@ private enum RenderVideoResult {
 }
 
 private func renderVideo(context: AccountContext, backgroundImage: UIImage, userLocation: MediaResourceUserLocation, media: TelegramMediaFile, videoFrame: CGRect, completion: @escaping (URL?) -> Void) {
-    let _ = (fetchMediaData(context: context, postbox: context.account.postbox, userLocation: userLocation, mediaReference: AnyMediaReference.standalone(media: media))
+    let _ = (fetchMediaData(context: context, userLocation: userLocation, mediaReference: AnyMediaReference.standalone(media: media))
     |> deliverOnMainQueue).startStandalone(next: { value, isImage in
-        guard case let .data(data) = value, data.complete else {
+        guard case let .data(data) = value, data.isComplete else {
             return
         }
         

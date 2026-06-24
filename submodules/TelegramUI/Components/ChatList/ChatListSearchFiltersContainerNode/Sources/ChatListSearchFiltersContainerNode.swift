@@ -2,7 +2,6 @@ import Foundation
 import UIKit
 import AsyncDisplayKit
 import Display
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import AccountContext
@@ -56,6 +55,7 @@ public final class ChatListSearchFiltersContainerNode: ASDisplayNode {
         self.scrollNode.view.delaysContentTouches = false
         self.scrollNode.view.canCancelContentTouches = true
         self.scrollNode.view.contentInsetAdjustmentBehavior = .never
+        self.scrollNode.view.scrollsToTop = false
         
         self.view.addSubview(self.backgroundContainer)
         

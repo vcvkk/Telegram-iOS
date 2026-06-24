@@ -54,23 +54,22 @@ public final class NavigationButtonComponent: Component {
     
     public final class View: HighlightTrackingButton {
         private var textView: ImmediateTextView?
-
+        
         private var iconView: UIImageView?
         private var iconImageName: String?
-        private var iconContextGesture: ContextGesture?
-
+        
         private var proxyNode: ChatTitleProxyNode?
-
+        
         private var moreButton: MoreHeaderButton?
-
+        
         private var component: NavigationButtonComponent?
         private var theme: PresentationTheme?
-
+        
         override init(frame: CGRect) {
             super.init(frame: frame)
-
+            
             self.addTarget(self, action: #selector(self.pressed), for: .touchUpInside)
-
+            
             self.highligthedChanged = { [weak self] highlighted in
                 guard let self else {
                     return
@@ -117,7 +116,11 @@ public final class NavigationButtonComponent: Component {
             
             switch component.content {
             case let .text(title, isBold):
-                textString = NSAttributedString(string: title, font: isBold ? Font.bold(17.0) : Font.medium(17.0), textColor: theme.chat.inputPanel.panelControlColor)
+                if title == "___done" {
+                    imageName = "Navigation/Done"
+                } else {
+                    textString = NSAttributedString(string: title, font: isBold ? Font.bold(17.0) : Font.medium(17.0), textColor: theme.chat.inputPanel.panelControlColor)
+                }
             case .more:
                 isMore = true
             case let .icon(imageNameValue):
@@ -167,31 +170,13 @@ public final class NavigationButtonComponent: Component {
                 
                 if let iconSize = iconView.image?.size {
                     size.width = 44.0
+                    
                     iconView.frame = CGRect(origin: CGPoint(x: floor((size.width - iconSize.width) / 2.0), y: floor((availableSize.height - iconSize.height) / 2.0)), size: iconSize)
-                }
-
-                if component.contextAction != nil {
-                    if self.iconContextGesture == nil {
-                        let gesture = ContextGesture(target: nil, action: nil)
-                        gesture.activated = { [weak self] gesture, _ in
-                            guard let self, let component = self.component else { return }
-                            component.contextAction?(self, gesture)
-                        }
-                        self.addGestureRecognizer(gesture)
-                        self.iconContextGesture = gesture
-                    }
-                } else if let g = self.iconContextGesture {
-                    self.removeGestureRecognizer(g)
-                    self.iconContextGesture = nil
                 }
             } else if let iconView = self.iconView {
                 self.iconView = nil
                 iconView.removeFromSuperview()
                 self.iconImageName = nil
-                if let g = self.iconContextGesture {
-                    self.removeGestureRecognizer(g)
-                    self.iconContextGesture = nil
-                }
             }
             
             if let proxyStatus = proxyStatus {

@@ -13,6 +13,8 @@ import SheetComponent
 import MultilineTextComponent
 import BundleIconComponent
 import SolidRoundedButtonComponent
+import ButtonComponent
+import LottieComponent
 import Markdown
 import BalancedTextComponent
 import ConfettiEffect
@@ -448,6 +450,34 @@ public class PremiumLimitDisplayComponent: Component {
                     }
                     view.frame = CGRect(origin: CGPoint(x: activityPosition - 12.0 - inactiveValueSize.width, y: floorToScreenPixels((lineHeight - inactiveValueSize.height) / 2.0)), size: inactiveValueSize)
                 }
+                                
+                let activeValueSize = self.activeValueLabel.update(
+                    transition: .immediate,
+                    component: AnyComponent(
+                        MultilineTextComponent(
+                            text: .plain(
+                                NSAttributedString(
+                                    string: component.activeValue,
+                                    font: Font.semibold(15.0),
+                                    textColor: rightTextColor
+                                )
+                            )
+                        )
+                    ),
+                    environment: {},
+                    containerSize: availableSize
+                )
+                let activeValueLabelFrame = CGRect(origin: CGPoint(x: containerFrame.width - 12.0 - activeValueSize.width, y: floorToScreenPixels((lineHeight - activeValueSize.height) / 2.0)), size: activeValueSize)
+                if let view = self.activeValueLabel.view {
+                    if view.superview == nil {
+                        self.container.addSubview(view)
+                        
+                        if component.invertProgress {
+                            self.container.bringSubviewToFront(self.activeContainer)
+                        }
+                    }
+                    view.frame = activeValueLabelFrame
+                }
                 
                 let activeTitleSize = self.activeTitleLabel.update(
                     transition: .immediate,
@@ -470,33 +500,12 @@ public class PremiumLimitDisplayComponent: Component {
                         self.container.addSubview(view)
                     }
                     view.frame = CGRect(origin: CGPoint(x: activityPosition + 12.0, y: floorToScreenPixels((lineHeight - activeTitleSize.height) / 2.0)), size: activeTitleSize)
-                }
-                
-                let activeValueSize = self.activeValueLabel.update(
-                    transition: .immediate,
-                    component: AnyComponent(
-                        MultilineTextComponent(
-                            text: .plain(
-                                NSAttributedString(
-                                    string: component.activeValue,
-                                    font: Font.semibold(15.0),
-                                    textColor: rightTextColor
-                                )
-                            )
-                        )
-                    ),
-                    environment: {},
-                    containerSize: availableSize
-                )
-                if let view = self.activeValueLabel.view {
-                    if view.superview == nil {
-                        self.container.addSubview(view)
-                        
-                        if component.invertProgress {
-                            self.container.bringSubviewToFront(self.activeContainer)
-                        }
+                    
+                    if view.frame.maxX > activeValueLabelFrame.minX - 8.0 {
+                        view.alpha = 0.0
+                    } else {
+                        view.alpha = 1.0
                     }
-                    view.frame = CGRect(origin: CGPoint(x: containerFrame.width - 12.0 - activeValueSize.width, y: floorToScreenPixels((lineHeight - activeValueSize.height) / 2.0)), size: activeValueSize)
                 }
             }
                         
@@ -825,7 +834,7 @@ private final class LimitSheetContent: CombinedComponent {
         let alternateText = Child(List<Empty>.self)
         let limit = Child(PremiumLimitDisplayComponent.self)
         let linkButton = Child(SolidRoundedButtonComponent.self)
-        let button = Child(SolidRoundedButtonComponent.self)
+        let button = Child(ButtonComponent.self)
         let peerShortcut = Child(Button.self)
         let statsButton = Child(Button.self)
         
@@ -1449,23 +1458,44 @@ private final class LimitSheetContent: CombinedComponent {
                 let isIncreaseButton = !reachedMaximumLimit && !isPremiumDisabled
                 
                 let bottomInsets = ContainerViewLayout.concentricInsets(bottomInset: environment.safeInsets.bottom, innerDiameter: 52.0, sideInset: 30.0)
+                let buttonTitle = actionButtonText ?? (isIncreaseButton ? strings.Premium_IncreaseLimit : strings.Common_OK)
+                var buttonContentItems: [AnyComponentWithIdentity<Empty>] = []
+                if let buttonIconName {
+                    buttonContentItems.append(AnyComponentWithIdentity(id: "icon", component: AnyComponent(BundleIconComponent(
+                        name: buttonIconName,
+                        tintColor: .white
+                    ))))
+                }
+                buttonContentItems.append(AnyComponentWithIdentity(id: "title", component: AnyComponent(ButtonTextContentComponent(
+                    text: buttonTitle,
+                    badge: 0,
+                    textColor: .white,
+                    badgeBackground: .white,
+                    badgeForeground: buttonGradientColors[0]
+                ))))
+                if buttonIconName == nil, isIncreaseButton, let buttonAnimationName {
+                    buttonContentItems.append(AnyComponentWithIdentity(id: "animation", component: AnyComponent(LottieComponent(
+                        content: LottieComponent.AppBundleContent(name: buttonAnimationName),
+                        color: .white,
+                        startingPosition: .begin,
+                        size: CGSize(width: 30.0, height: 30.0),
+                        loop: true
+                    ))))
+                }
                 let button = button.update(
-                    component: SolidRoundedButtonComponent(
-                        title: actionButtonText ?? (isIncreaseButton ? strings.Premium_IncreaseLimit : strings.Common_OK),
-                        theme: SolidRoundedButtonComponent.Theme(
-                            backgroundColor: .black,
-                            backgroundColors: buttonGradientColors,
-                            foregroundColor: .white
+                    component: ButtonComponent(
+                        background: ButtonComponent.Background(
+                            style: .glass,
+                            color: buttonGradientColors[0],
+                            foreground: .white,
+                            pressedColor: buttonGradientColors[0],
+                            isShimmering: isIncreaseButton && actionButtonHasGloss,
+                            gradient: ButtonComponent.Background.Gradient(colors: buttonGradientColors)
                         ),
-                        font: .bold,
-                        fontSize: 17.0,
-                        height: 52.0,
-                        cornerRadius: 26.0,
-                        gloss: isIncreaseButton && actionButtonHasGloss,
-                        glass: true,
-                        iconName: buttonIconName,
-                        animationName: isIncreaseButton ? buttonAnimationName : nil,
-                        iconPosition: buttonIconName != nil ? .left : .right,
+                        content: AnyComponentWithIdentity(
+                            id: AnyHashable("\(buttonTitle)-\(buttonIconName ?? "")-\(isIncreaseButton ? buttonAnimationName ?? "" : "")"),
+                            component: AnyComponent(HStack(buttonContentItems, spacing: 4.0))
+                        ),
                         action: {
                             if isIncreaseButton {
                                 if component.action() {

@@ -7,7 +7,6 @@ import ComponentFlow
 import SwiftSignalKit
 import AccountContext
 import TelegramCore
-import Postbox
 import MultilineTextComponent
 import AvatarNode
 import TelegramPresentationData
@@ -229,7 +228,7 @@ public final class PeerListItemComponent: Component {
     let avatar: Avatar?
     let avatarComponent: AnyComponent<Empty>?
     let peer: EnginePeer?
-    let storyStats: PeerStoryStats?
+    let storyStats: EnginePeerStoryStats?
     let subtitle: Subtitle?
     let subtitleComponent: AnyComponent<Empty>?
     let subtitleAccessory: SubtitleAccessory
@@ -260,7 +259,7 @@ public final class PeerListItemComponent: Component {
         avatar: Avatar? = nil,
         avatarComponent: AnyComponent<Empty>? = nil,
         peer: EnginePeer?,
-        storyStats: PeerStoryStats? = nil,
+        storyStats: EnginePeerStoryStats? = nil,
         subtitle: Subtitle?,
         subtitleComponent: AnyComponent<Empty>? = nil,
         subtitleAccessory: SubtitleAccessory,
@@ -1320,11 +1319,11 @@ public final class PeerListItemComponent: Component {
             
             
             var mediaReference: AnyMediaReference?
-            if let peer = component.peer, let peerReference = PeerReference(peer._asPeer()) {
+            if let peer = component.peer, let peerReference = PeerReference(peer) {
                 if let story = component.story {
                     mediaReference = .story(peer: peerReference, id: story.id, media: story.media._asMedia())
                 } else if let message = component.message {
-                    var selectedMedia: Media?
+                    var selectedMedia: EngineRawMedia?
                     for media in message.media {
                         if let image = media as? TelegramMediaImage {
                             selectedMedia = image

@@ -3,7 +3,6 @@ import UIKit
 import Display
 import AccountContext
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import AsyncDisplayKit
 import ContextUI
@@ -20,7 +19,7 @@ extension PeerInfoScreenNode {
             return
         }
         let peerId = self.peerId
-        let requestCall: (PeerId?, EngineGroupCallDescription?) -> Void = { [weak self] defaultJoinAsPeerId, activeCall in
+        let requestCall: (EnginePeer.Id?, EngineGroupCallDescription?) -> Void = { [weak self] defaultJoinAsPeerId, activeCall in
             if let activeCall = activeCall {
                 self?.context.joinGroupCall(peerId: peerId, invite: nil, requestJoinAsPeerId: { completion in
                     if let defaultJoinAsPeerId = defaultJoinAsPeerId {
@@ -45,7 +44,7 @@ extension PeerInfoScreenNode {
             return
         }
         
-        guard let peer = self.data?.peer as? TelegramUser, let cachedUserData = self.data?.cachedData as? CachedUserData else {
+        guard case let .user(peer) = self.data?.peer, let cachedUserData = self.data?.cachedData as? CachedUserData else {
             return
         }
         if cachedUserData.callsPrivate {
@@ -74,7 +73,7 @@ extension PeerInfoScreenNode {
         self.controller?.push(CreateExternalMediaStreamScreen(context: self.context, peerId: self.peerId, credentialsPromise: credentialsPromise, mode: .create(liveStream: false)))
     }
     
-    func createAndJoinGroupCall(peerId: PeerId, joinAsPeerId: PeerId?) {
+    func createAndJoinGroupCall(peerId: EnginePeer.Id, joinAsPeerId: EnginePeer.Id?) {
         guard let controller = self.controller, !controller.presentAccountFrozenInfoIfNeeded() else {
             return
         }
@@ -128,7 +127,7 @@ extension PeerInfoScreenNode {
                     case .generic, .scheduledTooLate:
                         text = strongSelf.presentationData.strings.Login_UnknownError
                     case .anonymousNotAllowed:
-                        if let channel = strongSelf.data?.peer as? TelegramChannel, case .broadcast = channel.info {
+                        if case let .channel(channel) = strongSelf.data?.peer, case .broadcast = channel.info {
                             text = strongSelf.presentationData.strings.LiveStream_AnonymousDisabledAlertText
                         } else {
                             text = strongSelf.presentationData.strings.VoiceChat_AnonymousDisabledAlertText
@@ -142,11 +141,18 @@ extension PeerInfoScreenNode {
         }
     }
 
-    func openVoiceChatDisplayAsPeerSelection(completion: @escaping (PeerId) -> Void, gesture: ContextGesture? = nil, contextController: ContextControllerProtocol? = nil, result: ((ContextMenuActionResult) -> Void)? = nil, backAction: ((ContextControllerProtocol) -> Void)? = nil) {
+    func openVoiceChatDisplayAsPeerSelection(completion: @escaping (EnginePeer.Id) -> Void, gesture: ContextGesture? = nil, contextController: ContextControllerProtocol? = nil, result: ((ContextMenuActionResult) -> Void)? = nil, backAction: ((ContextControllerProtocol) -> Void)? = nil) {
         let dismissOnSelection = contextController == nil
-        let currentAccountPeer = self.context.account.postbox.loadedPeerWithId(context.account.peerId)
+        let currentAccountPeer = self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
+        |> mapToSignal { peer -> Signal<EnginePeer, NoError> in
+            if let peer {
+                return .single(peer)
+            } else {
+                return .never()
+            }
+        }
         |> map { peer in
-            return [FoundPeer(peer: EnginePeer(peer), subscribers: nil)]
+            return [FoundPeer(peer: peer, subscribers: nil)]
         }
         let _ = (combineLatest(queue: Queue.mainQueue(), currentAccountPeer, self.displayAsPeersPromise.get() |> take(1))
         |> map { currentAccountPeer, availablePeers -> [FoundPeer] in
@@ -239,16 +245,23 @@ extension PeerInfoScreenNode {
         })
     }
 
-    func openVoiceChatOptions(defaultJoinAsPeerId: PeerId?, gesture: ContextGesture? = nil, contextController: ContextControllerProtocol? = nil) {
+    func openVoiceChatOptions(defaultJoinAsPeerId: EnginePeer.Id?, gesture: ContextGesture? = nil, contextController: ContextControllerProtocol? = nil) {
         guard let chatPeer = self.data?.peer else {
             return
         }
         let context = self.context
         let peerId = self.peerId
         let defaultJoinAsPeerId = defaultJoinAsPeerId ?? self.context.account.peerId
-        let currentAccountPeer = self.context.account.postbox.loadedPeerWithId(self.context.account.peerId)
+        let currentAccountPeer = self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: self.context.account.peerId))
+        |> mapToSignal { peer -> Signal<EnginePeer, NoError> in
+            if let peer {
+                return .single(peer)
+            } else {
+                return .never()
+            }
+        }
         |> map { peer in
-            return [FoundPeer(peer: EnginePeer(peer), subscribers: nil)]
+            return [FoundPeer(peer: peer, subscribers: nil)]
         }
         let _ = (combineLatest(queue: Queue.mainQueue(), currentAccountPeer, self.displayAsPeersPromise.get() |> take(1))
         |> map { currentAccountPeer, availablePeers -> [FoundPeer] in
@@ -290,7 +303,7 @@ extension PeerInfoScreenNode {
 
             let createVoiceChatTitle: String
             let scheduleVoiceChatTitle: String
-            if let channel = strongSelf.data?.peer as? TelegramChannel, case .broadcast = channel.info {
+            if case let .channel(channel) = strongSelf.data?.peer, case .broadcast = channel.info {
                 createVoiceChatTitle = strongSelf.presentationData.strings.ChannelInfo_CreateLiveStream
                 scheduleVoiceChatTitle = strongSelf.presentationData.strings.ChannelInfo_ScheduleLiveStream
             } else {
@@ -313,11 +326,11 @@ extension PeerInfoScreenNode {
             var credentialsPromise: Promise<GroupCallStreamCredentials>?
             var canCreateStream = false
             switch chatPeer {
-            case let group as TelegramGroup:
+            case let .legacyGroup(group):
                 if case .creator = group.role {
                     canCreateStream = true
                 }
-            case let channel as TelegramChannel:
+            case let .channel(channel):
                 if channel.hasPermission(.manageCalls) {
                     canCreateStream = true
                     credentialsPromise = Promise()

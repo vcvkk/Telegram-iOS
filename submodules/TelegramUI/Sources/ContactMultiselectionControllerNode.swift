@@ -1,7 +1,6 @@
 import Display
 import UIKit
 import AsyncDisplayKit
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 import TelegramPresentationData
@@ -20,16 +19,16 @@ import CheckComponent
 
 private struct SearchResultEntry: Identifiable {
     let index: Int
-    let peer: Peer
-    
+    let peer: EnginePeer
+
     var stableId: Int64 {
         return self.peer.id.toInt64()
     }
-    
+
     static func ==(lhs: SearchResultEntry, rhs: SearchResultEntry) -> Bool {
-        return lhs.index == rhs.index && lhs.peer.isEqual(rhs.peer)
+        return lhs.index == rhs.index && lhs.peer == rhs.peer
     }
-    
+
     static func <(lhs: SearchResultEntry, rhs: SearchResultEntry) -> Bool {
         return lhs.index < rhs.index
     }
@@ -314,7 +313,7 @@ final class ContactMultiselectionControllerNode: ASDisplayNode {
             }
         case let .chats(chatsNode):
             chatsNode.peerSelected = { [weak self] peer, _, _, _, _ in
-                self?.openPeer?(.peer(peer: peer._asPeer(), isGlobal: false, participantCount: nil))
+                self?.openPeer?(.peer(peer: peer, isGlobal: false, participantCount: nil))
             }
             chatsNode.additionalCategorySelected = { [weak self] id in
                 guard let strongSelf = self else {
@@ -327,7 +326,7 @@ final class ContactMultiselectionControllerNode: ASDisplayNode {
         let searchText = ValuePromise<String>()
         
         self.tokenListNode.deleteToken = { [weak self] id in
-            if let id = id as? PeerId {
+            if let id = id as? EnginePeer.Id {
                 self?.removeSelectedPeer?(ContactListPeerId.peer(id))
             } else if let id = id as? Int {
                 self?.removeSelectedCategory?(id)
@@ -489,7 +488,7 @@ final class ContactMultiselectionControllerNode: ASDisplayNode {
                 } else if count <= 1 {
                     let callTitle: String
                     if case let .contacts(contactListNode) = self.contentNode, let peer = contactListNode.selectedPeers.first, case let .peer(peer, _, _) = peer {
-                        callTitle = self.presentationData.strings.NewCall_ActionCallSingle(EnginePeer(peer).compactDisplayTitle).string
+                        callTitle = self.presentationData.strings.NewCall_ActionCallSingle(peer.compactDisplayTitle).string
                     } else {
                         callTitle = self.presentationData.strings.NewCall_ActionCallMultiple
                     }

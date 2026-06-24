@@ -32,7 +32,19 @@ public final class EmojiSuggestionsComponent: Component {
     }
     
     public static func suggestionData(context: AccountContext, isSavedMessages: Bool, query: String) -> Signal<[TelegramMediaFile], NoError> {
-        let hasPremium: Signal<Bool, NoError> = .single(true)
+        let hasPremium: Signal<Bool, NoError>
+        if isSavedMessages {
+            hasPremium = .single(true)
+        } else {
+            hasPremium = context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
+            |> map { peer -> Bool in
+                guard case let .user(user) = peer else {
+                    return false
+                }
+                return user.isPremium
+            }
+            |> distinctUntilChanged
+        }
         
         return combineLatest(
             context.account.postbox.itemCollectionsView(orderedItemListCollectionIds: [], namespaces: [Namespaces.ItemCollection.CloudEmojiPacks], aroundIndex: nil, count: 10000000),
@@ -92,7 +104,19 @@ public final class EmojiSuggestionsComponent: Component {
     }
     
     public static func searchData(context: AccountContext, isSavedMessages: Bool, query: String) -> Signal<[TelegramMediaFile], NoError> {
-        let hasPremium: Signal<Bool, NoError> = .single(true)
+        let hasPremium: Signal<Bool, NoError>
+        if isSavedMessages {
+            hasPremium = .single(true)
+        } else {
+            hasPremium = context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
+            |> map { peer -> Bool in
+                guard case let .user(user) = peer else {
+                    return false
+                }
+                return user.isPremium
+            }
+            |> distinctUntilChanged
+        }
     
         if query.isSingleEmoji {
             return combineLatest(

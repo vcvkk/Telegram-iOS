@@ -976,7 +976,7 @@ public func dataAndStorageController(context: AccountContext, focusOnItemTag: Da
         } else {
             defaultWebBrowser = presentationData.strings.WebBrowser_Telegram.replacingOccurrences(of: "Telegram", with: "exteraGram")
         }
-        
+
         let previousSensitiveContent = sensitiveContent.swap(contentSettingsConfiguration?.sensitiveContentEnabled)
         var animateChanges = false
         if previousSensitiveContent != contentSettingsConfiguration?.sensitiveContentEnabled {

@@ -15,7 +15,6 @@ import ItemListPeerActionItem
 import InviteLinksUI
 import UndoUI
 import SendInviteLinkScreen
-import Postbox
 
 private final class ChannelMembersControllerArguments {
     let context: AccountContext
@@ -265,10 +264,19 @@ private enum ChannelMembersEntry: ItemListNodeEntry {
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! ChannelMembersControllerArguments
         switch self {
-            case let .hideMembers(text, disabledReason, isInteractive, value):
-                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: text, value: value, enableInteractiveChanges: isInteractive, enabled: true, displayLocked: !value && disabledReason != nil, sectionId: self.section, style: .blocks, updated: { value in
+            case let .hideMembers(text, disabledReason, isInteractive, currentValue):
+                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: text, value: currentValue, enableInteractiveChanges: isInteractive, enabled: true, displayLocked: !currentValue && disabledReason != nil, sectionId: self.section, style: .blocks, updated: { value in
                     if let disabledReason {
-                        arguments.displayHideMembersTip(disabledReason)
+                        switch disabledReason {
+                        case .notEnoughMembers:
+                            if currentValue && !value {
+                                arguments.updateHideMembers(value)
+                            } else {
+                                arguments.displayHideMembersTip(disabledReason)
+                            }
+                        case .notAllowed:
+                            arguments.displayHideMembersTip(disabledReason)
+                        }
                     } else {
                         arguments.updateHideMembers(value)
                     }
@@ -385,7 +393,7 @@ private struct ChannelMembersControllerState: Equatable {
     }
 }
 
-private func channelMembersControllerEntries(context: AccountContext, presentationData: PresentationData, view: PeerView, state: ChannelMembersControllerState, contacts: [RenderedChannelParticipant]?, participants: [RenderedChannelParticipant]?, isGroup: Bool) -> [ChannelMembersEntry] {
+private func channelMembersControllerEntries(context: AccountContext, presentationData: PresentationData, view: EngineRawPeerView, state: ChannelMembersControllerState, contacts: [RenderedChannelParticipant]?, participants: [RenderedChannelParticipant]?, isGroup: Bool) -> [ChannelMembersEntry] {
     if participants == nil || participants?.count == nil {
         return []
     }
@@ -695,7 +703,7 @@ public func channelMembersController(context: AccountContext, updatedPresentatio
                 pushControllerImpl?(controller)
             }
         } else {
-            if let infoController = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: participant.peer._asPeer(), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+            if let infoController = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: participant.peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
                 pushControllerImpl?(infoController)
             }
         }
@@ -712,10 +720,10 @@ public func channelMembersController(context: AccountContext, updatedPresentatio
     
     let peerView = context.account.viewTracker.peerView(peerId)
     
-    let (contactsDisposable, _) = context.peerChannelMemberCategoriesContextsManager.contacts(engine: context.engine, postbox: context.account.postbox, network: context.account.network, accountPeerId: context.account.peerId, peerId: peerId, searchQuery: nil, updated: { state in
+    let (contactsDisposable, _) = context.peerChannelMemberCategoriesContextsManager.contacts(engine: context.engine, accountPeerId: context.account.peerId, peerId: peerId, searchQuery: nil, updated: { state in
         contactsPromise.set(.single(state.list))
     })
-    let (disposable, loadMoreControl) = context.peerChannelMemberCategoriesContextsManager.recent(engine: context.engine, postbox: context.account.postbox, network: context.account.network, accountPeerId: context.account.peerId, peerId: peerId, updated: { state in
+    let (disposable, loadMoreControl) = context.peerChannelMemberCategoriesContextsManager.recent(engine: context.engine, accountPeerId: context.account.peerId, peerId: peerId, updated: { state in
         peersPromise.set(.single(state.list))
     })
     actionsDisposable.add(disposable)
@@ -744,7 +752,7 @@ public func channelMembersController(context: AccountContext, updatedPresentatio
         }
         if !isEmpty {
             if state.editing {
-                rightNavigationButton = ItemListNavigationButton(content: .text(presentationData.strings.Common_Done), style: .bold, enabled: true, action: {
+                rightNavigationButton = ItemListNavigationButton(content: .icon(.done), style: .bold, enabled: true, action: {
                     updateState { state in
                         return state.withUpdatedEditing(false)
                     }
@@ -773,7 +781,7 @@ public func channelMembersController(context: AccountContext, updatedPresentatio
                     return state.withUpdatedSearchingMembers(false)
                 }
             }, openPeer: { peer, _ in
-                if let infoController = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: peer._asPeer(), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+                if let infoController = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
                     pushControllerImpl?(infoController)
                 }
             }, pushController: { c in

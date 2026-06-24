@@ -1,7 +1,6 @@
 import Foundation
 import TelegramPresentationData
 import AccountContext
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 import Display
@@ -16,7 +15,7 @@ import TopMessageReactions
 import ChatMessagePaymentAlertController
 
 extension ChatControllerImpl {
-    func forwardMessages(forceHideNames: Bool = false, messageIds: [MessageId], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool = false) {
+    func forwardMessages(forceHideNames: Bool = false, messageIds: [EngineMessage.Id], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool = false) {
         let _ = (self.context.engine.data.get(EngineDataMap(
             messageIds.map(TelegramEngine.EngineData.Item.Messages.Message.init)
         ))
@@ -28,7 +27,7 @@ extension ChatControllerImpl {
         })
     }
 
-    func forwardMessages(forceHideNames: Bool = false, messages: [Message], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool) {
+    func forwardMessages(forceHideNames: Bool = false, messages: [EngineRawMessage], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool) {
         let _ = self.presentVoiceMessageDiscardAlert(action: {
             var filter: ChatListNodePeersFilter = [.onlyWriteable, .excludeDisabled, .doNotSearchMessages]
             var hasPublicPolls = false
@@ -143,7 +142,7 @@ extension ChatControllerImpl {
                             let inputText = convertMarkdownToAttributes(messageText)
                             for text in breakChatInputText(trimChatInputText(inputText)) {
                                 if text.length != 0 {
-                                    var attributes: [MessageAttribute] = []
+                                    var attributes: [EngineMessage.Attribute] = []
                                     let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
                                     if !entities.isEmpty {
                                         attributes.append(TextEntitiesMessageAttribute(entities: entities))
@@ -153,7 +152,7 @@ extension ChatControllerImpl {
                             }
                         }
                         
-                        var attributes: [MessageAttribute] = []
+                        var attributes: [EngineMessage.Attribute] = []
                         attributes.append(ForwardOptionsMessageAttribute(hideNames: forwardOptions?.hideNames == true, hideCaptions: forwardOptions?.hideCaptions == true))
                         
                         result.append(contentsOf: messages.map { message -> EnqueueMessage in
@@ -317,14 +316,14 @@ extension ChatControllerImpl {
                             let transformedMessages = strongSelf.transformEnqueueMessages(result, silentPosting: true)
                             commit(transformedMessages)
                         case .schedule:
-                            strongSelf.presentScheduleTimePicker(completion: { [weak self] scheduleTime, repeatPeriod in
+                            strongSelf.presentScheduleTimePicker(completion: { [weak self] timeResult in
                                 if let strongSelf = self {
-                                    let transformedMessages = strongSelf.transformEnqueueMessages(result, silentPosting: false, scheduleTime: scheduleTime, repeatPeriod: repeatPeriod)
+                                    let transformedMessages = strongSelf.transformEnqueueMessages(result, silentPosting: timeResult.silentPosting, scheduleTime: timeResult.time, repeatPeriod: timeResult.repeatPeriod)
                                     commit(transformedMessages)
                                 }
                             })
                         case .whenOnline:
-                            let transformedMessages = strongSelf.transformEnqueueMessages(result, silentPosting: false, scheduleTime: scheduleWhenOnlineTimestamp)
+                            let transformedMessages = strongSelf.transformEnqueueMessages(result, silentPosting: strongSelf.presentationInterfaceState.interfaceState.silentPosting, scheduleTime: scheduleWhenOnlineTimestamp)
                             commit(transformedMessages)
                         }
                     }

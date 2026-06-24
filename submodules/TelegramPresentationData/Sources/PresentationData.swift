@@ -45,10 +45,10 @@ public struct PresentationAppIcon: Equatable {
     public let imageName: String
     public let isDefault: Bool
     public let isPremium: Bool
-    public let isEGPro: Bool
+    public let isSGPro: Bool
     
-    public init(isEGPro: Bool = false, name: String, imageName: String, isDefault: Bool = false, isPremium: Bool = false) {
-        self.isEGPro = isEGPro
+    public init(isSGPro: Bool = false, name: String, imageName: String, isDefault: Bool = false, isPremium: Bool = false) {
+        self.isSGPro = isSGPro
         self.name = name
         self.imageName = imageName
         self.isDefault = isDefault
@@ -504,11 +504,6 @@ private func automaticThemeShouldSwitchNow(_ parameters: AutomaticThemeSwitchPar
         case let .brightness(threshold):
             return UIScreen.main.brightness <= CGFloat(threshold)
     }
-}
-
-public func automaticThemeShouldSwitchNow(settings: AutomaticThemeSwitchSetting, systemUserInterfaceStyle: WindowUserInterfaceStyle) -> Bool {
-    let parameters = AutomaticThemeSwitchParameters(settings: settings)
-    return automaticThemeShouldSwitchNow(parameters, systemUserInterfaceStyle: systemUserInterfaceStyle)
 }
 
 private func automaticThemeShouldSwitch(_ settings: AutomaticThemeSwitchSetting, systemUserInterfaceStyle: WindowUserInterfaceStyle) -> Signal<Bool, NoError> {

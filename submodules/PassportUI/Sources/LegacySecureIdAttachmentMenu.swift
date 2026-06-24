@@ -76,7 +76,7 @@ func presentLegacySecureIdAttachmentMenu(context: AccountContext, present: @esca
             |> runOn(.mainQueue())
             |> delay(0.1, queue: .mainQueue())).start()
             
-            let _ = (processedLegacySecureIdAttachmentItems(postbox: context.account.postbox, signal: signal)
+            let _ = (processedLegacySecureIdAttachmentItems(signal: signal)
             |> mapToSignal { resources -> Signal<([TelegramMediaResource], SecureIdRecognizedDocumentData?), NoError> in
                 switch type {
                     case .generic, .idCard:
@@ -116,7 +116,7 @@ private enum AttachmentItem {
     case iCloud(URL)
 }
 
-private func processedLegacySecureIdAttachmentItems(postbox: Postbox, signal: SSignal) -> Signal<[TelegramMediaResource], NoError> {
+private func processedLegacySecureIdAttachmentItems(signal: SSignal) -> Signal<[TelegramMediaResource], NoError> {
     let nativeSignal = Signal<AttachmentItem?, NoError> { subscriber in
         let disposable = signal.start(next: { next in
             if let dict = next as? [String: Any], let image = dict["image"] as? UIImage {
@@ -470,14 +470,14 @@ private class IsoCountries {
                 IsoCountryInfo(name: "Serbia", numeric: "688", alpha2: "RS", alpha3: "SRB", calling: "+381", currency: "RSD", continent: "EU" ),
                 IsoCountryInfo(name: "Seychelles", numeric: "690", alpha2: "SC", alpha3: "SYC", calling: "+248", currency: "SCR", continent: "AF" ),
                 IsoCountryInfo(name: "Sierra Leone", numeric: "694", alpha2: "SL", alpha3: "SLE", calling: "+232", currency: "SLL", continent: "AF" ),
-                IsoCountryInfo(name: "Singapore", numeric: "702", alpha2: "SG", alpha3: "EGP", calling: "+65", currency: "EGD", continent: "AS" ),
+                IsoCountryInfo(name: "Singapore", numeric: "702", alpha2: "SG", alpha3: "SGP", calling: "+65", currency: "SGD", continent: "AS" ),
                 IsoCountryInfo(name: "Sint Maarten (Dutch part)", numeric: "534", alpha2: "SX", alpha3: "SXM", calling: "+599", currency: "ANG", continent: "" ),
                 IsoCountryInfo(name: "Slovakia", numeric: "703", alpha2: "SK", alpha3: "SVK", calling: "+421", currency: "SKK", continent: "EU" ),
                 IsoCountryInfo(name: "Slovenia", numeric: "705", alpha2: "SI", alpha3: "SVN", calling: "+386", currency: "EUR", continent: "EU" ),
                 IsoCountryInfo(name: "Solomon Islands", numeric: "090", alpha2: "SB", alpha3: "SLB", calling: "+677", currency: "SBD", continent: "OC" ),
                 IsoCountryInfo(name: "Somalia", numeric: "706", alpha2: "SO", alpha3: "SOM", calling: "+252", currency: "SOS", continent: "AF" ),
                 IsoCountryInfo(name: "South Africa", numeric: "710", alpha2: "ZA", alpha3: "ZAF", calling: "+27", currency: "ZAR", continent: "AF" ),
-                IsoCountryInfo(name: "South Georgia and the South Sandwich Islands", numeric: "239", alpha2: "GS", alpha3: "EGS", calling: "+500", currency: "GBP", continent: "AN" ),
+                IsoCountryInfo(name: "South Georgia and the South Sandwich Islands", numeric: "239", alpha2: "GS", alpha3: "SGS", calling: "+500", currency: "GBP", continent: "AN" ),
                 IsoCountryInfo(name: "South Sudan", numeric: "728", alpha2: "SS", alpha3: "SSD", calling: "+211", currency: "SSP", continent: "" ),
                 IsoCountryInfo(name: "Spain", numeric: "724", alpha2: "ES", alpha3: "ESP", calling: "+34", currency: "EUR", continent: "EU" ),
                 IsoCountryInfo(name: "Sri Lanka", numeric: "144", alpha2: "LK", alpha3: "LKA", calling: "+94", currency: "LKR", continent: "AS" ),

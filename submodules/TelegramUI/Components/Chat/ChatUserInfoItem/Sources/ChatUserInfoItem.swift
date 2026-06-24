@@ -3,7 +3,6 @@ import UIKit
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import TextFormat
@@ -114,7 +113,7 @@ public final class ChatUserInfoItemNode: ListViewItemNode, ASGestureRecognizerDe
     
     private var groupsInCommonContext: GroupsInCommonContext?
     private var groupsInCommonDisposable: Disposable?
-    private var groupsInCommon: [Peer] = []
+    private var groupsInCommon: [EnginePeer] = []
     
     private let disclaimerTextNode: TextNodeWithEntities
     
@@ -436,7 +435,7 @@ public final class ChatUserInfoItemNode: ListViewItemNode, ASGestureRecognizerDe
                                 guard let self, let item = self.item else {
                                     return
                                 }
-                                self.groupsInCommon = Array(state.peers.compactMap { $0.peer }.prefix(3))
+                                self.groupsInCommon = Array(state.peers.compactMap { $0.peer }.prefix(3)).map(EnginePeer.init)
                                 self.groupsAvatarsNode.update(context: item.context, peers: self.groupsInCommon, synchronousLoad: true, imageSize: avatarImageSize, imageSpacing: avatarSpacing, borderWidth: avatarBorder)
                             })
                         }

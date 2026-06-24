@@ -300,8 +300,6 @@ private func handleInternetUrl(
                         } else {
                             context.sharedContext.applicationBindings.openUrl(originalUrl)
                         }
-                    } else {
-                        context.sharedContext.applicationBindings.openUrl(originalUrl)
                     }
                 } else {
                     var isExceptedDomain = false

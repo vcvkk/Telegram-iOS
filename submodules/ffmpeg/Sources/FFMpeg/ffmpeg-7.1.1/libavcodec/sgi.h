@@ -1,5 +1,5 @@
 /*
- * EGI image encoder
+ * SGI image encoder
  * Xiaohui Sun <tjnksxh@hotmail.com>
  *
  * This file is part of FFmpeg.
@@ -23,14 +23,14 @@
 #define AVCODEC_SGI_H
 
 /**
- * EGI image file signature
+ * SGI image file signature
  */
-#define EGI_MAGIC 474
+#define SGI_MAGIC 474
 
-#define EGI_HEADER_SIZE 512
+#define SGI_HEADER_SIZE 512
 
-#define EGI_GRAYSCALE 1
-#define EGI_RGB 3
-#define EGI_RGBA 4
+#define SGI_GRAYSCALE 1
+#define SGI_RGB 3
+#define SGI_RGBA 4
 
 #endif /* AVCODEC_SGI_H */

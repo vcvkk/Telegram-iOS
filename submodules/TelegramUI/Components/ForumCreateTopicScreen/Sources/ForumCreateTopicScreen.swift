@@ -15,7 +15,6 @@ import MultilineTextComponent
 import EmojiStatusComponent
 import PremiumUI
 import ProgressNavigationButtonNode
-import Postbox
 import SwitchComponent
 
 private final class TitleFieldComponent: Component {
@@ -898,21 +897,17 @@ private final class ForumCreateTopicScreenComponent: CombinedComponent {
                         openSearch: {
                         },
                         addGroupAction: { groupId, isPremiumLocked, _ in
-                            guard let collectionId = groupId.base as? ItemCollectionId else {
+                            guard let collectionId = groupId.base as? EngineItemCollectionId else {
                                 return
                             }
-                            
-                            let viewKey = PostboxViewKey.orderedItemList(id: Namespaces.OrderedItemList.CloudFeaturedEmojiPacks)
-                            let _ = (accountContext.account.postbox.combinedView(keys: [viewKey])
+
+                            let _ = (accountContext.engine.data.subscribe(TelegramEngine.EngineData.Item.Collections.FeaturedEmojiPacks())
                                      |> take(1)
-                                     |> deliverOnMainQueue).start(next: { views in
-                                guard let view = views.views[viewKey] as? OrderedItemListView else {
-                                    return
-                                }
-                                for featuredEmojiPack in view.items.lazy.map({ $0.contents.get(FeaturedStickerPackItem.self)! }) {
+                                     |> deliverOnMainQueue).start(next: { items in
+                                for featuredEmojiPack in items {
                                     if featuredEmojiPack.info.id == collectionId {
                                         let _ = accountContext.engine.stickers.addStickerPackInteractively(info: featuredEmojiPack.info._parse(), items: featuredEmojiPack.topItems).start()
-                                        
+
                                         break
                                     }
                                 }
@@ -962,7 +957,7 @@ public class ForumCreateTopicScreen: ViewControllerComponentContainer {
     
     public enum Mode: Equatable {
         case create
-        case edit(threadId: Int64, threadInfo: TelegramCore.EngineMessageHistoryThread.Info, isHidden: Bool)
+        case edit(threadId: Int64, threadInfo: EngineMessageHistoryThread.Info, isHidden: Bool)
     }
     
     private let context: AccountContext
@@ -1020,10 +1015,10 @@ public class ForumCreateTopicScreen: ViewControllerComponentContainer {
         switch mode {
         case .create:
             title = presentationData.strings.CreateTopic_CreateTitle
-            doneTitle = presentationData.strings.CreateTopic_Create
+            doneTitle = "___done"
         case let .edit(threadId, topic, isHidden):
             title = presentationData.strings.CreateTopic_EditTitle
-            doneTitle = presentationData.strings.Common_Done
+            doneTitle = "___done"
             
             self.state = (topic.title, topic.icon, topic.iconColor, threadId == 1 ? isHidden : nil)
         }
@@ -1032,7 +1027,7 @@ public class ForumCreateTopicScreen: ViewControllerComponentContainer {
         
         self.readyValue.set(componentReady.get() |> timeout(0.3, queue: .mainQueue(), alternate: .single(true)))
         
-        self.navigationItem.leftBarButtonItem = UIBarButtonItem(title: presentationData.strings.Common_Cancel, style: .plain, target: self, action: #selector(self.cancelPressed))
+        self.navigationItem.leftBarButtonItem = UIBarButtonItem(title: "___close", style: .plain, target: self, action: #selector(self.cancelPressed))
         
         self.doneBarItem = UIBarButtonItem(title: doneTitle, style: .done, target: self, action: #selector(self.createPressed))
         self.navigationItem.rightBarButtonItem = self.doneBarItem

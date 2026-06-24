@@ -4,7 +4,6 @@ import Display
 import AsyncDisplayKit
 import ComponentFlow
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -86,7 +85,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         context: AccountContext,
         chatLocation: ChatLocation,
         type: MediaManagerPlayerType,
-        initialMessageId: MessageId,
+        initialMessageId: EngineMessage.Id,
         initialOrder: MusicPlaybackSettingsOrder,
         playlistLocation: SharedMediaPlaylistLocation?,
         requestDismiss: @escaping () -> Void,
@@ -120,8 +119,8 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
             self.currentIsReversed = true
         }
         
-        var openMessageImpl: ((MessageId) -> Bool)?
-        var openMessageContextMenuImpl: ((Message, ASDisplayNode, CGRect, Any?) -> Void)?
+        var openMessageImpl: ((EngineMessage.Id) -> Bool)?
+        var openMessageContextMenuImpl: ((EngineRawMessage, ASDisplayNode, CGRect, Any?) -> Void)?
         self.controllerInteraction = ChatControllerInteraction(openMessage: { message, _ in
             if let openMessageImpl = openMessageImpl {
                 return openMessageImpl(message.id)
@@ -142,7 +141,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }, tapMessage: nil, clickThroughMessage: { _, _ in
         }, toggleMessagesSelection: { _, _ in
         }, sendCurrentMessage: { _, _ in
-        }, sendMessage: { _ in
+        }, sendMessage: { _, _ in
         }, sendSticker: { _, _, _, _, _, _, _, _, _ in
             return false
         }, sendEmoji: { _, _, _ in
@@ -155,8 +154,9 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }, requestMessageActionUrlAuth: { _, _ in
         }, activateSwitchInline: { _, _, _ in
         }, openUrl: { _ in
-        }, shareCurrentLocation: {
-        }, shareAccountContact: {
+        }, openExternalInstantPage: { _ in
+        }, shareCurrentLocation: { _ in
+        }, shareAccountContact: { _ in
         }, sendBotCommand: { _, _ in
         }, openInstantPage: { _, _ in
         }, openWallpaper: { _ in
@@ -203,7 +203,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }, displaySwipeToReplyHint: {
         }, dismissReplyMarkupMessage: { _ in
         }, openMessagePollResults: { _, _ in
-        }, openPollCreation: { _ in
+        }, openPollCreation: { _, _ in
         }, openPollMedia: { _, _ in
         }, displayPollSolution: { _, _ in
         }, displayPsa: { _, _ in
@@ -245,10 +245,11 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }, sendGift: { _ in
         }, openUniqueGift: { _ in
         }, openMessageFeeException: {
-        }, requestMessageUpdate: { _, _ in
+        }, requestMessageUpdate: { _, _, _ in
         }, cancelInteractiveKeyboardGestures: {
         }, dismissTextInput: {
-        }, scrollToMessageId: { _ in
+        }, scrollToMessageId: { _, _ in
+        }, scrollToMessageIdWithAnchor: { _, _ in
         }, navigateToStory: { _, _ in
         }, attemptedNavigationToPrivateQuote: { _ in
         }, forceUpdateWarpContents: {
@@ -258,7 +259,10 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }, requestToggleTodoMessageItem: { _, _, _ in
         }, displayTodoToggleUnavailable: { _ in
         }, openStarsPurchase: { _ in
-        }, openRankInfo: { _, _, _ in }, openSetPeerAvatar: {}, automaticMediaDownloadSettings: MediaAutoDownloadSettings.defaultSettings, pollActionState: ChatInterfacePollActionState(), stickerSettings: ChatInterfaceStickerSettings(), presentationContext: ChatPresentationContext(context: context, backgroundNode: nil))
+        }, openRankInfo: { _, _, _ in
+        }, openSetPeerAvatar: {
+        }, displayPollRestrictedToast: { _ in
+        }, automaticMediaDownloadSettings: MediaAutoDownloadSettings.defaultSettings, pollActionState: ChatInterfacePollActionState(), stickerSettings: ChatInterfaceStickerSettings(), presentationContext: ChatPresentationContext(context: context, backgroundNode: nil))
         
         self.dimNode = ASDisplayNode()
         self.dimNode.backgroundColor = UIColor(white: 0.0, alpha: 0.5)
@@ -301,7 +305,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         self.historyFrameTopMaskNode.image = generateCornersImage(theme: self.presentationData.theme)
         self.historyFrameTopMaskNode.isUserInteractionEnabled = false
         
-        let tagMask: MessageTags
+        let tagMask: EngineMessage.Tags
         switch type {
             case .music:
                 tagMask = .music
@@ -387,7 +391,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
             self.currentAlbumArt = fileReferenceAndAlbumArt
             
             if let (fileReference, albumArt) = fileReferenceAndAlbumArt {
-                self.albumArtNode.setSignal(playerAlbumArt(postbox: self.context.account.postbox, engine: self.context.engine, fileReference: fileReference, albumArt: albumArt, thumbnail: false))
+                self.albumArtNode.setSignal(playerAlbumArt(engine: self.context.engine, fileReference: fileReference, albumArt: albumArt, thumbnail: false))
             }
             
             self.containerLayoutUpdated(layout, transition: .animated(duration: 0.25, curve: .easeInOut))
@@ -466,7 +470,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }
         
         openMessageImpl = { [weak self] id in
-            if let strongSelf = self, strongSelf.isNodeLoaded, let message = strongSelf.historyNode.messageInCurrentHistoryView(id) {
+            if let strongSelf = self, strongSelf.isNodeLoaded, let message = strongSelf.historyNode.messageInCurrentHistoryView(id)?._asMessage() {
                 var playlistLocation: PeerMessagesPlaylistLocation?
                 if let location = strongSelf.playlistLocation as? PeerMessagesPlaylistLocation {
                     if case let .custom(messages, canReorder, _, loadMore, hidePanel) = location {
@@ -600,7 +604,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }
         let _ = (self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: savedMusicContext.peerId))
         |> deliverOnMainQueue).start(next: { [weak self] peer in
-            guard let self, let peer = peer.flatMap({ PeerReference($0._asPeer()) }) else {
+            guard let self, let peer = peer.flatMap({ PeerReference($0) }) else {
                 return
             }
 
@@ -736,7 +740,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
                         if let controller = self.context.sharedContext.makePeerInfoController(
                             context: self.context,
                             updatedPresentationData: nil,
-                            peer: peer._asPeer(),
+                            peer: peer,
                             mode: .myProfile,
                             avatarInitiallyExpanded: false,
                             fromChat: false,
@@ -840,7 +844,9 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         containerTransform = CATransform3DScale(containerTransform, scale, scale, scale)
         
         transition.updateTransform(layer: self.containerContainingNode.layer, transform: containerTransform)
-        transition.updateCornerRadius(node: self.containerContainingNode, cornerRadius: layout.deviceMetrics.screenCornerRadius)
+        
+        let containerCornerRadius = max(22.0, layout.deviceMetrics.screenCornerRadius)
+        transition.updateCornerRadius(node: self.containerContainingNode, cornerRadius: containerCornerRadius)
     }
     
     private var effectiveHeaderHeight: CGFloat {
@@ -1188,8 +1194,8 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }
     }
     
-    private func transitionToUpdatedHistoryNode(atMessage messageId: MessageId) {
-        let tagMask: MessageTags
+    private func transitionToUpdatedHistoryNode(atMessage messageId: EngineMessage.Id) {
+        let tagMask: EngineMessage.Tags
         switch self.type {
             case .music:
                 tagMask = .music
@@ -1359,8 +1365,8 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }
     }
     
-    private func openMessageContextMenu(message: Message, node: ASDisplayNode, frame: CGRect, recognizer: TapLongTapOrDoubleTapGestureRecognizer? = nil, gesture: ContextGesture? = nil, location: CGPoint? = nil) {
-        guard let node = node as? ContextExtractedContentContainingNode, let peer = message.peers[message.id.peerId].flatMap({ PeerReference($0) }), let file = message.media.first(where: { $0 is TelegramMediaFile}) as? TelegramMediaFile else {
+    private func openMessageContextMenu(message: EngineRawMessage, node: ASDisplayNode, frame: CGRect, recognizer: TapLongTapOrDoubleTapGestureRecognizer? = nil, gesture: ContextGesture? = nil, location: CGPoint? = nil) {
+        guard let node = node as? ContextExtractedContentContainingNode, let peer = message.peers[message.id.peerId].flatMap({ PeerReference($0) }), let file = message.effectiveMedia.first(where: { $0 is TelegramMediaFile}) as? TelegramMediaFile else {
             return
         }
         let context = self.context

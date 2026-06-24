@@ -1,4 +1,3 @@
-import EGBadges
 import Foundation
 import UIKit
 import Display
@@ -6,7 +5,6 @@ import ComponentFlow
 import TelegramPresentationData
 import AccountContext
 import TelegramUIPreferences
-import Postbox
 import TelegramCore
 import PeerPresenceStatusManager
 import ChatTitleActivityNode
@@ -317,7 +315,6 @@ public final class ChatTitleComponent: Component {
         private var credibilityIcon: ComponentView<Empty>?
         private var verifiedIcon: ComponentView<Empty>?
         private var statusIcon: ComponentView<Empty>?
-        private var badgeIcon: ComponentView<Empty>?
         
         private var presenceManager: PeerPresenceStatusManager?
         
@@ -376,10 +373,9 @@ public final class ChatTitleComponent: Component {
             var titleCredibilityIcon: ChatTitleCredibilityIcon = .none
             var titleVerifiedIcon: ChatTitleCredibilityIcon = .none
             var titleStatusIcon: ChatTitleCredibilityIcon = .none
-            var titleBadgeIcon: ChatTitleCredibilityIcon = .none
             var isEnabled = true
             switch component.content {
-            case let .peer(peerView, customTitle, _, _, isScheduledMessages, isMuted, _, isEnabledValue):
+            case let .peer(peerView, customTitle, _, _, isScheduledMessages, isMuted, _, hidePeerStatus, isEnabledValue):
                 if peerView.peerId.isReplies {
                     titleSegments = [AnimatedTextComponent.Item(
                         id: AnyHashable(0),
@@ -451,7 +447,7 @@ public final class ChatTitleComponent: Component {
                                 titleCredibilityIcon = .fake
                             } else if peer.isScam {
                                 titleCredibilityIcon = .scam
-                            } else if let emojiStatus = peer.emojiStatus {
+                            } else if !hidePeerStatus, let emojiStatus = peer.emojiStatus {
                                 titleStatusIcon = .emojiStatus(emojiStatus)
                             } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled {
                                 titleCredibilityIcon = .premium
@@ -462,10 +458,6 @@ public final class ChatTitleComponent: Component {
                             }
                             if let verificationIconFileId = peer.verificationIconFileId {
                                 titleVerifiedIcon = .emojiStatus(PeerEmojiStatus(content: .emoji(fileId: verificationIconFileId), expirationDate: nil))
-                            }
-                            if !peer.isScam && !peer.isFake,
-                               let badge = BadgesController.shared.getBadge(peerIdValue: peer.id.id._internalGetInt64Value()) {
-                                titleBadgeIcon = .emojiStatus(PeerEmojiStatus(content: .emoji(fileId: badge.documentId), expirationDate: nil))
                             }
                         }
                     }
@@ -619,7 +611,7 @@ public final class ChatTitleComponent: Component {
             
             var inputActivitiesAllowed = true
             switch component.content {
-            case let .peer(peerView, _, _, _, isScheduledMessages, _, _, _):
+            case let .peer(peerView, _, _, _, isScheduledMessages, _, _, _, _):
                 if let peer = peerView.peer {
                     if peer.id == component.context.account.peerId || isScheduledMessages || peer.id.isRepliesOrVerificationCodes {
                         inputActivitiesAllowed = false
@@ -717,7 +709,7 @@ public final class ChatTitleComponent: Component {
                     }
                 } else {
                     switch component.content {
-                    case let .peer(peerView, customTitle, customSubtitle, onlineMemberCount, isScheduledMessages, _, customMessageCount, _):
+                    case let .peer(peerView, customTitle, customSubtitle, onlineMemberCount, isScheduledMessages, _, customMessageCount, _, _):
                         if let customSubtitle {
                             let string = NSAttributedString(string: customSubtitle, font: subtitleFont, textColor: component.theme.chat.inputPanel.inputControlColor)
                             state = .info(string, .generic)
@@ -985,39 +977,7 @@ public final class ChatTitleComponent: Component {
                     })
                 }
             }
-
-            var badgeIconSize: CGSize?
-            if let titleBadgeIcon = mapTitleIcon(titleBadgeIcon) {
-                let badgeIcon: ComponentView<Empty>
-                if let current = self.badgeIcon {
-                    badgeIcon = current
-                } else {
-                    badgeIcon = ComponentView()
-                    self.badgeIcon = badgeIcon
-                }
-                badgeIconSize = badgeIcon.update(
-                    transition: .immediate,
-                    component: AnyComponent(EmojiStatusComponent(
-                        context: component.context,
-                        animationCache: component.context.animationCache,
-                        animationRenderer: component.context.animationRenderer,
-                        content: titleBadgeIcon,
-                        isVisibleForAnimations: true,
-                        action: nil
-                    )),
-                    environment: {},
-                    containerSize: CGSize(width: 20.0, height: 20.0)
-                )
-            } else if let badgeIcon = self.badgeIcon {
-                self.badgeIcon = nil
-                if let badgeIconView = badgeIcon.view {
-                    transition.setScale(view: badgeIconView, scale: 0.001)
-                    transition.setAlpha(view: badgeIconView, alpha: 0.0, completion: { [weak badgeIconView] _ in
-                        badgeIconView?.removeFromSuperview()
-                    })
-                }
-            }
-
+            
             var verifiedIconSize: CGSize?
             if let titleVerifiedIcon = mapTitleIcon(titleVerifiedIcon) {
                 let verifiedIcon: ComponentView<Empty>
@@ -1078,10 +1038,7 @@ public final class ChatTitleComponent: Component {
             if let statusIconSize {
                 titleRightIconsWidth += statusIconSize.width + statusIconsSpacing
             }
-            if let badgeIconSize {
-                titleRightIconsWidth += badgeIconSize.width + statusIconsSpacing
-            }
-
+            
             let maxTitleWidth = availableSize.width - titleLeftIconsWidth - titleRightIconsWidth - containerSideInset * 2.0
             
             let titleSize = self.title.update(
@@ -1206,23 +1163,7 @@ public final class ChatTitleComponent: Component {
                 transition.setScale(view: statusIconView, scale: 1.0)
                 nextRightIconX += statusIconsSpacing + statusIconSize.width
             }
-
-            if let badgeIconSize, let badgeIconView = self.badgeIcon?.view {
-                let badgeIconFrame = CGRect(origin: CGPoint(x: nextRightIconX + statusIconsSpacing, y: titleFrame.minY), size: badgeIconSize)
-                if badgeIconView.superview == nil {
-                    badgeIconView.isUserInteractionEnabled = false
-                    self.contentContainer.addSubview(badgeIconView)
-                    badgeIconView.frame = badgeIconFrame
-                    ComponentTransition.immediate.setScale(view: badgeIconView, scale: 0.001)
-                    badgeIconView.alpha = 0.0
-                }
-                transition.setPosition(view: badgeIconView, position: badgeIconFrame.center)
-                transition.setBounds(view: badgeIconView, bounds: CGRect(origin: CGPoint(), size: badgeIconFrame.size))
-                transition.setAlpha(view: badgeIconView, alpha: 1.0)
-                transition.setScale(view: badgeIconView, scale: 1.0)
-                nextRightIconX += statusIconsSpacing + badgeIconSize.width
-            }
-
+            
             if let rightIconSize, let rightIconView = self.rightIcon?.view {
                 let rightIconFrame = CGRect(origin: CGPoint(x: nextRightIconX + rightTitleIconSpacing, y: titleFrame.minY + 5.0), size: rightIconSize)
                 if rightIconView.superview == nil {

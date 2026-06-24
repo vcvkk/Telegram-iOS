@@ -4,7 +4,6 @@ import AsyncDisplayKit
 import Display
 import TelegramCore
 import SwiftSignalKit
-import Postbox
 import TelegramPresentationData
 import AccountContext
 import ContextUI
@@ -25,23 +24,23 @@ private struct GroupsInCommonListTransaction {
 
 private struct GroupsInCommonListEntry: Comparable, Identifiable {
     var index: Int
-    var peer: Peer
-    
-    var stableId: PeerId {
+    var peer: EnginePeer
+
+    var stableId: EnginePeer.Id {
         return self.peer.id
     }
-    
+
     static func ==(lhs: GroupsInCommonListEntry, rhs: GroupsInCommonListEntry) -> Bool {
-        return lhs.peer.isEqual(rhs.peer)
+        return lhs.peer == rhs.peer
     }
     
     static func <(lhs: GroupsInCommonListEntry, rhs: GroupsInCommonListEntry) -> Bool {
         return lhs.index < rhs.index
     }
     
-    func item(context: AccountContext, presentationData: PresentationData, openPeer: @escaping (Peer) -> Void, openPeerContextAction: @escaping (Peer, ASDisplayNode, ContextGesture?) -> Void) -> ListViewItem {
+    func item(context: AccountContext, presentationData: PresentationData, openPeer: @escaping (EnginePeer) -> Void, openPeerContextAction: @escaping (EnginePeer, ASDisplayNode, ContextGesture?) -> Void) -> ListViewItem {
         let peer = self.peer
-        return ItemListPeerItem(presentationData: ItemListPresentationData(presentationData), dateTimeFormat: presentationData.dateTimeFormat, nameDisplayOrder: presentationData.nameDisplayOrder, context: context, peer: EnginePeer(self.peer), presence: nil, text: .none, label: .none, editing: ItemListPeerItemEditing(editable: false, editing: false, revealed: false), switchValue: nil, enabled: true, selectable: true, sectionId: 0, action: {
+        return ItemListPeerItem(presentationData: ItemListPresentationData(presentationData), dateTimeFormat: presentationData.dateTimeFormat, nameDisplayOrder: presentationData.nameDisplayOrder, context: context, peer: self.peer, presence: nil, text: .none, label: .none, editing: ItemListPeerItemEditing(editable: false, editing: false, revealed: false), switchValue: nil, enabled: true, selectable: true, sectionId: 0, action: {
             openPeer(peer)
         }, setPeerIdWithRevealedOptions: { _, _ in
         }, removePeer: { _ in
@@ -51,7 +50,7 @@ private struct GroupsInCommonListEntry: Comparable, Identifiable {
     }
 }
 
-private func preparedTransition(from fromEntries: [GroupsInCommonListEntry], to toEntries: [GroupsInCommonListEntry], context: AccountContext, presentationData: PresentationData, openPeer: @escaping (Peer) -> Void, openPeerContextAction: @escaping (Peer, ASDisplayNode, ContextGesture?) -> Void) -> GroupsInCommonListTransaction {
+private func preparedTransition(from fromEntries: [GroupsInCommonListEntry], to toEntries: [GroupsInCommonListEntry], context: AccountContext, presentationData: PresentationData, openPeer: @escaping (EnginePeer) -> Void, openPeerContextAction: @escaping (EnginePeer, ASDisplayNode, ContextGesture?) -> Void) -> GroupsInCommonListTransaction {
     let (deleteIndices, indicesAndItems, updateIndices) = mergeListsStableWithUpdates(leftList: fromEntries, rightList: toEntries)
     
     let deletions = deleteIndices.map { ListViewDeleteItem(index: $0, directionHint: nil) }
@@ -63,9 +62,9 @@ private func preparedTransition(from fromEntries: [GroupsInCommonListEntry], to 
 
 final class PeerInfoGroupsInCommonPaneNode: ASDisplayNode, PeerInfoPaneNode {
     private let context: AccountContext
-    private let peerId: PeerId
+    private let peerId: EnginePeer.Id
     private let chatControllerInteraction: ChatControllerInteraction
-    private let openPeerContextAction: (Bool, Peer, ASDisplayNode, ContextGesture?) -> Void
+    private let openPeerContextAction: (Bool, EnginePeer, ASDisplayNode, ContextGesture?) -> Void
     private let groupsInCommonContext: GroupsInCommonContext
     
     weak var parentController: ViewController?
@@ -106,7 +105,7 @@ final class PeerInfoGroupsInCommonPaneNode: ASDisplayNode, PeerInfoPaneNode {
         
     private var disposable: Disposable?
     
-    init(context: AccountContext, peerId: PeerId, chatControllerInteraction: ChatControllerInteraction, openPeerContextAction: @escaping (Bool, Peer, ASDisplayNode, ContextGesture?) -> Void, groupsInCommonContext: GroupsInCommonContext) {
+    init(context: AccountContext, peerId: EnginePeer.Id, chatControllerInteraction: ChatControllerInteraction, openPeerContextAction: @escaping (Bool, EnginePeer, ASDisplayNode, ContextGesture?) -> Void, groupsInCommonContext: GroupsInCommonContext) {
         self.context = context
         self.peerId = peerId
         self.chatControllerInteraction = chatControllerInteraction
@@ -180,7 +179,7 @@ final class PeerInfoGroupsInCommonPaneNode: ASDisplayNode, PeerInfoPaneNode {
         self.disposable?.dispose()
     }
     
-    func ensureMessageIsVisible(id: MessageId) {    
+    func ensureMessageIsVisible(id: EngineMessage.Id) {    
     }
     
     func scrollToTop() -> Bool {
@@ -229,11 +228,11 @@ final class PeerInfoGroupsInCommonPaneNode: ASDisplayNode, PeerInfoPaneNode {
         var entries: [GroupsInCommonListEntry] = []
         for peer in state.peers {
             if let peer = peer.peer {
-                entries.append(GroupsInCommonListEntry(index: entries.count, peer: peer))
+                entries.append(GroupsInCommonListEntry(index: entries.count, peer: EnginePeer(peer)))
             }
         }
         let transaction = preparedTransition(from: self.currentEntries, to: entries, context: self.context, presentationData: presentationData, openPeer: { [weak self] peer in
-            self?.chatControllerInteraction.openPeer(EnginePeer(peer), .default, nil, .default)
+            self?.chatControllerInteraction.openPeer(peer, .default, nil, .default)
         }, openPeerContextAction: { [weak self] peer, node, gesture in
             self?.openPeerContextAction(false, peer, node, gesture)
         })
@@ -292,7 +291,7 @@ final class PeerInfoGroupsInCommonPaneNode: ASDisplayNode, PeerInfoPaneNode {
         transition.updateFrame(view: self.listMaskView, frame: listMaskFrame)
     }
 
-    func findLoadedMessage(id: MessageId) -> Message? {
+    func findLoadedMessage(id: EngineMessage.Id) -> EngineMessage? {
         return nil
     }
     
@@ -308,7 +307,7 @@ final class PeerInfoGroupsInCommonPaneNode: ASDisplayNode, PeerInfoPaneNode {
     func cancelPreviewGestures() {
     }
     
-    func transitionNodeForGallery(messageId: MessageId, media: Media) -> (ASDisplayNode, CGRect, () -> (UIView?, UIView?))? {
+    func transitionNodeForGallery(messageId: EngineMessage.Id, media: EngineMedia) -> (ASDisplayNode, CGRect, () -> (UIView?, UIView?))? {
         return nil
     }
     

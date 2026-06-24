@@ -1,7 +1,6 @@
 import Foundation
 import UIKit
 import AsyncDisplayKit
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import AccountContext
@@ -47,12 +46,12 @@ func leftNavigationButtonForChatInterfaceState(_ presentationInterfaceState: Cha
             }
             
             if canClear {
-                let buttonItem = UIBarButtonItem(title: "___clear", style: .plain, target: target, action: selector)
+                let buttonItem = UIBarButtonItem(title: strings.Conversation_ClearAll, style: .plain, target: target, action: selector)
                 buttonItem.accessibilityLabel = title
                 return ChatNavigationButton(action: .clearHistory, buttonItem: buttonItem)
             } else {
                 title = strings.Conversation_ClearCache
-                let buttonItem = UIBarButtonItem(title: "___clear", style: .plain, target: target, action: selector)
+                let buttonItem = UIBarButtonItem(title: strings.Conversation_ClearCache, style: .plain, target: target, action: selector)
                 buttonItem.accessibilityLabel = title
                 return ChatNavigationButton(action: .clearCache, buttonItem: buttonItem)
             }
@@ -67,7 +66,7 @@ func leftNavigationButtonForChatInterfaceState(_ presentationInterfaceState: Cha
             if let currentButton = currentButton, currentButton.action == .dismiss {
                 return currentButton
             } else {
-                let buttonItem = UIBarButtonItem(title: strings.Common_Close, style: .plain, target: target, action: selector)
+                let buttonItem = UIBarButtonItem(title: "___close", style: .plain, target: target, action: selector)
                 buttonItem.accessibilityLabel = strings.Common_Close
                 return ChatNavigationButton(action: .dismiss, buttonItem: buttonItem)
             }
@@ -78,6 +77,9 @@ func leftNavigationButtonForChatInterfaceState(_ presentationInterfaceState: Cha
 }
 
 func rightNavigationButtonForChatInterfaceState(context: AccountContext, presentationInterfaceState: ChatPresentationInterfaceState, strings: PresentationStrings, currentButton: ChatNavigationButton?, target: Any?, selector: Selector?, chatInfoNavigationButton: ChatNavigationButton?, moreInfoNavigationButton: ChatNavigationButton?) -> ChatNavigationButton? {
+    if case .standard(.previewing) = presentationInterfaceState.mode {
+        return nil
+    }
     var hasMessages = false
     if let chatHistoryState = presentationInterfaceState.chatHistoryState {
         if case .loaded(false, _) = chatHistoryState {

@@ -50,13 +50,6 @@ private func addServiceMessageTextEntities(_ entities: [MessageTextEntity], to a
             attributedString.addAttribute(NSAttributedString.Key(rawValue: TelegramTextAttributes.Spoiler), value: true, range: entityRange)
         case let .CustomEmoji(_, fileId):
             attributedString.addAttribute(ChatTextInputAttributes.customEmoji, value: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: fileId, file: associatedMedia[MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)] as? TelegramMediaFile), range: entityRange)
-        case let .TextUrl(url):
-            if url.hasPrefix("tg://emoji?id=") {
-                let idPart = String(url.dropFirst("tg://emoji?id=".count)).components(separatedBy: "&").first ?? ""
-                if let fileId = Int64(idPart) {
-                    attributedString.addAttribute(ChatTextInputAttributes.customEmoji, value: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: fileId, file: associatedMedia[MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)] as? TelegramMediaFile), range: entityRange)
-                }
-            }
         default:
             break
         }
@@ -294,8 +287,6 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
                         switch entity.type {
                         case .Spoiler, .CustomEmoji:
                             return true
-                        case let .TextUrl(url):
-                            return url.hasPrefix("tg://emoji?id=")
                         default:
                             return false
                         }
@@ -911,7 +902,7 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
             case let .topicCreated(title, iconColor, iconFileId):
                 if forForumOverview {
                     let maybeFileId = iconFileId ?? 0
-                    attributedString = addAttributesToStringWithRanges(strings.Notification_OverviewTopicCreated(".", title)._tuple, body: bodyAttributes, argumentAttributes: [0: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: TelegramCore.EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
+                    attributedString = addAttributesToStringWithRanges(strings.Notification_OverviewTopicCreated(".", title)._tuple, body: bodyAttributes, argumentAttributes: [0: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
                 } else {
                     attributedString = NSAttributedString(string: strings.Notification_ForumTopicCreated, font: titleFont, textColor: primaryTextColor)
                 }
@@ -935,9 +926,9 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
                                 maybeFileId = info.icon ?? 0
                             }
                             if isHidden {
-                                attributedString = addAttributesToStringWithRanges(strings.Notification_OverviewTopicHidden(EnginePeer.user(user).displayTitle(strings: strings, displayOrder: nameDisplayOrder), ".", title)._tuple, body: bodyAttributes, argumentAttributes: [0: peerMentionAttributes(primaryTextColor: primaryTextColor, peerId: user.id), 1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: TelegramCore.EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
+                                attributedString = addAttributesToStringWithRanges(strings.Notification_OverviewTopicHidden(EnginePeer.user(user).displayTitle(strings: strings, displayOrder: nameDisplayOrder), ".", title)._tuple, body: bodyAttributes, argumentAttributes: [0: peerMentionAttributes(primaryTextColor: primaryTextColor, peerId: user.id), 1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
                             } else {
-                                attributedString = addAttributesToStringWithRanges(strings.Notification_OverviewTopicUnhidden(EnginePeer.user(user).displayTitle(strings: strings, displayOrder: nameDisplayOrder), ".", title)._tuple, body: bodyAttributes, argumentAttributes: [0: peerMentionAttributes(primaryTextColor: primaryTextColor, peerId: user.id), 1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: TelegramCore.EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
+                                attributedString = addAttributesToStringWithRanges(strings.Notification_OverviewTopicUnhidden(EnginePeer.user(user).displayTitle(strings: strings, displayOrder: nameDisplayOrder), ".", title)._tuple, body: bodyAttributes, argumentAttributes: [0: peerMentionAttributes(primaryTextColor: primaryTextColor, peerId: user.id), 1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
                             }
                         } else {
                             if isHidden {
@@ -972,9 +963,9 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
                                 maybeFileId = info.icon ?? 0
                             }
                             if isClosed {
-                                attributedString = addAttributesToStringWithRanges(strings.Notification_OverviewTopicClosed(EnginePeer.user(user).displayTitle(strings: strings, displayOrder: nameDisplayOrder), ".", title)._tuple, body: bodyAttributes, argumentAttributes: [0: peerMentionAttributes(primaryTextColor: primaryTextColor, peerId: user.id), 1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: TelegramCore.EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
+                                attributedString = addAttributesToStringWithRanges(strings.Notification_OverviewTopicClosed(EnginePeer.user(user).displayTitle(strings: strings, displayOrder: nameDisplayOrder), ".", title)._tuple, body: bodyAttributes, argumentAttributes: [0: peerMentionAttributes(primaryTextColor: primaryTextColor, peerId: user.id), 1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
                             } else {
-                                attributedString = addAttributesToStringWithRanges(strings.Notification_OverviewTopicReopened(EnginePeer.user(user).displayTitle(strings: strings, displayOrder: nameDisplayOrder), ".", title)._tuple, body: bodyAttributes, argumentAttributes: [0: peerMentionAttributes(primaryTextColor: primaryTextColor, peerId: user.id), 1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: TelegramCore.EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
+                                attributedString = addAttributesToStringWithRanges(strings.Notification_OverviewTopicReopened(EnginePeer.user(user).displayTitle(strings: strings, displayOrder: nameDisplayOrder), ".", title)._tuple, body: bodyAttributes, argumentAttributes: [0: peerMentionAttributes(primaryTextColor: primaryTextColor, peerId: user.id), 1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
                             }
                         } else {
                             if isClosed {
@@ -1012,7 +1003,7 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
                         }
                         attributedString = addAttributesToStringWithRanges(strings.Notification_ForumTopicRenamedIconChangedAuthor(EnginePeer.user(user).displayTitle(strings: strings, displayOrder: nameDisplayOrder), ".", title)._tuple, body: bodyAttributes, argumentAttributes: [
                             0: peerMentionAttributes(primaryTextColor: primaryTextColor, peerId: user.id),
-                            1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: TelegramCore.EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])
+                            1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])
                         ])
                     } else {
                         attributedString = NSAttributedString(string: strings.Notification_ForumTopicRenamed(title).string, font: titleFont, textColor: primaryTextColor)
@@ -1045,9 +1036,9 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
                         title = info.title
                     }
                     if case let .user(user) = message.author {
-                        attributedString = addAttributesToStringWithRanges(strings.Notification_ForumTopicIconChangedAuthor(EnginePeer.user(user).displayTitle(strings: strings, displayOrder: nameDisplayOrder), ".")._tuple, body: bodyAttributes, argumentAttributes: [0: peerMentionAttributes(primaryTextColor: primaryTextColor, peerId: user.id), 1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: TelegramCore.EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
+                        attributedString = addAttributesToStringWithRanges(strings.Notification_ForumTopicIconChangedAuthor(EnginePeer.user(user).displayTitle(strings: strings, displayOrder: nameDisplayOrder), ".")._tuple, body: bodyAttributes, argumentAttributes: [0: peerMentionAttributes(primaryTextColor: primaryTextColor, peerId: user.id), 1: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
                     } else {
-                        attributedString = addAttributesToStringWithRanges(strings.Notification_ForumTopicIconChanged(".")._tuple, body: bodyAttributes, argumentAttributes: [0: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: TelegramCore.EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
+                        attributedString = addAttributesToStringWithRanges(strings.Notification_ForumTopicIconChanged(".")._tuple, body: bodyAttributes, argumentAttributes: [0: MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [ChatTextInputAttributes.customEmoji.rawValue: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: maybeFileId, file: nil, custom: maybeFileId == 0 ? .topic(id: message.threadId ?? 0, info: EngineMessageHistoryThread.Info(title: title, icon: nil, iconColor: iconColor)) : nil)])])
                     }
                 }
             case let .suggestedProfilePhoto(image):
@@ -1835,8 +1826,6 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
                     switch entity.type {
                     case .Spoiler, .CustomEmoji:
                         return true
-                    case let .TextUrl(url):
-                        return url.hasPrefix("tg://emoji?id=")
                     default:
                         return false
                     }
@@ -1875,8 +1864,6 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
                     switch entity.type {
                     case .Spoiler, .CustomEmoji:
                         return true
-                    case let .TextUrl(url):
-                        return url.hasPrefix("tg://emoji?id=")
                     default:
                         return false
                     }
@@ -1937,8 +1924,15 @@ public func universalServiceMessageString(presentationData: (PresentationTheme, 
             attributedString = addAttributesToStringWithRanges(resultTitleString._tuple, body: bodyAttributes, argumentAttributes: [0: boldAttributes])
         } else if let dice = media as? TelegramMediaDice, let gameOutcome = dice.gameOutcome {
             if let value = dice.value {
+                let isAccountPeerOutcome: Bool
+                if let forwardInfo = message.forwardInfo {
+                    isAccountPeerOutcome = forwardInfo.author?.id == accountPeerId
+                } else {
+                    isAccountPeerOutcome = message.author?.id == accountPeerId
+                }
+
                 let rawString: String
-                if message.author?.id == accountPeerId {
+                if isAccountPeerOutcome {
                     if value == 1, let tonAmount = dice.tonAmount {
                         let value = formatTonAmountText(tonAmount, dateTimeFormat: dateTimeFormat)
                         rawString = strings.Conversation_EmojiStake_LostYou(value).string

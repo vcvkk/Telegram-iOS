@@ -1667,7 +1667,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             return nil
         }, egStartMessageEdit: { [weak self] message in
             if let strongSelf = self {
-                strongSelf.interfaceInteraction?.setupEditMessage(message.id, { _ in })
+                if canEditMessage(context: strongSelf.context, limitsConfiguration: strongSelf.context.currentLimitsConfiguration.with { EngineConfiguration.Limits($0) }, message: message) {
+                    strongSelf.interfaceInteraction?.setupEditMessage(message.id, { _ in })
+                }
             }
         }, openPeer: { [weak self] peer, navigation, fromMessage, source in
             var expandAvatar = false

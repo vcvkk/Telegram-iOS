@@ -3,7 +3,6 @@ import UIKit
 import AsyncDisplayKit
 import Display
 import ComponentFlow
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 import TelegramPresentationData
@@ -453,7 +452,7 @@ final class OverlayAudioPlayerControlsNode: ASDisplayNode {
                         case let .telegramFile(fileReference, _, _):
                             strongSelf.currentFileReference = fileReference
                             if let size = fileReference.media.size {
-                                strongSelf.scrubberNode.bufferingStatus = strongSelf.account.postbox.mediaBox.resourceRangesStatus(fileReference.media.resource)
+                                strongSelf.scrubberNode.bufferingStatus = strongSelf.engine.resources.resourceRangesStatus(resource: EngineMediaResource(fileReference.media.resource))
                                 |> map { ranges -> (RangeSet<Int64>, Int64) in
                                     return (ranges, size)
                                 }
@@ -759,7 +758,7 @@ final class OverlayAudioPlayerControlsNode: ASDisplayNode {
         if self.currentAlbumArt != albumArt || !self.currentAlbumArtInitialized {
             self.currentAlbumArtInitialized = true
             self.currentAlbumArt = albumArt
-            self.albumArtNode.setSignal(playerAlbumArt(postbox: self.account.postbox, engine: self.engine, fileReference: self.currentFileReference, albumArt: albumArt, thumbnail: true))
+            self.albumArtNode.setSignal(playerAlbumArt(engine: self.engine, fileReference: self.currentFileReference, albumArt: albumArt, thumbnail: true))
             self.requestAlbumArtDisplay?(nil)
         }
     }
@@ -829,8 +828,14 @@ final class OverlayAudioPlayerControlsNode: ASDisplayNode {
     }
     
     func updateLayout(width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, bottomInset: CGFloat, maxHeight: CGFloat, savedMusic: Bool?, transition: ContainedViewLayoutTransition) -> CGFloat {
+        let previousWidth = self.validLayout?.width
         self.validLayout = (width, leftInset, rightInset, bottomInset, maxHeight, savedMusic)
     
+        var transition = transition
+        if previousWidth == nil || previousWidth?.isZero == true {
+            transition = .immediate
+        }
+        
         let finalPanelHeight = OverlayAudioPlayerControlsNode.heightForLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, maxHeight: maxHeight, isExpanded: self.isExpanded, savedMusic: savedMusic)
         let panelHeight = OverlayAudioPlayerControlsNode.heightForLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, maxHeight: maxHeight, isExpanded: self.isExpanded, savedMusic: nil)
         

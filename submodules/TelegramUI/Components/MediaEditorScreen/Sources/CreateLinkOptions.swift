@@ -3,7 +3,6 @@ import UIKit
 import AsyncDisplayKit
 import Display
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import ContextUI
 import ChatPresentationInterfaceState
@@ -36,7 +35,7 @@ func presentLinkOptionsController(context: AccountContext, selfController: Creat
 }
 
 private func linkOptions(context: AccountContext, selfController: CreateLinkScreen, snapshotImage: UIImage?, isDark: Bool, sourceNode: ASDisplayNode, url: String, text: String, positionBelowText: Bool, largeMedia: Bool?, webPage: TelegramMediaWebpage, completion: @escaping (Bool, Bool?) -> Void, remove: @escaping () -> Void) -> ContextController.Source? {
-    let peerId = PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(1))
+    let peerId = EnginePeer.Id(namespace: Namespaces.Peer.CloudUser, id: EnginePeer.Id.Id._internalFromInt64Value(1))
     let presentationData = context.sharedContext.currentPresentationData.with { $0 }.withUpdated(theme: defaultDarkColorPresentationTheme)
     
     let initialUrlPreview = ChatPresentationInterfaceState.UrlPreview(url: url, webPage: webPage, positionBelowText: positionBelowText, largeMedia: largeMedia)
@@ -90,7 +89,7 @@ private func linkOptions(context: AccountContext, selfController: CreateLinkScre
     if let image = snapshotImage {
         let wallpaperResource = LocalFileMediaResource(fileId: Int64.random(in: Int64.min ... Int64.max))
         if let wallpaperData = image.jpegData(compressionQuality: 0.87) {
-            context.account.postbox.mediaBox.storeResourceData(wallpaperResource.id, data: wallpaperData, synchronous: true)
+            context.engine.resources.storeResourceData(id: EngineMediaResource.Id(wallpaperResource.id), data: wallpaperData, synchronous: true)
         }
         let wallpaperRepresentation = TelegramMediaImageRepresentation(dimensions: PixelDimensions(image.size), resource: wallpaperResource, progressiveSizes: [], immediateThumbnailData: nil)
         wallpaper = .image([wallpaperRepresentation], WallpaperSettings())

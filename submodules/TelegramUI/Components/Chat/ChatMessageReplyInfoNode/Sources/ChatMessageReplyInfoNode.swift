@@ -1,7 +1,6 @@
 import Foundation
 import UIKit
 import AsyncDisplayKit
-import Postbox
 import Display
 import TelegramCore
 import SwiftSignalKit
@@ -80,13 +79,13 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
         public let strings: PresentationStrings
         public let context: AccountContext
         public let type: ChatMessageReplyInfoType
-        public let message: Message?
+        public let message: EngineRawMessage?
         public let replyForward: QuotedReplyMessageAttribute?
         public let quote: (quote: EngineMessageReplyQuote, isQuote: Bool)?
         public let innerSubject: EngineMessageReplyInnerSubject?
-        public let story: StoryId?
+        public let story: EngineStoryId?
         public let isSummarized: Bool
-        public let parentMessage: Message
+        public let parentMessage: EngineRawMessage
         public let constrainedSize: CGSize
         public let animationCache: AnimationCache?
         public let animationRenderer: MultiAnimationRenderer?
@@ -97,13 +96,13 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
             strings: PresentationStrings,
             context: AccountContext,
             type: ChatMessageReplyInfoType,
-            message: Message?,
+            message: EngineRawMessage?,
             replyForward: QuotedReplyMessageAttribute?,
             quote: (quote: EngineMessageReplyQuote, isQuote: Bool)?,
             innerSubject: EngineMessageReplyInnerSubject?,
-            story: StoryId?,
+            story: EngineStoryId?,
             isSummarized: Bool,
-            parentMessage: Message,
+            parentMessage: EngineRawMessage,
             constrainedSize: CGSize,
             animationCache: AnimationCache?,
             animationRenderer: MultiAnimationRenderer?,
@@ -222,7 +221,7 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                 if let peer = forwardInfo.author {
                     author = peer
                 } else if let authorSignature = forwardInfo.authorSignature {
-                    author = TelegramUser(id: PeerId(namespace: Namespaces.Peer.Empty, id: PeerId.Id._internalFromInt64Value(Int64(authorSignature.persistentHashValue % 32))), accessHash: nil, firstName: authorSignature, lastName: nil, username: nil, phone: nil, photo: [], botInfo: nil, restrictionInfo: nil, flags: [], emojiStatus: nil, usernames: [], storiesHidden: nil, nameColor: nil, backgroundEmojiId: nil, profileColor: nil, profileBackgroundEmojiId: nil, subscriberCount: nil, verificationIconFileId: nil)
+                    author = TelegramUser(id: EnginePeer.Id(namespace: Namespaces.Peer.Empty, id: EnginePeer.Id.Id._internalFromInt64Value(Int64(authorSignature.persistentHashValue % 32))), accessHash: nil, firstName: authorSignature, lastName: nil, username: nil, phone: nil, photo: [], botInfo: nil, restrictionInfo: nil, flags: [], emojiStatus: nil, usernames: [], storiesHidden: nil, nameColor: nil, backgroundEmojiId: nil, profileColor: nil, profileBackgroundEmojiId: nil, subscriberCount: nil, verificationIconFileId: nil)
                 }
             }
             
@@ -430,8 +429,6 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
             }
             
             let textColor: UIColor
-            let iconColor: UIColor
-            
             switch arguments.type {
                 case let .bubble(incoming):
                     if isExpiredStory || isStory {
@@ -441,10 +438,8 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                     } else {
                         textColor = incoming ? arguments.presentationData.theme.theme.chat.message.incoming.primaryTextColor : arguments.presentationData.theme.theme.chat.message.outgoing.primaryTextColor
                     }
-                    iconColor = incoming ? arguments.presentationData.theme.theme.chat.message.incoming.accentTextColor : arguments.presentationData.theme.theme.chat.message.outgoing.accentTextColor
                 case .standalone:
                     textColor = titleColor
-                    iconColor = titleColor
             }
             
             var textLeftInset: CGFloat = 0.0
@@ -492,8 +487,6 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                         return true
                     } else if case .CustomEmoji = entity.type {
                         return true
-                    } else if case let .TextUrl(url) = entity.type, url.hasPrefix("tg://emoji?id=") {
-                        return true
                     } else {
                         return false
                     }
@@ -510,8 +503,6 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                     } else if case .Spoiler = entity.type {
                         return true
                     } else if case .CustomEmoji = entity.type {
-                        return true
-                    } else if case let .TextUrl(url) = entity.type, url.hasPrefix("tg://emoji?id=") {
                         return true
                     } else {
                         return false
@@ -876,6 +867,7 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                             expiredStoryIconView.frame = CGRect(origin: CGPoint(x: textFrame.minX - 1.0, y: textFrame.minY + 3.0 + UIScreenPixel), size: imageSize)
                         }
                     }
+                    expiredStoryIconView.tintColor = titleColor
                 } else if let expiredStoryIconView = node.expiredStoryIconView {
                     expiredStoryIconView.removeFromSuperview()
                 }
@@ -910,7 +902,7 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                     pattern = MessageInlineBlockBackgroundView.Pattern(
                         context: arguments.context,
                         fileId: backgroundEmojiId,
-                        file: arguments.parentMessage.associatedMedia[MediaId(
+                        file: arguments.parentMessage.associatedMedia[EngineMedia.Id(
                             namespace: Namespaces.Media.CloudFile,
                             id: backgroundEmojiId
                         )] as? TelegramMediaFile,
@@ -955,7 +947,7 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                 
                 if let todoItemCompleted {
                     let checkLayerFrame = CGRect(origin: CGPoint(x: textFrame.minX - 16.0, y: textFrame.minY + 5.0), size: CGSize(width: 12.0, height: 12.0))
-                    let checkTheme = CheckNodeTheme(backgroundColor: iconColor, strokeColor: .clear, borderColor: iconColor, overlayBorder: false, hasInset: true, hasShadow: false, borderWidth: 1.0)
+                    let checkTheme = CheckNodeTheme(backgroundColor: titleColor, strokeColor: .clear, borderColor: titleColor, overlayBorder: false, hasInset: true, hasShadow: false, borderWidth: 1.0)
                     
                     let checkLayer: CheckLayer
                     if let current = node.checkLayer {

@@ -13,7 +13,6 @@ swift_library(
         "//submodules/SSignalKit/SwiftSignalKit",
         "//submodules/AsyncDisplayKit",
         "//submodules/Display",
-        "//submodules/Postbox",
         "//submodules/TelegramCore",
         "//submodules/AccountContext",
         "//submodules/TelegramPresentationData",
@@ -21,6 +20,7 @@ swift_library(
         "//submodules/ComponentFlow",
         "//submodules/TelegramUI/Components/AlertComponent",
         "//submodules/TelegramUI/Components/AlertComponent/AlertMultilineInputFieldComponent",
+        "//submodules/TelegramUI/Components/AlertComponent/AlertWebpagePreviewComponent",
     ],
     visibility = [
         "//visibility:public",

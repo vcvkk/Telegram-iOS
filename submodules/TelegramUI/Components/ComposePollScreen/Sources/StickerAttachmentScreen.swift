@@ -3,7 +3,6 @@ import UIKit
 import Display
 import AccountContext
 import TelegramCore
-import Postbox
 import SwiftSignalKit
 import TelegramPresentationData
 import ComponentFlow
@@ -88,6 +87,7 @@ final class StickerAttachmentScreenComponent: Component {
             var id: AnyHashable
             var version: Int
             var isPreset: Bool
+            var canLoadMore: Bool
         }
         
         private struct EmojiSearchState {
@@ -107,6 +107,7 @@ final class StickerAttachmentScreenComponent: Component {
                 self.emojiSearchState.set(.single(self.emojiSearchStateValue))
             }
         }
+        private var emojiSearchContext: EmojiSearchContext?
         
         private let stickerSearchDisposable = MetaDisposable()
         private let stickerSearchState = Promise<EmojiSearchState>(EmojiSearchState(result: nil, isSearching: false))
@@ -236,26 +237,19 @@ final class StickerAttachmentScreenComponent: Component {
                                 return
                             }
                             
-                            let viewKey = PostboxViewKey.orderedItemList(id: Namespaces.OrderedItemList.CloudFeaturedEmojiPacks)
                             let _ = (combineLatest(
-                                context.account.postbox.itemCollectionsView(orderedItemListCollectionIds: [], namespaces: [Namespaces.ItemCollection.CloudEmojiPacks], aroundIndex: nil, count: 10000000),
-                                context.account.postbox.combinedView(keys: [viewKey])
+                                context.engine.data.subscribe(TelegramEngine.EngineData.Item.ItemCollections.InstalledPackIds(namespace: Namespaces.ItemCollection.CloudEmojiPacks)),
+                                context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudFeaturedEmojiPacks))
                             )
                             |> take(1)
-                            |> deliverOnMainQueue).start(next: { [weak self] emojiPacksView, views in
-                                guard let view = views.views[viewKey] as? OrderedItemListView else {
-                                    return
-                                }
+                            |> deliverOnMainQueue).start(next: { [weak self] installedIds, items in
                                 guard let self else {
                                     return
                                 }
-                                                                
-                                var installedCollectionIds = Set<ItemCollectionId>()
-                                for (id, _, _) in emojiPacksView.collectionInfos {
-                                    installedCollectionIds.insert(id)
-                                }
-                                
-                                let stickerPacks = view.items.map({ $0.contents.get(FeaturedStickerPackItem.self)! }).filter({
+
+                                let installedCollectionIds = Set(installedIds)
+
+                                let stickerPacks = items.map({ $0.contents.get(FeaturedStickerPackItem.self)! }).filter({
                                     !installedCollectionIds.contains($0.info.id)
                                 })
                                 
@@ -287,18 +281,14 @@ final class StickerAttachmentScreenComponent: Component {
                 openSearch: {
                 },
                 addGroupAction: { [weak self] groupId, isPremiumLocked, _ in
-                    guard let self, let component = self.component, let collectionId = groupId.base as? ItemCollectionId else {
+                    guard let self, let component = self.component, let collectionId = groupId.base as? EngineItemCollectionId else {
                         return
                     }
                     let context = component.context
-                    let viewKey = PostboxViewKey.orderedItemList(id: Namespaces.OrderedItemList.CloudFeaturedEmojiPacks)
-                    let _ = (context.account.postbox.combinedView(keys: [viewKey])
+                    let _ = (context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudFeaturedEmojiPacks))
                     |> take(1)
-                    |> deliverOnMainQueue).start(next: { views in
-                        guard let view = views.views[viewKey] as? OrderedItemListView else {
-                            return
-                        }
-                        for featuredStickerPack in view.items.lazy.map({ $0.contents.get(FeaturedStickerPackItem.self)! }) {
+                    |> deliverOnMainQueue).start(next: { items in
+                        for featuredStickerPack in items.lazy.map({ $0.contents.get(FeaturedStickerPackItem.self)! }) {
                             if featuredStickerPack.info.id == collectionId {
                                 let _ = (context.engine.stickers.loadedStickerPack(reference: .id(id: featuredStickerPack.info.id.id, accessHash: featuredStickerPack.info.accessHash), forceActualized: false)
                                 |> mapToSignal { result -> Signal<Void, NoError> in
@@ -307,7 +297,7 @@ final class StickerAttachmentScreenComponent: Component {
                                         if installed {
                                             return .complete()
                                         } else {
-                                            return context.engine.stickers.addStickerPackInteractively(info: info._parse(), items: items) |> map { _ -> Void in }
+                                            return context.engine.stickers.addStickerPackInteractively(info: info._parse(), items: items) |> map { _ in return Void() }
                                         }
                                     case .fetching:
                                         break
@@ -390,15 +380,18 @@ final class StickerAttachmentScreenComponent: Component {
                     
                     switch query {
                     case .none:
+                        self.emojiSearchContext = nil
                         self.emojiSearchDisposable.set(nil)
-                        self.emojiSearchState.set(.single(EmojiSearchState(result: nil, isSearching: false)))
+                        self.emojiSearchStateValue = EmojiSearchState(result: nil, isSearching: false)
                     case let .text(rawQuery, languageCode):
                         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
                         
                         if query.isEmpty {
+                            self.emojiSearchContext = nil
                             self.emojiSearchDisposable.set(nil)
-                            self.emojiSearchState.set(.single(EmojiSearchState(result: nil, isSearching: false)))
+                            self.emojiSearchStateValue = EmojiSearchState(result: nil, isSearching: false)
                         } else {
+                            self.emojiSearchContext = nil
                             var signal = context.engine.stickers.searchEmojiKeywords(inputLanguageCode: languageCode, query: query, completeMatch: false)
                             if !languageCode.lowercased().hasPrefix("en") {
                                 signal = signal
@@ -418,24 +411,25 @@ final class StickerAttachmentScreenComponent: Component {
                                 signal,
                                 hasPremium
                             )
-                            |> mapToSignal { keywords, hasPremium -> Signal<[EmojiPagerContentComponent.ItemGroup], NoError> in
+                            |> mapToSignal { keywords, hasPremium -> Signal<(groups: [EmojiPagerContentComponent.ItemGroup], canLoadMore: Bool, isSearching: Bool, searchContext: EmojiSearchContext?), NoError> in
                                 var allEmoticons: [String: String] = [:]
                                 for keyword in keywords {
                                     for emoticon in keyword.emoticons {
                                         allEmoticons[emoticon] = keyword.keyword
                                     }
                                 }
-                                let remoteSignal: Signal<(items: [TelegramMediaFile], isFinalResult: Bool), NoError>
+                                let remoteSignal: Signal<EmojiSearchContext.State, NoError>
+                                let emojiSearchContext: EmojiSearchContext?
                                 if hasPremium {
-                                    remoteSignal = context.engine.stickers.searchEmoji(query: query, emoticon: Array(allEmoticons.keys), inputLanguageCode: languageCode)
+                                    let currentEmojiSearchContext = context.engine.stickers.emojiSearchContext(query: query, emoticon: Array(allEmoticons.keys), inputLanguageCode: languageCode)
+                                    emojiSearchContext = currentEmojiSearchContext
+                                    remoteSignal = currentEmojiSearchContext.state
                                 } else {
-                                    remoteSignal = .single(([], true))
+                                    emojiSearchContext = nil
+                                    remoteSignal = .single(EmojiSearchContext.State(items: [], canLoadMore: false, isLoadingMore: false))
                                 }
                                 return remoteSignal
-                                |> mapToSignal { foundEmoji -> Signal<[EmojiPagerContentComponent.ItemGroup], NoError> in
-                                    if foundEmoji.items.isEmpty && !foundEmoji.isFinalResult {
-                                        return .complete()
-                                    }
+                                |> map { foundEmoji -> (groups: [EmojiPagerContentComponent.ItemGroup], canLoadMore: Bool, isSearching: Bool, searchContext: EmojiSearchContext?) in
                                     var items: [EmojiPagerContentComponent.Item] = []
                                     
                                     let appendUnicodeEmoji = {
@@ -460,7 +454,7 @@ final class StickerAttachmentScreenComponent: Component {
                                         appendUnicodeEmoji()
                                     }
                                     
-                                    var existingIds = Set<MediaId>()
+                                    var existingIds = Set<EngineMedia.Id>()
                                     for itemFile in foundEmoji.items {
                                         if existingIds.contains(itemFile.fileId) {
                                             continue
@@ -485,7 +479,7 @@ final class StickerAttachmentScreenComponent: Component {
                                         appendUnicodeEmoji()
                                     }
                                 
-                                    return .single([EmojiPagerContentComponent.ItemGroup(
+                                    return ([EmojiPagerContentComponent.ItemGroup(
                                         supergroupId: "search",
                                         groupId: "search",
                                         title: nil,
@@ -502,7 +496,7 @@ final class StickerAttachmentScreenComponent: Component {
                                         headerItem: nil,
                                         fillWithLoadingPlaceholders: false,
                                         items: items
-                                    )])
+                                    )], foundEmoji.canLoadMore, foundEmoji.items.isEmpty && foundEmoji.isLoadingMore, emojiSearchContext)
                                 }
                             }
                             
@@ -515,16 +509,18 @@ final class StickerAttachmentScreenComponent: Component {
                                     return
                                 }
                                 
-                                self.emojiSearchStateValue = EmojiSearchState(result: EmojiSearchResult(groups: result, id: AnyHashable(query), version: version, isPreset: false), isSearching: false)
+                                self.emojiSearchContext = result.searchContext
+                                self.emojiSearchStateValue = EmojiSearchState(result: EmojiSearchResult(groups: result.groups, id: AnyHashable(query), version: version, isPreset: false, canLoadMore: result.canLoadMore), isSearching: result.isSearching)
                                 version += 1
                             }))
                         }
                     case let .category(value):
+                        self.emojiSearchContext = nil
                         let resultSignal = context.engine.stickers.searchEmoji(category: value)
                         |> mapToSignal { files, isFinalResult -> Signal<(items: [EmojiPagerContentComponent.ItemGroup], isFinalResult: Bool), NoError> in
                             var items: [EmojiPagerContentComponent.Item] = []
                             
-                            var existingIds = Set<MediaId>()
+                            var existingIds = Set<EngineMedia.Id>()
                             for itemFile in files {
                                 if existingIds.contains(itemFile.fileId) {
                                     continue
@@ -592,10 +588,10 @@ final class StickerAttachmentScreenComponent: Component {
                                         fillWithLoadingPlaceholders: true,
                                         items: []
                                     )
-                                ], id: AnyHashable(value.id), version: version, isPreset: true), isSearching: false)
+                                ], id: AnyHashable(value.id), version: version, isPreset: true, canLoadMore: false), isSearching: false)
                                 return
                             }
-                            self.emojiSearchStateValue = EmojiSearchState(result: EmojiSearchResult(groups: result.items, id: AnyHashable(value.id), version: version, isPreset: true), isSearching: false)
+                            self.emojiSearchStateValue = EmojiSearchState(result: EmojiSearchResult(groups: result.items, id: AnyHashable(value.id), version: version, isPreset: true, canLoadMore: false), isSearching: false)
                             version += 1
                         }))
                     }
@@ -607,6 +603,9 @@ final class StickerAttachmentScreenComponent: Component {
 //                    self?.update(isExpanded: true, transition: .animated(duration: 0.4, curve: .spring))
                 },
                 onScroll: {},
+                loadMore: { [weak self] in
+                    self?.emojiSearchContext?.loadMore()
+                },
                 chatPeerId: nil,
                 peekBehavior: nil,
                 customLayout: nil,
@@ -638,14 +637,13 @@ final class StickerAttachmentScreenComponent: Component {
                     let context = component.context
                     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                     if groupId == AnyHashable("featuredTop") {
-                        let viewKey = PostboxViewKey.orderedItemList(id: Namespaces.OrderedItemList.CloudFeaturedStickerPacks)
-                        let _ = (context.account.postbox.combinedView(keys: [viewKey])
+                        let _ = (context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudFeaturedStickerPacks))
                         |> take(1)
-                        |> deliverOnMainQueue).start(next: { [weak self] views in
-                            guard let self, let controller = self.environment?.controller(), let view = views.views[viewKey] as? OrderedItemListView else {
+                        |> deliverOnMainQueue).start(next: { [weak self] items in
+                            guard let self, let controller = self.environment?.controller() else {
                                 return
                             }
-                            for featuredStickerPack in view.items.lazy.map({ $0.contents.get(FeaturedStickerPackItem.self)! }) {
+                            for featuredStickerPack in items.lazy.map({ $0.contents.get(FeaturedStickerPackItem.self)! }) {
                                 if featuredStickerPack.topItems.contains(where: { $0.file.fileId == file.fileId }) {
                                     controller.push(FeaturedStickersScreen(
                                         context: context,
@@ -659,7 +657,7 @@ final class StickerAttachmentScreenComponent: Component {
                                             return true
                                         }
                                     ))
-                                    
+
                                     break
                                 }
                             }
@@ -688,18 +686,14 @@ final class StickerAttachmentScreenComponent: Component {
                     }
                 },
                 addGroupAction: { [weak self] groupId, isPremiumLocked, _ in
-                    guard let strongSelf = self, let component = strongSelf.component, let collectionId = groupId.base as? ItemCollectionId else {
+                    guard let strongSelf = self, let component = strongSelf.component, let collectionId = groupId.base as? EngineItemCollectionId else {
                         return
                     }
                     let context = component.context
-                    let viewKey = PostboxViewKey.orderedItemList(id: Namespaces.OrderedItemList.CloudFeaturedStickerPacks)
-                    let _ = (context.account.postbox.combinedView(keys: [viewKey])
+                    let _ = (context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudFeaturedStickerPacks))
                     |> take(1)
-                    |> deliverOnMainQueue).start(next: { views in
-                        guard let view = views.views[viewKey] as? OrderedItemListView else {
-                            return
-                        }
-                        for featuredStickerPack in view.items.lazy.map({ $0.contents.get(FeaturedStickerPackItem.self)! }) {
+                    |> deliverOnMainQueue).start(next: { items in
+                        for featuredStickerPack in items.lazy.map({ $0.contents.get(FeaturedStickerPackItem.self)! }) {
                             if featuredStickerPack.info.id == collectionId {
                                 let _ = (context.engine.stickers.loadedStickerPack(reference: .id(id: featuredStickerPack.info.id.id, accessHash: featuredStickerPack.info.accessHash), forceActualized: false)
                                 |> mapToSignal { result -> Signal<Void, NoError> in
@@ -708,7 +702,7 @@ final class StickerAttachmentScreenComponent: Component {
                                         if installed {
                                             return .complete()
                                         } else {
-                                            return context.engine.stickers.addStickerPackInteractively(info: info._parse(), items: items) |> map { _ -> Void in }
+                                            return context.engine.stickers.addStickerPackInteractively(info: info._parse(), items: items) |> map { _ in return Void() }
                                         }
                                     case .fetching:
                                         break
@@ -745,15 +739,11 @@ final class StickerAttachmentScreenComponent: Component {
                         ])])
                         context.sharedContext.mainWindow?.presentInGlobalOverlay(actionSheet)
                     } else if groupId == AnyHashable("featuredTop") {
-                        let viewKey = PostboxViewKey.orderedItemList(id: Namespaces.OrderedItemList.CloudFeaturedStickerPacks)
-                        let _ = (context.account.postbox.combinedView(keys: [viewKey])
+                        let _ = (context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudFeaturedStickerPacks))
                         |> take(1)
-                        |> deliverOnMainQueue).start(next: { views in
-                            guard let view = views.views[viewKey] as? OrderedItemListView else {
-                                return
-                            }
+                        |> deliverOnMainQueue).start(next: { items in
                             var stickerPackIds: [Int64] = []
-                            for featuredStickerPack in view.items.lazy.map({ $0.contents.get(FeaturedStickerPackItem.self)! }) {
+                            for featuredStickerPack in items.lazy.map({ $0.contents.get(FeaturedStickerPackItem.self)! }) {
                                 stickerPackIds.append(featuredStickerPack.info.id.id)
                             }
                             let _ = ApplicationSpecificNotice.setDismissedTrendingStickerPacks(accountManager: context.sharedContext.accountManager, values: stickerPackIds).start()
@@ -797,7 +787,7 @@ final class StickerAttachmentScreenComponent: Component {
                         |> mapToSignal { files -> Signal<(items: [EmojiPagerContentComponent.ItemGroup], isFinalResult: Bool), NoError> in
                             var items: [EmojiPagerContentComponent.Item] = []
                             
-                            var existingIds = Set<MediaId>()
+                            var existingIds = Set<EngineMedia.Id>()
                             for item in files.items {
                                 let itemFile = item.file
                                 if existingIds.contains(itemFile.fileId) {
@@ -865,10 +855,10 @@ final class StickerAttachmentScreenComponent: Component {
                                         fillWithLoadingPlaceholders: true,
                                         items: []
                                     )
-                                ], id: AnyHashable(value.id), version: version, isPreset: true), isSearching: false)
+                                ], id: AnyHashable(value.id), version: version, isPreset: true, canLoadMore: false), isSearching: false)
                                 return
                             }
-                            strongSelf.stickerSearchStateValue = EmojiSearchState(result: EmojiSearchResult(groups: result.items, id: AnyHashable(value.id), version: version, isPreset: true), isSearching: false)
+                            strongSelf.stickerSearchStateValue = EmojiSearchState(result: EmojiSearchResult(groups: result.items, id: AnyHashable(value.id), version: version, isPreset: true, canLoadMore: false), isSearching: false)
                             version += 1
                         }))
                     }
@@ -926,7 +916,7 @@ final class StickerAttachmentScreenComponent: Component {
                             }
                             
                             let defaultSearchState: EmojiPagerContentComponent.SearchState = emojiSearchResult.isPreset ? .active : .empty(hasResults: true)
-                            emojiContent = emojiContent.withUpdatedItemGroups(panelItemGroups: emojiContent.panelItemGroups, contentItemGroups: emojiSearchResult.groups, itemContentUniqueId: EmojiPagerContentComponent.ContentId(id: emojiSearchResult.id, version: emojiSearchResult.version), emptySearchResults: emptySearchResults, searchState: emojiSearchState.isSearching ? .searching : defaultSearchState)
+                            emojiContent = emojiContent.withUpdatedItemGroups(panelItemGroups: emojiContent.panelItemGroups, contentItemGroups: emojiSearchResult.groups, itemContentUniqueId: EmojiPagerContentComponent.ContentId(id: emojiSearchResult.id, version: emojiSearchResult.version), emptySearchResults: emptySearchResults, searchState: emojiSearchState.isSearching ? .searching : defaultSearchState, canLoadMore: emojiSearchResult.canLoadMore)
                         } else if emojiSearchState.isSearching {
                             emojiContent = emojiContent.withUpdatedItemGroups(panelItemGroups: emojiContent.panelItemGroups, contentItemGroups: emojiContent.contentItemGroups, itemContentUniqueId: emojiContent.itemContentUniqueId, emptySearchResults: emojiContent.emptySearchResults, searchState: .searching)
                         }

@@ -161,8 +161,8 @@ private enum ContactListSearchEntry: Comparable, Identifiable {
                 let peerItem: ContactsPeerItemPeer
                 switch peer {
                     case let .peer(peer, _, _):
-                        peerItem = .peer(peer: EnginePeer(peer), chatPeer: EnginePeer(peer))
-                        nativePeer = EnginePeer(peer)
+                        peerItem = .peer(peer: peer, chatPeer: peer)
+                        nativePeer = peer
                     case let .deviceContact(stableId, contact):
                         peerItem = .deviceContact(stableId: stableId, contact: contact)
                 }
@@ -178,7 +178,7 @@ private enum ContactListSearchEntry: Comparable, Identifiable {
                     openPeer(peer, .generic)
                 }, disabledAction: { _ in
                     if case let .peer(peer, _, _) = peer {
-                        openDisabledPeer(EnginePeer(peer), requiresPremiumForMessaging ? .premiumRequired : .generic)
+                        openDisabledPeer(peer, requiresPremiumForMessaging ? .premiumRequired : .generic)
                     }
                 }, contextAction: contextAction.flatMap { contextAction in
                     return nativePeer.flatMap { nativePeer in
@@ -491,7 +491,7 @@ public final class ContactsSearchContainerNode: SearchDisplayControllerContentNo
                                 enabled = false
                             }
                         }
-                        entries.append(.peer(index: index, theme: themeAndStrings.0, strings: themeAndStrings.1, peer: .peer(peer: peer._asPeer(), isGlobal: false, participantCount: nil), presence: localPeersAndPresences.1[peer.id], group: .contacts, enabled: enabled, requiresPremiumForMessaging: requiresPremiumForMessaging, displayCallIcons: displayCallIcons))
+                        entries.append(.peer(index: index, theme: themeAndStrings.0, strings: themeAndStrings.1, peer: .peer(peer: peer, isGlobal: false, participantCount: nil), presence: localPeersAndPresences.1[peer.id], group: .contacts, enabled: enabled, requiresPremiumForMessaging: requiresPremiumForMessaging, displayCallIcons: displayCallIcons))
                         if searchDeviceContacts, case let .user(user) = peer, let phone = user.phone {
                             existingNormalizedPhoneNumbers.insert(DeviceContactNormalizedPhoneNumber(rawValue: formatPhoneNumber(phone)))
                         }
@@ -532,7 +532,7 @@ public final class ContactsSearchContainerNode: SearchDisplayControllerContentNo
                                     }
                                 }
 
-                                entries.append(.peer(index: index, theme: themeAndStrings.0, strings: themeAndStrings.1, peer: .peer(peer: peer.peer._asPeer(), isGlobal: true, participantCount: peer.subscribers), presence: nil, group: .global, enabled: enabled, requiresPremiumForMessaging: requiresPremiumForMessaging, displayCallIcons: displayCallIcons))
+                                entries.append(.peer(index: index, theme: themeAndStrings.0, strings: themeAndStrings.1, peer: .peer(peer: peer.peer, isGlobal: true, participantCount: peer.subscribers), presence: nil, group: .global, enabled: enabled, requiresPremiumForMessaging: requiresPremiumForMessaging, displayCallIcons: displayCallIcons))
                                 if searchDeviceContacts, case let .user(user) = peer.peer, let phone = user.phone {
                                     existingNormalizedPhoneNumbers.insert(DeviceContactNormalizedPhoneNumber(rawValue: formatPhoneNumber(phone)))
                                 }
@@ -566,7 +566,7 @@ public final class ContactsSearchContainerNode: SearchDisplayControllerContentNo
                                     }
                                 }
 
-                                entries.append(.peer(index: index, theme: themeAndStrings.0, strings: themeAndStrings.1, peer: .peer(peer: peer.peer._asPeer(), isGlobal: true, participantCount: peer.subscribers), presence: nil, group: .global, enabled: enabled, requiresPremiumForMessaging: requiresPremiumForMessaging, displayCallIcons: displayCallIcons))
+                                entries.append(.peer(index: index, theme: themeAndStrings.0, strings: themeAndStrings.1, peer: .peer(peer: peer.peer, isGlobal: true, participantCount: peer.subscribers), presence: nil, group: .global, enabled: enabled, requiresPremiumForMessaging: requiresPremiumForMessaging, displayCallIcons: displayCallIcons))
                                 if searchDeviceContacts, case let .user(user) = peer.peer, let phone = user.phone {
                                     existingNormalizedPhoneNumbers.insert(DeviceContactNormalizedPhoneNumber(rawValue: formatPhoneNumber(phone)))
                                 }

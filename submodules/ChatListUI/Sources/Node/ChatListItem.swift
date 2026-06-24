@@ -3858,10 +3858,10 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             // MARK: exteraGram
             if egCompactChatList {
                 peerRevealOptions = peerRevealOptions.map { option in
-                    ItemListRevealOption(key: option.key, title: option.title, icon: .none, color: option.color, textColor: option.textColor)
+                    ItemListRevealOption(key: option.key, title: option.title, icon: .none, color: option.color, iconColor: option.iconColor, textColor: option.textColor)
                 }
                 peerLeftRevealOptions = peerLeftRevealOptions.map { option in
-                    ItemListRevealOption(key: option.key, title: option.title, icon: .none, color: option.color, textColor: option.textColor)
+                    ItemListRevealOption(key: option.key, title: option.title, icon: .none, color: option.color, iconColor: option.iconColor, textColor: option.textColor)
                 }
             }
             //

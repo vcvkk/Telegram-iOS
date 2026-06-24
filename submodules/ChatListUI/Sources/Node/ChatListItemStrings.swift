@@ -103,7 +103,10 @@ public func chatListItemStrings(strings: PresentationStrings, nameDisplayOrder: 
         
         messageText = ""
         for message in messages {
-            if !message.text.isEmpty {
+            if let richText = message.richText {
+                messageText = richText.instantPage.previewText(strings: strings)
+                messageEntities = []
+            } else if !message.text.isEmpty {
                 messageText = message.text
                 messageEntities = message._asMessage().textEntitiesAttribute?.entities ?? []
                 for entity in messageEntities {
@@ -225,14 +228,12 @@ public func chatListItemStrings(strings: PresentationStrings, nameDisplayOrder: 
                                     break inner
                                 case let .Audio(isVoice, _, title, performer, _):
                                     if !message.text.isEmpty {
-                                        messageText = "🎤 \(messageText)"
-                                        processed = true
-                                    } else if isVoice {
-                                        if message.text.isEmpty {
-                                            messageText = strings.Message_Audio
-                                        } else {
+                                        if enableMediaEmoji {
                                             messageText = "🎤 \(messageText)"
                                         }
+                                        processed = true
+                                    } else if isVoice {
+                                        messageText = strings.Message_Audio
                                         processed = true
                                         break inner
                                     } else {
@@ -311,7 +312,7 @@ public func chatListItemStrings(strings: PresentationStrings, nameDisplayOrder: 
                     case _ as TelegramMediaContact:
                         messageText = strings.Message_Contact
                     case let game as TelegramMediaGame:
-                        messageText = "🎮 \(game.title)"
+                        messageText = game.title
                     case let invoice as TelegramMediaInvoice:
                         messageText = invoice.title
                     case let action as TelegramMediaAction:
@@ -438,15 +439,11 @@ public func chatListItemStrings(strings: PresentationStrings, nameDisplayOrder: 
                             messageText = content.displayUrl
                         }
                     case let todo as TelegramMediaTodo:
-                        let pollPrefix = "☑️ "
-                        let entityOffset = (pollPrefix as NSString).length
-                        messageText = "\(pollPrefix)\(todo.text)"
+                        messageText = todo.text
+                        customEmojiRanges = []
                         for entity in todo.textEntities {
                             if case let .CustomEmoji(_, fileId) = entity.type {
-                                if customEmojiRanges == nil {
-                                    customEmojiRanges = []
-                                }
-                                let range = NSRange(location: entityOffset + entity.range.lowerBound, length: entity.range.upperBound - entity.range.lowerBound)
+                                let range = NSRange(location: entity.range.lowerBound, length: entity.range.upperBound - entity.range.lowerBound)
                                 let attribute = ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: fileId, file: message.associatedMedia[EngineMedia.Id(namespace: Namespaces.Media.CloudFile, id: fileId)] as? TelegramMediaFile)
                                 customEmojiRanges?.append((range, attribute))
                             }

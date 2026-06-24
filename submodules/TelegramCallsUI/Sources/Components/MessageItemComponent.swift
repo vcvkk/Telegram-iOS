@@ -3,7 +3,6 @@ import Display
 import UIKit
 import ComponentFlow
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import AvatarNode
 import GlassBackgroundComponent
@@ -89,7 +88,7 @@ final class MessageItemComponent: Component {
         weak var standaloneReactionAnimation: StandaloneReactionAnimation?
         
         private var cachedEntities: [MessageTextEntity]?
-        private var entityFiles: [MediaId: TelegramMediaFile] = [:]
+        private var entityFiles: [EngineMedia.Id: TelegramMediaFile] = [:]
         
         private var component: MessageItemComponent?
         
@@ -268,8 +267,6 @@ final class MessageItemComponent: Component {
                             return true
                         }
                         return false
-                    case let .TextUrl(url):
-                        return url.hasPrefix("tg://emoji?id=")
                     default:
                         return false
                     }

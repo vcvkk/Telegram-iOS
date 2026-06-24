@@ -1548,7 +1548,7 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
         __weak TGModernGalleryController *weakGalleryController = galleryController;
         __weak TGMediaPickerGalleryModel *weakModel = model;
         
-        model.interfaceView.doneLongPressed = ^(TGMediaPickerGalleryItem *item) {
+        model.interfaceView.doneLongPressed = ^(TGMediaPickerGalleryItem *item, UIView *sourceView) {
             __strong TGCameraController *strongSelf = weakSelf;
             __strong TGMediaPickerGalleryModel *strongModel = weakModel;
             if (strongSelf == nil || !(strongSelf.hasSilentPosting || strongSelf.hasSchedule) || strongSelf->_shortcut)
@@ -1656,7 +1656,7 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                 if (strongSelf == nil)
                     return;
                 
-                strongSelf.presentScheduleController(true, ^(int32_t time) {
+                strongSelf.presentScheduleController(true, ^(int32_t time, bool silentPosting) {
                     __strong TGCameraController *strongSelf = weakSelf;
                     __strong TGMediaPickerGalleryModel *strongModel = weakModel;
                     
@@ -1678,7 +1678,7 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                         [[NSUserDefaults standardUserDefaults] setObject:@(!strongSelf->_selectionContext.grouping) forKey:@"TG_mediaGroupingDisabled_v0"];
                     
                     if (strongSelf.finishedWithResults != nil)
-                        strongSelf.finishedWithResults(strongController, strongSelf->_selectionContext, strongSelf->_editingContext, item.asset, false, time);
+                        strongSelf.finishedWithResults(strongController, strongSelf->_selectionContext, strongSelf->_editingContext, item.asset, silentPosting, time);
                     
                     [strongSelf _dismissTransitionForResultController:strongController];
                 });
@@ -1720,6 +1720,21 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                     [strongSelf _dismissTransitionForResultController:strongController];
                 });
             };
+            if (sourceView != nil && strongSelf.stickersContext.presentMediaPickerSendActionMenu != nil && strongSelf.stickersContext.presentMediaPickerSendActionMenu(sourceView, strongSelf->_hasSilentPosting, effectiveHasSchedule, effectiveHasSchedule, strongSelf->_reminder, strongSelf->_hasTimer, ^{
+                if (controller.sendSilently != nil)
+                    controller.sendSilently();
+            }, ^{
+                if (controller.sendWhenOnline != nil)
+                    controller.sendWhenOnline();
+            }, ^{
+                if (controller.schedule != nil)
+                    controller.schedule();
+            }, ^{
+                if (controller.sendWithTimer != nil)
+                    controller.sendWithTimer();
+            })) {
+                return;
+            }
             
             id<LegacyComponentsOverlayWindowManager> windowManager = nil;
             windowManager = [strongSelf->_context makeOverlayWindowManager];
@@ -2751,6 +2766,8 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                     return CGRectMake(0, 82, screenSize.width, screenSize.height - 82 - 83);
                 else if (widescreenWidth == 926.0f)
                     return CGRectMake(0, 82, screenSize.width, screenSize.height - 82 - 83);
+                else if (widescreenWidth == 912.0f)
+                    return CGRectMake(0, 82, screenSize.width, screenSize.height - 82 - 83);
                 else if (widescreenWidth == 896.0f)
                     return CGRectMake(0, 77, screenSize.width, screenSize.height - 77 - 83);
                 else if (widescreenWidth == 874.0f)
@@ -2784,6 +2801,8 @@ static CGPoint TGCameraControllerClampPointToScreenSize(__unused id self, __unus
                     return CGRectMake(0, 136, screenSize.width, screenSize.height - 136 - 223);
                 else if (widescreenWidth == 926.0f)
                     return CGRectMake(0, 121, screenSize.width, screenSize.height - 121 - 234);
+                else if (widescreenWidth == 912.0f)
+                    return CGRectMake(0, 136, screenSize.width, screenSize.height - 136 - 216);
                 else if (widescreenWidth == 896.0f)
                     return CGRectMake(0, 121, screenSize.width, screenSize.height - 121 - 223);
                 else if (widescreenWidth == 874.0f)

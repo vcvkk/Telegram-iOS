@@ -51,6 +51,7 @@ final class SecureIdAuthControllerNode: ViewControllerTracingNode {
         self.addSubnode(self.activityIndicator)
         
         self.scrollNode.view.alwaysBounceVertical = true
+        self.scrollNode.view.scrollsToTop = false
         self.addSubnode(self.scrollNode)
         
         self.backgroundColor = presentationData.theme.list.blocksBackgroundColor
@@ -303,7 +304,7 @@ final class SecureIdAuthControllerNode: ViewControllerTracingNode {
                                     current.updateValues(formData.values)
                                     contentNode = current
                                 } else {
-                                    let current = SecureIdAuthFormContentNode(theme: self.presentationData.theme, strings: self.presentationData.strings, nameDisplayOrder: self.presentationData.nameDisplayOrder, peer: EnginePeer(encryptedFormData.servicePeer), privacyPolicyUrl: encryptedFormData.form.termsUrl, form: formData, primaryLanguageByCountry: encryptedFormData.primaryLanguageByCountry, openField: { [weak self] field in
+                                    let current = SecureIdAuthFormContentNode(theme: self.presentationData.theme, strings: self.presentationData.strings, nameDisplayOrder: self.presentationData.nameDisplayOrder, peer: encryptedFormData.servicePeer, privacyPolicyUrl: encryptedFormData.form.termsUrl, form: formData, primaryLanguageByCountry: encryptedFormData.primaryLanguageByCountry, openField: { [weak self] field in
                                         if let strongSelf = self {
                                             switch field {
                                                 case .identity, .address:
@@ -684,7 +685,7 @@ final class SecureIdAuthControllerNode: ViewControllerTracingNode {
         var currentValue: SecureIdValueWithContext?
         switch type {
             case .phone:
-                if let peer = form.encryptedFormData?.accountPeer as? TelegramUser, let phone = peer.phone, !phone.isEmpty {
+                if case let .user(peer)? = form.encryptedFormData?.accountPeer, let phone = peer.phone, !phone.isEmpty {
                     immediatelyAvailableValue = .phone(SecureIdPhoneValue(phone: phone))
                 }
                 currentValue = findValue(formData.values, key: .phone)?.1
@@ -936,7 +937,7 @@ final class SecureIdAuthControllerNode: ViewControllerTracingNode {
                     deleteField(.phone)
                 } else {
                     var immediatelyAvailableValue: SecureIdValue?
-                    if let peer = list.accountPeer as? TelegramUser, let phone = peer.phone, !phone.isEmpty {
+                    if case let .user(peer)? = list.accountPeer, let phone = peer.phone, !phone.isEmpty {
                         immediatelyAvailableValue = .phone(SecureIdPhoneValue(phone: phone))
                     }
                     self.interaction.push(SecureIdPlaintextFormController(context: self.context, secureIdContext: secureIdContext, type: .phone, immediatelyAvailableValue: immediatelyAvailableValue, updatedValue: { value in

@@ -3,7 +3,6 @@ import TelegramUI
 import BuildConfig
 import ShareExtensionContext
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 
 @objc(ShareRootController)
@@ -39,20 +38,6 @@ class ShareRootController: UIViewController {
             let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
             
             guard let appGroupUrl = maybeAppGroupUrl else {
-                let label = UILabel()
-                label.text = "Sharing requires a provisioned App Group.\nPlease use the App Store build."
-                label.numberOfLines = 0
-                label.textAlignment = .center
-                label.textColor = .secondaryLabel
-                label.font = .systemFont(ofSize: 15)
-                label.translatesAutoresizingMaskIntoConstraints = false
-                self.view.addSubview(label)
-                NSLayoutConstraint.activate([
-                    label.centerXAnchor.constraint(equalTo: self.view.centerXAnchor),
-                    label.centerYAnchor.constraint(equalTo: self.view.centerYAnchor),
-                    label.leadingAnchor.constraint(greaterThanOrEqualTo: self.view.leadingAnchor, constant: 24),
-                    label.trailingAnchor.constraint(lessThanOrEqualTo: self.view.trailingAnchor, constant: -24)
-                ])
                 return
             }
             
@@ -70,10 +55,10 @@ class ShareRootController: UIViewController {
                     appGroupPath: appGroupUrl.path,
                     accountManager: accountManager,
                     appLockContext: appLockContext,
-                    encryptionParameters: ValueBoxEncryptionParameters(
+                    encryptionParameters: EngineValueBoxEncryptionParameters(
                         forceEncryptionIfNoSet: false,
-                        key: ValueBoxEncryptionParameters.Key(data: encryptionParameters.0)!,
-                        salt: ValueBoxEncryptionParameters.Salt(data: encryptionParameters.1)!
+                        key: EngineValueBoxEncryptionParameters.Key(data: encryptionParameters.0)!,
+                        salt: EngineValueBoxEncryptionParameters.Salt(data: encryptionParameters.1)!
                     ),
                     applicationBindings: applicationBindings,
                     initialPresentationDataAndSettings: InitialPresentationDataAndSettings,

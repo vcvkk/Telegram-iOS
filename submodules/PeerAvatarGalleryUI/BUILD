@@ -12,8 +12,9 @@ swift_library(
     deps = [
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
+        "//submodules/ComponentFlow",
+        "//submodules/ContextUI:ContextUI",
         "//submodules/Display:Display",
-        "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
     	"//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/AccountContext:AccountContext",
@@ -23,6 +24,7 @@ swift_library(
         "//submodules/PhotoResources:PhotoResources",
         "//submodules/RadialStatusNode:RadialStatusNode",
         "//submodules/ShareController:ShareController",
+        "//submodules/TelegramUI/Components/GlassControls",
         "//submodules/AppBundle:AppBundle",
         "//submodules/LegacyComponents:LegacyComponents",
         "//submodules/LegacyMediaPickerUI:LegacyMediaPickerUI",

@@ -639,7 +639,7 @@ public final class InlineStickerItemLayer: MultiAnimationRenderTarget {
         }
     }
     
-    private func updateTopicInfo(topicInfo: (Int64, TelegramCore.EngineMessageHistoryThread.Info)) {
+    private func updateTopicInfo(topicInfo: (Int64, EngineMessageHistoryThread.Info)) {
         if topicInfo.0 == 1 {
             let image = generateImage(CGSize(width: 18.0, height: 18.0), contextGenerator: { size, context in
                 context.clear(CGRect(origin: .zero, size: size))

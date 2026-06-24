@@ -282,7 +282,7 @@ public final class ButtonTextContentComponent: Component {
             }
             
             if let badgeSize, let badge = self.badge {
-                let badgeFrame = CGRect(origin: CGPoint(x: contentFrame.minX + contentSize.width + badgeSpacing, y: floorToScreenPixels((size.height - badgeSize.height) * 0.5) + 1.0), size: badgeSize)
+                let badgeFrame = CGRect(origin: CGPoint(x: contentFrame.minX + contentSize.width + badgeSpacing, y: floorToScreenPixels((size.height - badgeSize.height) * 0.5) + UIScreenPixel), size: badgeSize)
                 
                 if let badgeView = badge.view {
                     var animateIn = false
@@ -344,13 +344,31 @@ public final class ButtonComponent: Component {
             case actualGlass
             case legacy
         }
-        
+
+        public struct Gradient: Equatable {
+            public enum Animation: Equatable {
+                case horizontalShift(duration: Double)
+            }
+
+            public var colors: [UIColor]
+            public var animation: Animation
+
+            public init(
+                colors: [UIColor],
+                animation: Animation = .horizontalShift(duration: 4.5)
+            ) {
+                self.colors = colors
+                self.animation = animation
+            }
+        }
+
         public var style: Style
         public var color: UIColor
         public var foreground: UIColor
         public var pressedColor: UIColor
         public var cornerRadius: CGFloat
         public var isShimmering: Bool
+        public var gradient: Gradient?
 
         public init(
             style: Style = .legacy,
@@ -358,7 +376,8 @@ public final class ButtonComponent: Component {
             foreground: UIColor,
             pressedColor: UIColor,
             cornerRadius: CGFloat = 10.0,
-            isShimmering: Bool = false
+            isShimmering: Bool = false,
+            gradient: Gradient? = nil
         ) {
             self.style = style
             self.color = color
@@ -366,6 +385,7 @@ public final class ButtonComponent: Component {
             self.pressedColor = pressedColor
             self.cornerRadius = cornerRadius
             self.isShimmering = isShimmering
+            self.gradient = gradient
         }
         
         public func withIsShimmering(_ isShimmering: Bool) -> Background {
@@ -375,7 +395,8 @@ public final class ButtonComponent: Component {
                 foreground: self.foreground,
                 pressedColor: self.pressedColor,
                 cornerRadius: self.cornerRadius,
-                isShimmering: isShimmering
+                isShimmering: isShimmering,
+                gradient: self.gradient
             )
         }
     }
@@ -461,9 +482,14 @@ public final class ButtonComponent: Component {
 
         private var containerView: UIView
         private var glassContainerView: GlassBackgroundView?
+        private var glassShadowView: UIImageView?
+        private var glassShadowCornerRadius: CGFloat?
+        private var glassHighlightContainerView: UIView?
         private let button: HighlightTrackingButton
+        private let glassHighlightRecognizer: GlassHighlightGestureRecognizer
         
         private var shimmeringView: ButtonShimmeringView?
+        private var gradientBackgroundView: AnimatedGradientBackgroundView?
         private var chromeView: UIImageView?
         private var contentItem: ContentItem?
         
@@ -476,6 +502,7 @@ public final class ButtonComponent: Component {
             self.containerView.isUserInteractionEnabled = false
             
             self.button = HighlightTrackingButton()
+            self.glassHighlightRecognizer = GlassHighlightGestureRecognizer(target: nil, action: nil)
             
             super.init(frame: frame)
             
@@ -484,6 +511,8 @@ public final class ButtonComponent: Component {
             
             self.addSubview(self.containerView)
             self.addSubview(self.button)
+            self.addGestureRecognizer(self.glassHighlightRecognizer)
+            self.glassHighlightRecognizer.isEnabled = false
             
             self.button.addTarget(self, action: #selector(self.pressed), for: .touchUpInside)
 
@@ -495,28 +524,6 @@ public final class ButtonComponent: Component {
             self.button.highligthedChanged = { [weak self] highlighted in
                 if let self, let component = self.component, component.isEnabled {
                     switch component.background.style {
-                    case .glass:
-                        let transition = ComponentTransition(animation: .curve(duration: highlighted ? 0.25 : 0.35, curve: .spring))
-                        if highlighted {
-                            self.layer.shouldRasterize = true
-                            
-                            let highlightedColor = component.background.color.withMultiplied(hue: 1.0, saturation: 0.77, brightness: 1.01)
-                            transition.setBackgroundColor(view: self.containerView, color: highlightedColor)
-                            transition.setScale(view: self.containerView, scale: 1.05, completion: { finished in
-                                if finished {
-                                    self.layer.shouldRasterize = false
-                                }
-                            })
-                        } else {
-                            self.layer.shouldRasterize = true
-                            
-                            transition.setBackgroundColor(view: self.containerView, color: component.background.color)
-                            transition.setScale(view: self.containerView, scale: 1.0, completion: { finished in
-                                if finished {
-                                    self.layer.shouldRasterize = false
-                                }
-                            })
-                        }
                     case .legacy:
                         if highlighted {
                             self.containerView.layer.removeAnimation(forKey: "opacity")
@@ -536,6 +543,112 @@ public final class ButtonComponent: Component {
             preconditionFailure()
         }
         
+        private func removeGlassEffect(transition: ComponentTransition) {
+            self.glassHighlightRecognizer.isEnabled = false
+            self.glassHighlightRecognizer.highlightContainerView = nil
+            
+            if let glassShadowView = self.glassShadowView, glassShadowView.superview != nil {
+                if transition.animation.isImmediate {
+                    glassShadowView.removeFromSuperview()
+                } else {
+                    transition.setAlpha(view: glassShadowView, alpha: 0.0, completion: { _ in
+                        glassShadowView.removeFromSuperview()
+                    })
+                }
+            }
+            if let glassHighlightContainerView = self.glassHighlightContainerView, glassHighlightContainerView.superview != nil {
+                glassHighlightContainerView.removeFromSuperview()
+            }
+            self.glassShadowCornerRadius = nil
+            
+            self.layer.removeAnimation(forKey: "sublayerTransform")
+            self.layer.sublayerTransform = CATransform3DIdentity
+        }
+        
+        private func updateGlassEffect(component: ButtonComponent, size: CGSize, cornerRadius: CGFloat, transition: ComponentTransition) {
+            let shadowInset: CGFloat = 48.0
+            
+            let glassShadowView: UIImageView
+            if let current = self.glassShadowView {
+                glassShadowView = current
+            } else {
+                glassShadowView = UIImageView()
+                glassShadowView.isUserInteractionEnabled = false
+                self.glassShadowView = glassShadowView
+            }
+            if glassShadowView.superview == nil {
+                self.insertSubview(glassShadowView, at: 0)
+            } else {
+                self.sendSubviewToBack(glassShadowView)
+            }
+            if self.glassShadowCornerRadius != cornerRadius || glassShadowView.image == nil {
+                glassShadowView.image = GlassBackgroundView.generateLegacyShadowImage(cornerRadius: cornerRadius, shadowInset: shadowInset, shadowIntensity: 0.18, shadowBlur: 64.0)
+                self.glassShadowCornerRadius = cornerRadius
+            }
+            transition.setFrame(view: glassShadowView, frame: CGRect(origin: .zero, size: size).insetBy(dx: -shadowInset, dy: -shadowInset))
+            transition.setAlpha(view: glassShadowView, alpha: 1.0)
+            
+            let glassHighlightContainerView: UIView
+            if let current = self.glassHighlightContainerView {
+                glassHighlightContainerView = current
+            } else {
+                glassHighlightContainerView = UIView()
+                glassHighlightContainerView.isUserInteractionEnabled = false
+                glassHighlightContainerView.clipsToBounds = true
+                self.glassHighlightContainerView = glassHighlightContainerView
+            }            
+            if glassHighlightContainerView.superview == nil {
+                self.insertSubview(glassHighlightContainerView, aboveSubview: self.containerView)
+            } else if self.button.superview === self {
+                self.insertSubview(glassHighlightContainerView, belowSubview: self.button)
+            } else {
+                self.bringSubviewToFront(glassHighlightContainerView)
+            }
+            transition.setFrame(view: glassHighlightContainerView, frame: CGRect(origin: .zero, size: size))
+            transition.setCornerRadius(layer: glassHighlightContainerView.layer, cornerRadius: cornerRadius)
+
+            self.glassHighlightRecognizer.highlightContainerView = glassHighlightContainerView
+            self.glassHighlightRecognizer.isEnabled = component.isEnabled && !component.displaysProgress
+        }
+
+        private func updateGradientBackground(component: ButtonComponent, contentContainerView: UIView, size: CGSize, cornerRadius: CGFloat, transition: ComponentTransition) {
+            guard component.background.style != .actualGlass, let gradient = component.background.gradient, gradient.colors.count > 1 else {
+                if let gradientBackgroundView = self.gradientBackgroundView {
+                    self.gradientBackgroundView = nil
+                    if transition.animation.isImmediate {
+                        gradientBackgroundView.removeFromSuperview()
+                    } else {
+                        gradientBackgroundView.layer.animateAlpha(from: gradientBackgroundView.alpha, to: 0.0, duration: 0.15, removeOnCompletion: false, completion: { [weak gradientBackgroundView] _ in
+                            gradientBackgroundView?.removeFromSuperview()
+                        })
+                    }
+                }
+                return
+            }
+
+            let gradientBackgroundView: AnimatedGradientBackgroundView
+            var gradientTransition = transition
+            if let current = self.gradientBackgroundView {
+                gradientBackgroundView = current
+            } else {
+                gradientTransition = .immediate
+                gradientBackgroundView = AnimatedGradientBackgroundView(frame: .zero)
+                gradientBackgroundView.alpha = 0.0
+                self.gradientBackgroundView = gradientBackgroundView
+            }
+
+            if gradientBackgroundView.superview !== contentContainerView {
+                gradientBackgroundView.removeFromSuperview()
+                contentContainerView.insertSubview(gradientBackgroundView, at: 0)
+            } else {
+                contentContainerView.sendSubviewToBack(gradientBackgroundView)
+            }
+
+            gradientBackgroundView.update(size: size, gradient: gradient, cornerRadius: cornerRadius, transition: gradientTransition)
+            gradientTransition.setFrame(view: gradientBackgroundView, frame: CGRect(origin: .zero, size: size))
+            transition.setAlpha(view: gradientBackgroundView, alpha: 1.0)
+        }
+
         @objc private func pressed() {
             guard let component = self.component else {
                 return
@@ -641,6 +754,14 @@ public final class ButtonComponent: Component {
                 transition.setCornerRadius(layer: self.containerView.layer, cornerRadius: cornerRadius)
             }
             
+            self.updateGradientBackground(component: component, contentContainerView: contentContainerView, size: size, cornerRadius: cornerRadius, transition: transition)
+
+            if component.background.style == .glass, component.background.color.alpha > 1.0 - .ulpOfOne {
+                self.updateGlassEffect(component: component, size: size, cornerRadius: cornerRadius, transition: transition)
+            } else {
+                self.removeGlassEffect(transition: transition)
+            }
+            
             if let contentView = contentItem.view.view {
                 var animateIn = false
                 var contentTransition = transition
@@ -714,7 +835,11 @@ public final class ButtonComponent: Component {
                     shimmeringTransition = .immediate
                     shimmeringView = ButtonShimmeringView(frame: .zero)
                     self.shimmeringView = shimmeringView
-                    contentContainerView.insertSubview(shimmeringView, at: 0)
+                    if let gradientBackgroundView = self.gradientBackgroundView, gradientBackgroundView.superview === contentContainerView {
+                        contentContainerView.insertSubview(shimmeringView, aboveSubview: gradientBackgroundView)
+                    } else {
+                        contentContainerView.insertSubview(shimmeringView, at: 0)
+                    }
                 }
                 shimmeringView.update(size: size, background: component.background, cornerRadius: cornerRadius, transition: shimmeringTransition)
                 shimmeringTransition.setFrame(view: shimmeringView, frame: CGRect(origin: .zero, size: size))
@@ -736,13 +861,15 @@ public final class ButtonComponent: Component {
                     self.chromeView = chromeView
                     if let shimmeringView = self.shimmeringView {
                         contentContainerView.insertSubview(chromeView, aboveSubview: shimmeringView)
+                    } else if let gradientBackgroundView = self.gradientBackgroundView, gradientBackgroundView.superview === contentContainerView {
+                        contentContainerView.insertSubview(chromeView, aboveSubview: gradientBackgroundView)
                     } else {
                         contentContainerView.insertSubview(chromeView, at: 0)
                     }
                     
                     chromeView.layer.compositingFilter = "overlayBlendMode"
                     chromeView.alpha = 0.8
-                    chromeView.image = GlassBackgroundView.generateForegroundImage(size: CGSize(width: 26.0 * 2.0, height: 26.0 * 2.0), isDark: component.background.color.lightness < 0.36, fillColor: .clear)
+                    chromeView.image = GlassBackgroundView.generateForegroundImage(size: CGSize(width: size.height, height: size.height), isDark: component.background.color.lightness < 0.36, fillColor: .clear)
                 }
                 chromeTransition.setFrame(view: chromeView, frame: CGRect(origin: .zero, size: size))
             } else if let chromeView = self.chromeView {
@@ -767,6 +894,113 @@ public final class ButtonComponent: Component {
 
     public func update(view: View, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
         return view.update(component: self, availableSize: availableSize, state: state, environment: environment, transition: transition)
+    }
+}
+
+private final class AnimatedGradientBackgroundView: UIView {
+    private let backgroundView: UIImageView
+    private var animationView: UIImageView?
+
+    private var currentGradient: ButtonComponent.Background.Gradient?
+    private var currentImageHeight: CGFloat?
+
+    override init(frame: CGRect) {
+        self.backgroundView = UIImageView()
+        self.backgroundView.clipsToBounds = true
+
+        super.init(frame: frame)
+
+        self.clipsToBounds = true
+        self.isUserInteractionEnabled = false
+
+        if #available(iOS 13.0, *) {
+            self.layer.cornerCurve = .continuous
+            self.backgroundView.layer.cornerCurve = .continuous
+        }
+
+        self.addSubview(self.backgroundView)
+    }
+
+    required init?(coder: NSCoder) {
+        preconditionFailure()
+    }
+
+    func update(size: CGSize, gradient: ButtonComponent.Background.Gradient, cornerRadius: CGFloat, transition: ComponentTransition) {
+        let bounds = CGRect(origin: .zero, size: size)
+
+        transition.setCornerRadius(layer: self.layer, cornerRadius: cornerRadius)
+        transition.setCornerRadius(layer: self.backgroundView.layer, cornerRadius: cornerRadius)
+        transition.setFrame(view: self.backgroundView, frame: bounds)
+
+        let imageHeight = max(1.0, size.height)
+        if self.currentGradient != gradient || self.currentImageHeight != imageHeight || self.backgroundView.image == nil {
+            var locations: [CGFloat] = []
+            let delta = 1.0 / CGFloat(gradient.colors.count - 1)
+            for i in 0 ..< gradient.colors.count {
+                locations.append(delta * CGFloat(i))
+            }
+
+            let image = generateGradientImage(size: CGSize(width: 200.0, height: imageHeight), colors: gradient.colors, locations: locations, direction: .horizontal)
+            self.backgroundView.image = image
+            self.animationView?.image = image
+            self.animationView?.layer.removeAnimation(forKey: "movement")
+
+            self.currentGradient = gradient
+            self.currentImageHeight = imageHeight
+        }
+
+        let animationView: UIImageView
+        if let current = self.animationView {
+            animationView = current
+        } else {
+            animationView = UIImageView()
+            animationView.image = self.backgroundView.image
+            self.animationView = animationView
+            self.backgroundView.addSubview(animationView)
+        }
+
+        animationView.bounds = CGRect(origin: .zero, size: CGSize(width: size.width * 2.4, height: size.height))
+        if animationView.layer.animation(forKey: "movement") == nil {
+            animationView.center = CGPoint(x: animationView.bounds.width / 2.0 - animationView.bounds.width * 0.35, y: size.height / 2.0)
+        }
+        self.setupGradientAnimations(size: size, gradient: gradient)
+    }
+
+    private func setupGradientAnimations(size: CGSize, gradient: ButtonComponent.Background.Gradient) {
+        guard let animationView = self.animationView else {
+            return
+        }
+
+        let duration: Double
+        switch gradient.animation {
+        case let .horizontalShift(value):
+            duration = value
+        }
+
+        if animationView.layer.animation(forKey: "movement") == nil {
+            let offset = (animationView.bounds.width - size.width) / 2.0
+            let previousValue = animationView.center.x
+            var newValue: CGFloat = offset
+            if offset - previousValue < animationView.bounds.width * 0.25 {
+                newValue -= animationView.bounds.width * 0.35
+            }
+            animationView.center = CGPoint(x: newValue, y: animationView.bounds.height / 2.0)
+
+            CATransaction.begin()
+
+            let animation = CABasicAnimation(keyPath: "position.x")
+            animation.duration = duration
+            animation.fromValue = previousValue
+            animation.toValue = newValue
+            animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+
+            CATransaction.setCompletionBlock { [weak self] in
+                self?.setupGradientAnimations(size: size, gradient: gradient)
+            }
+
+            animationView.layer.add(animation, forKey: "movement")
+            CATransaction.commit()
+        }
     }
 }
 
@@ -813,7 +1047,11 @@ private class ButtonShimmeringView: UIView {
             compositingFilter = nil
         }
         
-        self.backgroundColor = background.color
+        if let gradient = background.gradient, gradient.colors.count > 1 {
+            self.backgroundColor = .clear
+        } else {
+            self.backgroundColor = background.color
+        }
         self.layer.cornerRadius = cornerRadius
         self.borderMaskView.layer.cornerRadius = cornerRadius
         

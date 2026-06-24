@@ -72,7 +72,7 @@ public enum SendMessageActionSheetControllerParams {
 }
 
 public func makeChatSendMessageActionSheetController(
-    egTranslationContext: (outgoingMessageTranslateToLang: String?, translate: (() -> Void)?, changeTranslationLanguage: (() -> ())?) = (outgoingMessageTranslateToLang: nil, translate: nil, changeTranslationLanguage: nil),
+    sgTranslationContext: (outgoingMessageTranslateToLang: String?, translate: (() -> Void)?, changeTranslationLanguage: (() -> ())?) = (outgoingMessageTranslateToLang: nil, translate: nil, changeTranslationLanguage: nil),
     initialData: ChatSendMessageContextScreen.InitialData,
     context: AccountContext,
     updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil,
@@ -91,10 +91,11 @@ public func makeChatSendMessageActionSheetController(
     openPremiumPaywall: @escaping (ViewController) -> Void,
     reactionItems: [ReactionItem]? = nil,
     availableMessageEffects: AvailableMessageEffects? = nil,
-    isPremium: Bool = false
+    isPremium: Bool = false,
+    richTextPreview: ChatSendMessageContextScreenRichTextPreview? = nil
 ) -> ChatSendMessageActionSheetController {
     return ChatSendMessageContextScreen(
-        egTranslationContext: egTranslationContext,
+        sgTranslationContext: sgTranslationContext,
         initialData: initialData,
         context: context,
         updatedPresentationData: updatedPresentationData,
@@ -113,6 +114,7 @@ public func makeChatSendMessageActionSheetController(
         openPremiumPaywall: openPremiumPaywall,
         reactionItems: reactionItems,
         availableMessageEffects: availableMessageEffects,
-        isPremium: isPremium
+        isPremium: isPremium,
+        richTextPreview: richTextPreview
     )
 }

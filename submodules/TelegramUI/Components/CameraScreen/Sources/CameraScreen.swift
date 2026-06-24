@@ -1378,7 +1378,7 @@ private final class CameraScreenComponent: CombinedComponent {
             let previewHeight = floorToScreenPixels(availableSize.width * 1.77778)
             if !isTablet {
                 if availableSize.height < previewHeight + 30.0 {
-                    controlsBottomInset = -48.0
+                    controlsBottomInset = -70.0
                 }
             }
             
@@ -1505,6 +1505,7 @@ private final class CameraScreenComponent: CombinedComponent {
                     hasAppeared: component.hasAppeared && hasAllRequiredAccess,
                     hasAccess: hasAllRequiredAccess,
                     hideControls: component.cameraState.collageProgress > 1.0 - .ulpOfOne,
+                    controlsBottomInset: controlsBottomInset,
                     collageProgress: component.cameraState.collageProgress,
                     collageCount: component.cameraState.isCollageEnabled ? component.cameraState.collageGrid.count : nil,
                     tintColor: controlsTintColor,
@@ -1957,7 +1958,7 @@ private final class CameraScreenComponent: CombinedComponent {
                                 availableSize: CGSize(width: 40.0, height: 40.0),
                                 transition: .immediate
                             )
-                            if component.cameraState.isCollageEnabled {
+                            if state.displayingCollageSelection {
                                 nextButtonX += 48.0
                             }
                             var collageButtonX = nextButtonX
@@ -2111,7 +2112,7 @@ private final class CameraScreenComponent: CombinedComponent {
                 if isTablet {
                     availableModeControlSize = CGSize(width: floor(panelWidth), height: 120.0)
                 } else {
-                    availableModeControlSize = availableSize
+                    availableModeControlSize = CGSize(width: availableSize.width - 140.0, height: availableSize.height)
                 }
                 
                 var availableModes: [CameraState.CameraMode] = [.photo, .video]

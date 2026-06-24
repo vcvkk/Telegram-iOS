@@ -6,7 +6,6 @@ import ListSectionComponent
 import TelegramPresentationData
 import AppBundle
 import AccountContext
-import Postbox
 import TelegramCore
 import TextNodeWithEntities
 import MultilineTextComponent
@@ -234,8 +233,6 @@ final class BusinessLinkListItemComponent: Component {
                 switch entity.type {
                 case .CustomEmoji:
                     return true
-                case let .TextUrl(url):
-                    return url.hasPrefix("tg://emoji?id=")
                 default:
                     return false
                 }

@@ -4,7 +4,6 @@ import AsyncDisplayKit
 import Display
 import TelegramCore
 import SwiftSignalKit
-import Postbox
 import AVFoundation
 import RadialStatusNode
 import StickerResources
@@ -97,7 +96,7 @@ final class HorizontalListContextResultsChatInputPanelItemNode: ListViewItemNode
     private var currentImageResource: TelegramMediaResource?
     private var currentVideoFile: TelegramMediaFile?
     private var currentAnimatedStickerFile: TelegramMediaFile?
-    private var resourceStatus: MediaResourceStatus?
+    private var resourceStatus: EngineMediaResource.FetchStatus?
     private(set) var item: HorizontalListContextResultsChatInputPanelItem?
     private var statusDisposable = MetaDisposable()
     private let statusNode: RadialStatusNode = RadialStatusNode(backgroundNodeColor: UIColor(white: 0.0, alpha: 0.5))
@@ -202,7 +201,7 @@ final class HorizontalListContextResultsChatInputPanelItemNode: ListViewItemNode
             let sideInset: CGFloat = 4.0
             
             var updateImageSignal: Signal<(TransformImageArguments) -> DrawingContext?, NoError>?
-            var updatedStatusSignal: Signal<MediaResourceStatus, NoError>?
+            var updatedStatusSignal: Signal<EngineMediaResource.FetchStatus, NoError>?
 
             var imageResource: TelegramMediaResource?
             var stickerFile: TelegramMediaFile?
@@ -218,14 +217,14 @@ final class HorizontalListContextResultsChatInputPanelItemNode: ListViewItemNode
                     }
                     imageDimensions = externalReference.content?.dimensions?.cgSize
                     if externalReference.type == "gif", let thumbnailResource = externalReference.thumbnail?.resource, let content = externalReference.content, let dimensions = content.dimensions {
-                        videoFile = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: 0), partialReference: nil, resource: thumbnailResource, previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "video/mp4", size: nil, attributes: [.Animated, .Video(duration: 0, size: dimensions, flags: [], preloadSize: nil, coverTime: nil, videoCodec: nil)], alternativeRepresentations: [])
+                        videoFile = TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: 0), partialReference: nil, resource: thumbnailResource, previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "video/mp4", size: nil, attributes: [.Animated, .Video(duration: 0, size: dimensions, flags: [], preloadSize: nil, coverTime: nil, videoCodec: nil)], alternativeRepresentations: [])
                         imageResource = nil
                     }
                 
                     if let file = videoFile {
-                        updatedStatusSignal = item.context.account.postbox.mediaBox.resourceStatus(file.resource)
+                        updatedStatusSignal = item.context.engine.resources.status(resource: EngineMediaResource(file.resource))
                     } else if let imageResource = imageResource {
-                        updatedStatusSignal = item.context.account.postbox.mediaBox.resourceStatus(imageResource)
+                        updatedStatusSignal = item.context.engine.resources.status(resource: EngineMediaResource(imageResource))
                     }
                 case let .internalReference(internalReference):
                     if let image = internalReference.image {
@@ -254,12 +253,12 @@ final class HorizontalListContextResultsChatInputPanelItemNode: ListViewItemNode
                         if file.isVideo && file.isAnimated {
                             videoFile = file
                             imageResource = nil
-                            updatedStatusSignal = item.context.account.postbox.mediaBox.resourceStatus(file.resource)
+                            updatedStatusSignal = item.context.engine.resources.status(resource: EngineMediaResource(file.resource))
                         } else if let imageResource = imageResource {
-                            updatedStatusSignal = item.context.account.postbox.mediaBox.resourceStatus(imageResource)
+                            updatedStatusSignal = item.context.engine.resources.status(resource: EngineMediaResource(imageResource))
                         }
                     } else if let imageResource = imageResource {
-                        updatedStatusSignal = item.context.account.postbox.mediaBox.resourceStatus(imageResource)
+                        updatedStatusSignal = item.context.engine.resources.status(resource: EngineMediaResource(imageResource))
                     }
             }
             
@@ -312,7 +311,7 @@ final class HorizontalListContextResultsChatInputPanelItemNode: ListViewItemNode
                         updateImageSignal = chatMessageSticker(account: item.context.account, userLocation: .other, file: stickerFile, small: false, fetched: true)
                     } else {
                         let tmpRepresentation = TelegramMediaImageRepresentation(dimensions: PixelDimensions(CGSize(width: fittedImageDimensions.width * 2.0, height: fittedImageDimensions.height * 2.0)), resource: imageResource, progressiveSizes: [], immediateThumbnailData: nil, hasVideo: false, isPersonal: false)
-                        let tmpImage = TelegramMediaImage(imageId: MediaId(namespace: 0, id: 0), representations: [tmpRepresentation], immediateThumbnailData: nil, reference: nil, partialReference: nil, flags: [])
+                        let tmpImage = TelegramMediaImage(imageId: EngineMedia.Id(namespace: 0, id: 0), representations: [tmpRepresentation], immediateThumbnailData: nil, reference: nil, partialReference: nil, flags: [])
                         updateImageSignal = chatMessagePhoto(postbox: item.context.account.postbox, userLocation: .other, photoReference: .standalone(media: tmpImage), synchronousLoad: true)
                     }
                 } else {

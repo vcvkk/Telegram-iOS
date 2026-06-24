@@ -1182,25 +1182,32 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
         })
         
         if let peerId {
-            let _ = (self.account.postbox.loadedPeerWithId(peerId)
+            let _ = (self.accountContext.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
+            |> mapToSignal { peer -> Signal<EnginePeer, NoError> in
+                if let peer {
+                    return .single(peer)
+                } else {
+                    return .never()
+                }
+            }
             |> deliverOnMainQueue).start(next: { [weak self] peer in
                 guard let self else {
                     return
                 }
                 var canManageCall = false
-                if let peer = peer as? TelegramGroup {
-                    if case .creator = peer.role {
+                if case let .legacyGroup(group) = peer {
+                    if case .creator = group.role {
                         canManageCall = true
-                    } else if case let .admin(rights, _) = peer.role, rights.rights.contains(.canManageCalls) {
-                        canManageCall = true
-                    }
-                } else if let peer = peer as? TelegramChannel {
-                    if peer.flags.contains(.isCreator) {
-                        canManageCall = true
-                    } else if (peer.adminRights?.rights.contains(.canManageCalls) == true) {
+                    } else if case let .admin(rights, _) = group.role, rights.rights.contains(.canManageCalls) {
                         canManageCall = true
                     }
-                    self.peerUpdatesSubscription = self.accountContext.account.viewTracker.polledChannel(peerId: peer.id).start()
+                } else if case let .channel(channel) = peer {
+                    if channel.flags.contains(.isCreator) {
+                        canManageCall = true
+                    } else if (channel.adminRights?.rights.contains(.canManageCalls) == true) {
+                        canManageCall = true
+                    }
+                    self.peerUpdatesSubscription = self.accountContext.account.viewTracker.polledChannel(peerId: channel.id).start()
                 }
                 var updatedValue = self.stateValue
                 updatedValue.canManageCall = canManageCall
@@ -1490,7 +1497,7 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
         if let peerId {
             if peerId.namespace == Namespaces.Peer.CloudChannel {
                 rawAdminIds = Signal { subscriber in
-                    let (disposable, _) = accountContext.peerChannelMemberCategoriesContextsManager.admins(engine: accountContext.engine, postbox: accountContext.account.postbox, network: accountContext.account.network, accountPeerId: accountContext.account.peerId, peerId: peerId, updated: { list in
+                    let (disposable, _) = accountContext.peerChannelMemberCategoriesContextsManager.admins(engine: accountContext.engine, accountPeerId: accountContext.account.peerId, peerId: peerId, updated: { list in
                         var peerIds = Set<PeerId>()
                         for item in list.list {
                             if let adminInfo = item.participant.adminInfo, adminInfo.rights.rights.contains(.canManageCalls) {
@@ -1849,11 +1856,16 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
                     }
                     
                     var prioritizeVP8 = false
-                    #if DEBUG && false
-                    prioritizeVP8 = "".isEmpty
-                    #endif
                     if let data = self.accountContext.currentAppConfiguration.with({ $0 }).data, let value = data["ios_calls_prioritize_vp8"] as? Double {
                         prioritizeVP8 = value != 0.0
+                    }
+                    
+                    var useReferenceImpl = false
+                    #if DEBUG && true
+                    useReferenceImpl = "".isEmpty
+                    #endif
+                    if let data = self.accountContext.currentAppConfiguration.with({ $0 }).data, let value = data["ios_calls_group_reference_impl"] as? Double {
+                        useReferenceImpl = value != 0.0
                     }
 
                     genericCallContext = .call(OngoingGroupCallContext(audioSessionActive: contextAudioSessionActive, video: self.videoCapturer, requestMediaChannelDescriptions: { [weak self] ssrcs, completion in
@@ -1874,7 +1886,7 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
                                 self.requestCall(movingFromBroadcastToRtc: false)
                             }
                         }
-                    }, outgoingAudioBitrateKbit: outgoingAudioBitrateKbit, videoContentType: self.isVideoEnabled ? .generic : .none, enableNoiseSuppression: false, disableAudioInput: self.isStream, enableSystemMute: self.accountContext.sharedContext.immediateExperimentalUISettings.experimentalCallMute, prioritizeVP8: prioritizeVP8, logPath: allocateCallLogPath(account: self.account), onMutedSpeechActivityDetected: { [weak self] value in
+                    }, outgoingAudioBitrateKbit: outgoingAudioBitrateKbit,videoContentType: self.isVideoEnabled ? .generic : .none, enableNoiseSuppression: false, disableAudioInput: self.isStream, enableSystemMute: self.accountContext.sharedContext.immediateExperimentalUISettings.experimentalCallMute, useReferenceImpl: useReferenceImpl, prioritizeVP8: prioritizeVP8, logPath: allocateCallLogPath(account: self.account), onMutedSpeechActivityDetected: { [weak self] value in
                         Queue.mainQueue().async {
                             guard let self else {
                                 return
@@ -1970,7 +1982,7 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
                                 return EmptyDisposable
                             }
                             
-                            let (disposable, _) = self.accountContext.peerChannelMemberCategoriesContextsManager.admins(engine: self.accountContext.engine, postbox: self.accountContext.account.postbox, network: self.accountContext.account.network, accountPeerId: self.accountContext.account.peerId, peerId: peerId, updated: { list in
+                            let (disposable, _) = self.accountContext.peerChannelMemberCategoriesContextsManager.admins(engine: self.accountContext.engine, accountPeerId: self.accountContext.account.peerId, peerId: peerId, updated: { list in
                                 var peerIds = Set<PeerId>()
                                 for item in list.list {
                                     if let adminInfo = item.participant.adminInfo, adminInfo.rights.rights.contains(.canManageCalls) {
@@ -2314,7 +2326,7 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
                 if let peerId = peerId ?? self.streamPeerId {
                     if peerId.namespace == Namespaces.Peer.CloudChannel {
                         rawAdminIds = Signal { subscriber in
-                            let (disposable, _) = accountContext.peerChannelMemberCategoriesContextsManager.admins(engine: accountContext.engine, postbox: accountContext.account.postbox, network: accountContext.account.network, accountPeerId: accountContext.account.peerId, peerId: peerId, updated: { list in
+                            let (disposable, _) = accountContext.peerChannelMemberCategoriesContextsManager.admins(engine: accountContext.engine, accountPeerId: accountContext.account.peerId, peerId: peerId, updated: { list in
                                 var peerIds = Set<PeerId>()
                                 for item in list.list {
                                     if let adminInfo = item.participant.adminInfo, adminInfo.rights.rights.contains(.canManageCalls) {
