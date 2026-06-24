@@ -1888,7 +1888,7 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
             }
         }
         
-        // TODO(swiftgram): Transcribe Video Messages
+        // TODO(exteragram): Transcribe Video Messages
         if shouldBeginTranscription {
             if self.transcribeDisposable == nil {
                 self.audioTranscriptionState = .inProgress

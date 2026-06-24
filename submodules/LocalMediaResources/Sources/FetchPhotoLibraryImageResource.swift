@@ -1,4 +1,4 @@
-import SGSimpleSettings
+import EGSimpleSettings
 import Foundation
 import UIKit
 import Photos
@@ -183,7 +183,7 @@ public func fetchPhotoLibraryResource(localIdentifier: String, width: Int32?, he
                                     defer {
                                         EngineTempBox.shared.dispose(tempFile)
                                     }
-                                    if let scaledImage = scaledImage, let data = compressImageToJPEG(scaledImage, quality: Float(SGSimpleSettings.shared.outgoingPhotoQuality) / 100.0, tempFilePath: tempFile.path) {
+                                    if let scaledImage = scaledImage, let data = compressImageToJPEG(scaledImage, quality: Float(EGSimpleSettings.shared.outgoingPhotoQuality) / 100.0, tempFilePath: tempFile.path) {
     #if DEBUG
                                         print("compression completion \((CACurrentMediaTime() - startTime) * 1000.0) ms")
     #endif
@@ -193,7 +193,7 @@ public func fetchPhotoLibraryResource(localIdentifier: String, width: Int32?, he
                                         subscriber.putCompletion()
                                     }
                                 case .jxl:
-                                    if let scaledImage = scaledImage, let data = compressImageToJPEGXL(scaledImage, quality: Int(SGSimpleSettings.shared.outgoingPhotoQuality)) {
+                                    if let scaledImage = scaledImage, let data = compressImageToJPEGXL(scaledImage, quality: Int(EGSimpleSettings.shared.outgoingPhotoQuality)) {
     #if DEBUG
                                         print("jpegxl compression completion \((CACurrentMediaTime() - startTime) * 1000.0) ms")
     #endif

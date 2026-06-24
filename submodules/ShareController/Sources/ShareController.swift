@@ -1,5 +1,5 @@
 import Foundation
-import SGSimpleSettings
+import EGSimpleSettings
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -389,7 +389,7 @@ public final class ShareController: ViewController {
     
     public convenience init(context: AccountContext, subject: ShareControllerSubject, presetText: String? = nil, preferredAction: ShareControllerPreferredAction = .default, showInChat: ((Message) -> Void)? = nil, fromForeignApp: Bool = false, segmentedValues: [ShareControllerSegmentedValue]? = nil, externalShare: Bool = true, immediateExternalShare: Bool = false, immediateExternalShareOverridingSGBehaviour: Bool? = nil, switchableAccounts: [AccountWithInfo] = [], immediatePeerId: PeerId? = nil, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil, forceTheme: PresentationTheme? = nil, forcedActionTitle: String? = nil, shareAsLink: Bool = false, collectibleItemInfo: TelegramCollectibleItemInfo? = nil) {
         var immediateExternalShare = immediateExternalShare
-        if SGSimpleSettings.shared.forceSystemSharing {
+        if EGSimpleSettings.shared.forceSystemSharing {
             immediateExternalShare = true
         }
         if let immediateExternalShareOverridingSGBehaviour = immediateExternalShareOverridingSGBehaviour {

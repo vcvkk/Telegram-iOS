@@ -453,7 +453,7 @@ plist_fragment(
             <string>{telegram_bundle_id}.custom</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>sg</string>
+                <string>eg</string>
             </array>
         </dict>
     </array>

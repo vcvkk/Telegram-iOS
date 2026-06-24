@@ -1,5 +1,4 @@
-import SGGTranslate
-import SGTranslationLangFix
+import EGTranslationLangFix
 
 import Foundation
 import Postbox
@@ -39,7 +38,7 @@ func _internal_translate(network: Network, text: String, toLang: String, entitie
         apiText = [.textWithEntities(.init(text: text, entities: apiEntitiesFromMessageTextEntities(entities, associatedPeers: SimpleDictionary())))]
     }
 
-    return network.request(Api.functions.messages.translateText(flags: flags, peer: peer, id: messageId.flatMap { [$0] }, text: apiText, toLang: sgTranslationLangFix(toLang), tone: tone.rawValue))
+    return network.request(Api.functions.messages.translateText(flags: flags, peer: peer, id: messageId.flatMap { [$0] }, text: apiText, toLang: egTranslationLangFix(toLang), tone: tone.rawValue))
     |> mapError { error -> TranslationError in
         if error.errorDescription.hasPrefix("FLOOD_WAIT") {
             return .limitExceeded
@@ -264,7 +263,7 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
                     }
                 }
             } else {
-                msgs = account.network.request(Api.functions.messages.translateText(flags: flags, peer: inputPeer, id: id, text: nil, toLang: sgTranslationLangFix(toLang), tone: tone != .neutral ? tone.rawValue : nil))
+                msgs = account.network.request(Api.functions.messages.translateText(flags: flags, peer: inputPeer, id: id, text: nil, toLang: egTranslationLangFix(toLang), tone: tone != .neutral ? tone.rawValue : nil))
                 |> map(Optional.init)
                 |> mapError { error -> TranslationError in
                     if error.errorDescription.hasPrefix("FLOOD_WAIT") {

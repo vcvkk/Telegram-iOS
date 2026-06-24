@@ -1,4 +1,4 @@
-import SGSimpleSettings
+import EGSimpleSettings
 import Foundation
 import UIKit
 import Display
@@ -1076,7 +1076,7 @@ private final class ItemComponent: Component {
             self.containerView.isGestureEnabled = component.editing == nil
             self.tapRecognizer?.isEnabled = component.editing == nil
             
-            let sideInset: CGFloat = 16.0 / (SGSimpleSettings.shared.compactFolderNames ? 2.0 : 1.0)
+            let sideInset: CGFloat = 16.0 / (EGSimpleSettings.shared.compactFolderNames ? 2.0 : 1.0)
             let badgeSpacing: CGFloat = 5.0
             
             var size = CGSize(width: sideInset, height: availableSize.height)

@@ -1,4 +1,4 @@
-import SGSimpleSettings
+import EGSimpleSettings
 import Foundation
 import UIKit
 import SwiftSignalKit
@@ -845,7 +845,7 @@ public final class ChatPresentationInterfaceState: Equatable {
         self.reportReason = reportReason
         self.showCommands = showCommands
         self.hasBotCommands = hasBotCommands
-        if SGSimpleSettings.shared.disableSendAsButton {
+        if EGSimpleSettings.shared.disableSendAsButton {
         self.showSendAsPeers = false
         self.sendAsPeers = nil
         } else {

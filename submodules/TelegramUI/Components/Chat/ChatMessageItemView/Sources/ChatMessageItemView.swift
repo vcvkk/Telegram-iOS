@@ -1,4 +1,4 @@
-import SGSimpleSettings
+import EGSimpleSettings
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -696,10 +696,10 @@ open class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol {
     open func setupItem(_ item: ChatMessageItem, synchronousLoad: Bool) {
         self.item = item
         
-        if !self.wasFilteredKeywordTested && !SGSimpleSettings.shared.messageFilterKeywords.isEmpty && SGSimpleSettings.shared.ephemeralStatus > 1 {
+        if !self.wasFilteredKeywordTested && !EGSimpleSettings.shared.messageFilterKeywords.isEmpty && EGSimpleSettings.shared.ephemeralStatus > 1 {
             let incomingMessage = item.message.effectivelyIncoming(item.context.account.peerId)
             if incomingMessage {
-                if let matchedKeyword = SGSimpleSettings.shared.messageFilterKeywords.first(where: { item.message.text.contains($0) }) {
+                if let matchedKeyword = EGSimpleSettings.shared.messageFilterKeywords.first(where: { item.message.text.contains($0) }) {
                      self.matchedFilterKeyword = matchedKeyword
                      self.alpha = item.presentationData.theme.theme.overallDarkAppearance ? 0.2 : 0.3
                 }

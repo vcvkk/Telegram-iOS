@@ -64,7 +64,7 @@ public func getEGSettings(token: String) -> Signal<EGWebSettings, EGAPIError> {
 
 
 
-public func postSGSettings(token: String, data: [String:Any]) -> Signal<Void, EGAPIError> {
+public func postEGSettings(token: String, data: [String:Any]) -> Signal<Void, EGAPIError> {
     return Signal { subscriber in
 
         let url = URL(string: buildApiUrl("settings"))!

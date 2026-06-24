@@ -55,7 +55,7 @@ public func updateEGWebSettingsInteractivelly(context: AccountContext) {
 
 public func postEGWebSettingsInteractivelly(context: AccountContext, data: [String: Any]) {
     let _ = getEGApiToken(context: context).startStandalone(next: { token in
-        let _ = postSGSettings(token: token, data: data).startStandalone(error: { e in
+        let _ = postEGSettings(token: token, data: data).startStandalone(error: { e in
             if case let .generic(errorMessage) = e, let errorMessage = errorMessage {
                 EGLogger.shared.log("EGAPI", errorMessage)
             }
