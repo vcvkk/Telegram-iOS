@@ -219,8 +219,8 @@ func presentLegacyMediaPickerGallery(
         hasCamera: false,
         recipientName: recipientName,
         isScheduledMessages: isScheduledMessages,
-        canShowTelescope: currentAppConfiguration.sgWebSettings.global.canShowTelescope,
-        canSendTelescope: currentAppConfiguration.sgWebSettings.user.canSendTelescope,
+        canShowTelescope: currentAppConfiguration.egWebSettings.global.canShowTelescope,
+        canSendTelescope: currentAppConfiguration.egWebSettings.user.canSendTelescope,
         hasCoverButton: hasCoverButton
     )!
     model.stickersContext = paintStickersContext

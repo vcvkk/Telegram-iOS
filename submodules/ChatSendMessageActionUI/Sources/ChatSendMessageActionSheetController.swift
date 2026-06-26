@@ -72,7 +72,7 @@ public enum SendMessageActionSheetControllerParams {
 }
 
 public func makeChatSendMessageActionSheetController(
-    sgTranslationContext: (outgoingMessageTranslateToLang: String?, translate: (() -> Void)?, changeTranslationLanguage: (() -> ())?) = (outgoingMessageTranslateToLang: nil, translate: nil, changeTranslationLanguage: nil),
+    egTranslationContext: (outgoingMessageTranslateToLang: String?, translate: (() -> Void)?, changeTranslationLanguage: (() -> ())?) = (outgoingMessageTranslateToLang: nil, translate: nil, changeTranslationLanguage: nil),
     initialData: ChatSendMessageContextScreen.InitialData,
     context: AccountContext,
     updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil,
@@ -95,7 +95,7 @@ public func makeChatSendMessageActionSheetController(
     richTextPreview: ChatSendMessageContextScreenRichTextPreview? = nil
 ) -> ChatSendMessageActionSheetController {
     return ChatSendMessageContextScreen(
-        sgTranslationContext: sgTranslationContext,
+        egTranslationContext: egTranslationContext,
         initialData: initialData,
         context: context,
         updatedPresentationData: updatedPresentationData,

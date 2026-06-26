@@ -410,6 +410,6 @@ public enum DeviceMetrics: CaseIterable, Equatable {
     }
     
     public var showAppBadge: Bool {
-        return self.sgShowAppBadge
+        return self.egShowAppBadge
     }
 }
