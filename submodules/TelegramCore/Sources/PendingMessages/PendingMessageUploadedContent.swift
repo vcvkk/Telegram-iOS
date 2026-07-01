@@ -430,7 +430,7 @@ func mediaContentToUpload(accountPeerId: PeerId, network: Network, postbox: Post
         }
         |> castError(PendingMessageUploadError.self)
         |> mapToSignal { isPremium -> Signal<PendingMessageUploadedContentResult, PendingMessageUploadError> in
-            let inputTodo = Api.InputMedia.inputMediaTodo(.init(todo: .todoList(.init(flags: flags, title: .textWithEntities(.init(text: todo.text, entities: apiEntitiesFromMessageTextEntities(todo.textEntities, associatedPeers: SimpleDictionary(), isPremium: isPremium))), list: todo.items.map { $0.apiItem(isPremium: isPremium) }))))
+            let inputTodo = Api.InputMedia.inputMediaTodo(.init(todo: .todoList(.init(flags: flags, title: .textWithEntities(.init(text: todo.text, entities: apiEntitiesFromMessageTextEntities(todo.textEntities, associatedPeers: SimpleDictionary(), isPremium: isPremium))), list: todo.items.map { $0.apiItem }))))
             return .single(.content(PendingMessageUploadedContentAndReuploadInfo(content: .media(inputTodo, text), reuploadInfo: nil, cacheReferenceKey: nil)))
         }
     } else if let dice = media as? TelegramMediaDice {

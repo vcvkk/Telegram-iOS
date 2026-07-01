@@ -554,7 +554,7 @@ private func sendUploadedMessageContent(
                         flags |= 1 << 22
                     }
                 
-                    sendMessageRequest = network.requestWithAdditionalInfo(Api.functions.messages.sendMessage(flags: flags, peer: inputPeer, replyTo: replyTo, message: text, randomId: uniqueId, replyMarkup: nil, entities: messageEntities, scheduleDate: scheduleTime, scheduleRepeatPeriod: scheduleRepeatPeriod, sendAs: sendAsInputPeer, quickReplyShortcut: nil, effect: nil, allowPaidStars: allowPaidStars, suggestedPost: suggestedPost), info: .acknowledgement, tag: dependencyTag)
+                    sendMessageRequest = network.requestWithAdditionalInfo(Api.functions.messages.sendMessage(flags: flags, peer: inputPeer, replyTo: replyTo, message: text, randomId: uniqueId, replyMarkup: nil, entities: messageEntities, scheduleDate: scheduleTime, scheduleRepeatPeriod: scheduleRepeatPeriod, sendAs: sendAsInputPeer, quickReplyShortcut: nil, effect: nil, allowPaidStars: allowPaidStars, suggestedPost: suggestedPost, richMessage: nil), info: .acknowledgement, tag: dependencyTag)
                 case let .media(inputMedia, text):
                     if bubbleUpEmojiOrStickersets {
                         flags |= Int32(1 << 15)
@@ -811,7 +811,7 @@ private func sendMessageContent(account: Account, peerId: PeerId, attributes: [M
                         replyTo = .inputReplyToMessage(.init(flags: flags, replyToMsgId: threadId, topMsgId: threadId, replyToPeerId: nil, quoteText: nil, quoteEntities: nil, quoteOffset: nil, monoforumPeerId: nil, todoItemId: nil, pollOption: nil))
                     }
 
-                    sendMessageRequest = account.network.request(Api.functions.messages.sendMessage(flags: flags, peer: inputPeer, replyTo: replyTo, message: text, randomId: uniqueId, replyMarkup: nil, entities: messageEntities, scheduleDate: scheduleTime, scheduleRepeatPeriod: scheduleRepeatPeriod, sendAs: sendAsInputPeer, quickReplyShortcut: nil, effect: nil, allowPaidStars: allowPaidStars, suggestedPost: nil))
+                    sendMessageRequest = account.network.request(Api.functions.messages.sendMessage(flags: flags, peer: inputPeer, replyTo: replyTo, message: text, randomId: uniqueId, replyMarkup: nil, entities: messageEntities, scheduleDate: scheduleTime, scheduleRepeatPeriod: scheduleRepeatPeriod, sendAs: sendAsInputPeer, quickReplyShortcut: nil, effect: nil, allowPaidStars: allowPaidStars, suggestedPost: nil, richMessage: nil))
                     |> `catch` { _ -> Signal<Api.Updates, NoError> in
                         return .complete()
                     }
