@@ -1,4 +1,5 @@
 import EGSimpleSettings
+import EGGTranslate
 import Foundation
 import SwiftSignalKit
 import Postbox

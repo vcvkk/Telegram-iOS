@@ -4,6 +4,7 @@ egdeps = [
     "//exteraGram/SwiftSoup:SwiftSoup",
     "//exteraGram/EGSimpleSettings:EGSimpleSettings",
     "//exteraGram/EGTranslationLangFix:EGTranslationLangFix",
+    "//exteraGram/EGGTranslate:EGGTranslate",
     "//exteraGram/EGWebSettingsScheme:EGWebSettingsScheme",
     "//exteraGram/EGGHSettingsScheme:EGGHSettingsScheme",
     "//exteraGram/EGConfig:EGConfig",
