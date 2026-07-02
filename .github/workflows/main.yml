@@ -73,6 +73,7 @@ jobs:
             --overrideXcodeVersion \
             --bazelArguments="--apple_generate_dsym --output_groups=+dsyms" \
             build \
+            --continueOnError \
             --configurationPath="build-system/appstore-configuration.json" \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=${{ github.event.inputs.configuration || 'release_arm64' }} \

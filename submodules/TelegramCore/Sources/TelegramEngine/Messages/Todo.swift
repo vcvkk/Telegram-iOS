@@ -55,8 +55,6 @@ func _internal_appendTodoMessageItems(account: Account, messageId: MessageId, it
         guard let peer = transaction.getPeer(messageId.peerId), let inputPeer = apiInputPeer(peer) else {
             return .complete()
         }
-        // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
-        let isPremium = transaction.getPeer(account.peerId)?.isPremium ?? false
         transaction.updateMessage(messageId, update: { currentMessage in
             let storeForwardInfo = currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init)
             var media: [Media] = []
