@@ -2283,6 +2283,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return OpenUserGeneratedUrl.openUserGeneratedUrl(context: context, peerId: peerId, url: url, webpage: webpage, concealed: concealed, forceConcealed: forceConcealed, skipUrlAuth: skipUrlAuth, skipConcealedAlert: skipConcealedAlert, forceDark: forceDark, present: present, openResolved: openResolved, progress: progress, alertDisplayUpdated: alertDisplayUpdated, concealedAlertOption: concealedAlertOption)
     }
 
+    public func openJoinChatWebView(context: AccountContext, parentController: ViewController, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, webView: JoinChatWebView) {
+        openJoinChatWebViewImpl(context: context, parentController: parentController, updatedPresentationData: updatedPresentationData, webView: webView)
+    }
+
     public func makeDeviceContactInfoController(context: ShareControllerAccountContext, environment: ShareControllerEnvironment, subject: DeviceContactInfoSubject, completed: (() -> Void)?, cancelled: (() -> Void)?) -> ViewController {
         return deviceContactInfoController(context: context, environment: environment, subject: subject, completed: completed, cancelled: cancelled)
     }
