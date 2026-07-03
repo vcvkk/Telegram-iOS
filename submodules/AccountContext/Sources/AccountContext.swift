@@ -228,6 +228,7 @@ public struct ResolvedBotAdminRights: OptionSet {
     public static let manageVideoChats = ResolvedBotAdminRights(rawValue: 512)
     public static let canBeAnonymous = ResolvedBotAdminRights(rawValue: 1024)
     public static let manageChat = ResolvedBotAdminRights(rawValue: 2048)
+    public static let manageTopics = ResolvedBotAdminRights(rawValue: 4096)
     
     public var chatAdminRights: TelegramChatAdminRightsFlags? {
         var flags = TelegramChatAdminRightsFlags()
@@ -263,6 +264,9 @@ public struct ResolvedBotAdminRights: OptionSet {
             flags.insert(.canBeAnonymous)
         }
         
+        if self.contains(ResolvedBotAdminRights.manageTopics) {
+            flags.insert(.canManageTopics)
+        }
         if flags.isEmpty && !self.contains(ResolvedBotAdminRights.manageChat) {
             return nil
         }
@@ -389,6 +393,16 @@ public enum ResolvedUrl {
 public enum ResolveUrlResult {
     case progress
     case result(ResolvedUrl)
+}
+
+public struct OpenUserGeneratedUrlConcealedAlertOption {
+    public let title: String
+    public let action: () -> Void
+
+    public init(title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
 }
 
 public enum NavigateToChatKeepStack {
@@ -1460,6 +1474,7 @@ public protocol SharedAccountContext: AnyObject {
     func resolveUrl(context: AccountContext, peerId: PeerId?, url: String, skipUrlAuth: Bool) -> Signal<ResolvedUrl, NoError>
     func resolveUrlWithProgress(context: AccountContext, peerId: PeerId?, url: String, skipUrlAuth: Bool) -> Signal<ResolveUrlResult, NoError>
     func openResolvedUrl(_ resolvedUrl: ResolvedUrl, context: AccountContext, urlContext: OpenURLContext, navigationController: NavigationController?, forceExternal: Bool, forceUpdate: Bool, openPeer: @escaping (EnginePeer, ChatControllerInteractionNavigateToPeer) -> Void, sendFile: ((FileMediaReference) -> Void)?, sendSticker: ((FileMediaReference, UIView?, CGRect?) -> Bool)?, sendEmoji: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)?, requestMessageActionUrlAuth: ((MessageActionUrlSubject) -> Void)?, joinVoiceChat: ((PeerId, String?, CachedChannelData.ActiveCall) -> Void)?, present: @escaping (ViewController, Any?) -> Void, dismissInput: @escaping () -> Void, contentContext: Any?, progress: Promise<Bool>?, completion: (() -> Void)?)
+    func openUserGeneratedUrl(context: AccountContext, peerId: EnginePeer.Id?, url: String, webpage: TelegramMediaWebpage?, concealed: Bool, forceConcealed: Bool, skipUrlAuth: Bool, skipConcealedAlert: Bool, forceDark: Bool, present: @escaping (ViewController) -> Void, openResolved: @escaping (ResolvedUrl) -> Void, progress: Promise<Bool>?, alertDisplayUpdated: ((ViewController?) -> Void)?, concealedAlertOption: OpenUserGeneratedUrlConcealedAlertOption?) -> Disposable
     func openAddContact(context: AccountContext, peer: EnginePeer?, firstName: String, lastName: String, phoneNumber: String, label: String, present: @escaping (ViewController, Any?) -> Void, pushController: @escaping (ViewController) -> Void, completed: @escaping () -> Void)
     func openAddPersonContact(context: AccountContext, peerId: PeerId, pushController: @escaping (ViewController) -> Void, present: @escaping (ViewController, Any?) -> Void)
     func presentContactsWarningSuppression(context: AccountContext, present: (ViewController, Any?) -> Void)

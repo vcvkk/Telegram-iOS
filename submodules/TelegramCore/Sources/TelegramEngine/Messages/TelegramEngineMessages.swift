@@ -470,8 +470,11 @@ public extension TelegramEngine {
             return _internal_recentlyUsedHashtags(postbox: self.account.postbox)
         }
 
-        public func topPeerActiveLiveLocationMessages(peerId: PeerId) -> Signal<(Peer?, [Message]), NoError> {
+        public func topPeerActiveLiveLocationMessages(peerId: EnginePeer.Id) -> Signal<(EnginePeer?, [EngineMessage]), NoError> {
             return _internal_topPeerActiveLiveLocationMessages(viewTracker: self.account.viewTracker, accountPeerId: self.account.peerId, peerId: peerId)
+            |> map { peer, messages -> (EnginePeer?, [EngineMessage]) in
+                return (peer.flatMap(EnginePeer.init), messages.map(EngineMessage.init))
+            }
         }
 
         public func chatList(group: EngineChatList.Group, count: Int) -> Signal<EngineChatList, NoError> {

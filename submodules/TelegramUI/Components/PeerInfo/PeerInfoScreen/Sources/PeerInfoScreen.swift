@@ -1158,14 +1158,14 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                         actionSheet?.dismissAnimated()
                         if let strongSelf = self {
                             if canOpenIn {
-                                let actionSheet = OpenInActionSheetController(context: strongSelf.context, updatedPresentationData: strongSelf.controller?.updatedPresentationData, item: .url(url: url), openUrl: { [weak self] url in
+                                let actionSheet = OpenInOptionsScreen(context: strongSelf.context, updatedPresentationData: strongSelf.controller?.updatedPresentationData, item: .url(url: url), openUrl: { [weak self] url in
                                     if let strongSelf = self, let navigationController = strongSelf.controller?.navigationController as? NavigationController {
                                         strongSelf.context.sharedContext.openExternalUrl(context: strongSelf.context, urlContext: .generic, url: url, forceExternal: true, presentationData: strongSelf.presentationData, navigationController: navigationController, dismissInput: {
                                         })
                                     }
                                 })
                                 strongSelf.view.endEditing(true)
-                                strongSelf.controller?.present(actionSheet, in: .window(.root))
+                                strongSelf.controller?.push(actionSheet)
                             } else {
                                 strongSelf.context.sharedContext.applicationBindings.openUrl(url)
                             }

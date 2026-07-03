@@ -3908,12 +3908,12 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                                     if !presentationData.theme.overallDarkAppearance {
                                         presentationData = presentationData.withUpdated(theme: defaultDarkColorPresentationTheme)
                                     }
-                                    let actionSheet = OpenInActionSheetController(context: strongSelf.context, forceTheme: presentationData.theme, item: item, openUrl: { [weak self] url in
+                                    let actionSheet = OpenInOptionsScreen(context: strongSelf.context, forceTheme: presentationData.theme, item: item, openUrl: { [weak self] url in
                                         if let strongSelf = self {
                                             strongSelf.context.sharedContext.openExternalUrl(context: strongSelf.context, urlContext: .generic, url: url, forceExternal: true, presentationData: presentationData, navigationController: strongSelf.baseNavigationController(), dismissInput: {})
                                         }
                                     })
-                                    controller.present(actionSheet, in: .window(.root))
+                                    controller.push(actionSheet)
                                 }
                             })))
                             break

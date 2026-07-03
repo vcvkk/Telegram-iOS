@@ -9461,7 +9461,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     }
     
     func openUrlIn(_ url: String) {
-        let actionSheet = OpenInActionSheetController(context: self.context, updatedPresentationData: self.updatedPresentationData, item: .url(url: url), openUrl: { [weak self] url in
+        let actionSheet = OpenInOptionsScreen(context: self.context, updatedPresentationData: self.updatedPresentationData, item: .url(url: url), openUrl: { [weak self] url in
             if let strongSelf = self, let navigationController = strongSelf.effectiveNavigationController {
                 strongSelf.context.sharedContext.openExternalUrl(context: strongSelf.context, urlContext: .generic, url: url, forceExternal: true, presentationData: strongSelf.presentationData, navigationController: navigationController, dismissInput: {
                     self?.chatDisplayNode.dismissInput()
@@ -9469,7 +9469,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
         })
         self.chatDisplayNode.dismissInput()
-        self.present(actionSheet, in: .window(.root))
+        self.push(actionSheet)
     }
     
     @available(iOSApplicationExtension 11.0, iOS 11.0, *)
