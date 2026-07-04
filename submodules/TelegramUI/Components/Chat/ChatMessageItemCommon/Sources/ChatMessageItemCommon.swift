@@ -160,7 +160,7 @@ public struct ChatMessageItemLayoutConstants {
     }
 }
 
-public func canViewMessageReactionList(message: Message) -> Bool {
+public func canViewMessageReactionList(message: EngineMessage) -> Bool {
     var found = false
     var canViewList = false
     for attribute in message.attributes {
@@ -209,7 +209,7 @@ public enum TranscribedText: Equatable {
     case error(AudioTranscriptionMessageAttribute.TranscriptionError)
 }
 
-public func transcribedText(message: Message) -> TranscribedText? {
+public func transcribedText(message: EngineMessage) -> TranscribedText? {
     for attribute in message.attributes {
         if let attribute = attribute as? AudioTranscriptionMessageAttribute {
             if !attribute.text.isEmpty {

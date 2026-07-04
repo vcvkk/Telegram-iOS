@@ -2105,7 +2105,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         } else {
                             strongSelf.chatDisplayNode.messageTransitionNode.dismissMessageReactionContexts(itemNode: itemNode)
                             
-                            if let removedReaction = removedReaction, let targetView = itemNode.targetReactionView(value: removedReaction), shouldDisplayInlineDateReactions(message: message, isPremium: strongSelf.presentationInterfaceState.isPremium, forceInline: false) {
+                            if let removedReaction = removedReaction, let targetView = itemNode.targetReactionView(value: removedReaction), shouldDisplayInlineDateReactions(message: EngineMessage(message), isPremium: strongSelf.presentationInterfaceState.isPremium, forceInline: false) {
                                 var hideRemovedReaction: Bool = false
                                 if let reactions = mergedMessageReactions(attributes: message.attributes, isTags: message.areReactionsTags(accountPeerId: context.account.peerId)) {
                                     for reaction in reactions.reactions {
@@ -2242,7 +2242,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     })
                 }
             }
-        }, sendMessage: { [weak self] text in
+        }, sendMessage: { [weak self] text, _ in
             guard let strongSelf = self, canSendMessagesToChat(strongSelf.presentationInterfaceState) else {
                 return
             }
@@ -3120,7 +3120,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             } else {
                 strongSelf.openUrl(url, concealed: concealed, forceExternal: forceExternal, skipConcealedAlert: skipConcealedAlert, message: message, allowInlineWebpageResolution: urlData.allowInlineWebpageResolution, progress: progress)
             }
-        }, shareCurrentLocation: { [weak self] in
+        }, shareCurrentLocation: { [weak self] _ in
             if let strongSelf = self {
                 if case .pinnedMessages = strongSelf.presentationInterfaceState.subject {
                     return
@@ -3144,7 +3144,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     }
                 })]), in: .window(.root))
             }
-        }, shareAccountContact: { [weak self] in
+        }, shareAccountContact: { [weak self] _ in
             if let strongSelf = self {
                 if case .pinnedMessages = strongSelf.presentationInterfaceState.subject {
                     return
@@ -4247,7 +4247,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     }
                 })
             })
-        }, openPollCreation: { [weak self] isQuiz in
+        }, openPollCreation: { [weak self] _, isQuiz in
             guard let self else {
                 return
             }
@@ -5210,7 +5210,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     self.present(controller, in: .window(.root))
                 })
             }
-        }, requestMessageUpdate: { [weak self] id, scroll in
+        }, requestMessageUpdate: { [weak self] id, scroll, _ in
             if let self {
                 self.chatDisplayNode.historyNode.requestMessageUpdate(id, andScrollToItem: scroll)
             }

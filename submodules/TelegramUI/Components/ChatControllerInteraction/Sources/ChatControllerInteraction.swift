@@ -199,7 +199,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public let clickThroughMessage: (UIView?, CGPoint?) -> Void
     public let toggleMessagesSelection: ([MessageId], Bool) -> Void
     public let sendCurrentMessage: (Bool, ChatSendMessageEffect?) -> Void
-    public let sendMessage: (String) -> Void
+    public let sendMessage: (String, EngineMessage.Id?) -> Void
     public let sendSticker: (FileMediaReference, Bool, Bool, String?, Bool, UIView?, CGRect?, CALayer?, [ItemCollectionId]) -> Bool
     public let sendEmoji: (String, ChatTextInputTextCustomEmojiAttribute, Bool) -> Void
     public let sendGif: (FileMediaReference, UIView, CGRect, Bool, Bool) -> Bool
@@ -209,8 +209,8 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public let requestMessageActionUrlAuth: (String, MessageActionUrlSubject) -> Void
     public let activateSwitchInline: (PeerId?, String, ReplyMarkupButtonAction.PeerTypes?) -> Void
     public let openUrl: (OpenUrl) -> Void
-    public let shareCurrentLocation: () -> Void
-    public let shareAccountContact: () -> Void
+    public let shareCurrentLocation: (EngineMessage.Id?) -> Void
+    public let shareAccountContact: (EngineMessage.Id?) -> Void
     public let sendBotCommand: (MessageId?, String) -> Void
     public let openInstantPage: (Message, ChatMessageItemAssociatedData?) -> Void
     public let openWallpaper: (Message) -> Void
@@ -253,7 +253,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public let displaySwipeToReplyHint: () -> Void
     public let dismissReplyMarkupMessage: (Message) -> Void
     public let openMessagePollResults: (MessageId, Data) -> Void
-    public let openPollCreation: (Bool?) -> Void
+    public let openPollCreation: (EngineMessage.Id?, Bool?) -> Void
     public let openPollMedia: (Message, PollMediaSubject) -> Void
     public let displayPollSolution: (TelegramMediaPollResults.Solution?, ASDisplayNode?) -> Void
     public let displayPsa: (String, ASDisplayNode) -> Void
@@ -293,7 +293,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public let sendGift: (EnginePeer.Id) -> Void
     public let openUniqueGift: (String) -> Void
     public let openMessageFeeException: () -> Void
-    public let requestMessageUpdate: (MessageId, Bool) -> Void
+    public let requestMessageUpdate: (MessageId, Bool, ControlledTransition?) -> Void
     public let cancelInteractiveKeyboardGestures: () -> Void
     public let dismissTextInput: () -> Void
     public let scrollToMessageId: (MessageIndex) -> Void
@@ -378,7 +378,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
         clickThroughMessage: @escaping (UIView?, CGPoint?) -> Void,
         toggleMessagesSelection: @escaping ([MessageId], Bool) -> Void,
         sendCurrentMessage: @escaping (Bool, ChatSendMessageEffect?) -> Void,
-        sendMessage: @escaping (String) -> Void,
+        sendMessage: @escaping (String, EngineMessage.Id?) -> Void,
         sendSticker: @escaping (FileMediaReference, Bool, Bool, String?, Bool, UIView?, CGRect?, CALayer?, [ItemCollectionId]) -> Bool,
         sendEmoji: @escaping (String, ChatTextInputTextCustomEmojiAttribute, Bool) -> Void,
         sendGif: @escaping (FileMediaReference, UIView, CGRect, Bool, Bool) -> Bool,
@@ -388,8 +388,8 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
         requestMessageActionUrlAuth: @escaping (String, MessageActionUrlSubject) -> Void,
         activateSwitchInline: @escaping (PeerId?, String, ReplyMarkupButtonAction.PeerTypes?) -> Void,
         openUrl: @escaping (OpenUrl) -> Void,
-        shareCurrentLocation: @escaping () -> Void,
-        shareAccountContact: @escaping () -> Void,
+        shareCurrentLocation: @escaping (EngineMessage.Id?) -> Void,
+        shareAccountContact: @escaping (EngineMessage.Id?) -> Void,
         sendBotCommand: @escaping (MessageId?, String) -> Void,
         openInstantPage: @escaping (Message, ChatMessageItemAssociatedData?) -> Void,
         openWallpaper: @escaping (Message) -> Void,
@@ -432,7 +432,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
         displaySwipeToReplyHint: @escaping () -> Void,
         dismissReplyMarkupMessage: @escaping (Message) -> Void,
         openMessagePollResults: @escaping (MessageId, Data) -> Void,
-        openPollCreation: @escaping (Bool?) -> Void,
+        openPollCreation: @escaping (EngineMessage.Id?, Bool?) -> Void,
         openPollMedia: @escaping (Message, PollMediaSubject) -> Void,
         displayPollSolution: @escaping (TelegramMediaPollResults.Solution?, ASDisplayNode?) -> Void,
         displayPsa: @escaping (String, ASDisplayNode) -> Void,
@@ -472,7 +472,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
         sendGift: @escaping (EnginePeer.Id) -> Void,
         openUniqueGift: @escaping (String) -> Void,
         openMessageFeeException: @escaping () -> Void,
-        requestMessageUpdate: @escaping (MessageId, Bool) -> Void,
+        requestMessageUpdate: @escaping (MessageId, Bool, ControlledTransition?) -> Void,
         cancelInteractiveKeyboardGestures: @escaping () -> Void,
         dismissTextInput: @escaping () -> Void,
         scrollToMessageId: @escaping (MessageIndex) -> Void,

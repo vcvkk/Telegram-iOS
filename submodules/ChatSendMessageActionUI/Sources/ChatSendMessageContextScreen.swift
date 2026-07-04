@@ -50,6 +50,11 @@ public protocol ChatSendMessageContextScreenMediaPreview: AnyObject {
     func update(containerSize: CGSize, transition: ComponentTransition) -> CGSize
 }
 
+public protocol ChatSendMessageContextScreenRichTextPreview: AnyObject {
+    var view: UIView { get }
+    func update(boundingWidth: CGFloat, presentationData: PresentationData, transition: ComponentTransition) -> CGSize
+}
+
 final class ChatSendMessageContextScreenComponent: Component {
     typealias EnvironmentType = ViewControllerComponentContainer.Environment
     
@@ -73,6 +78,7 @@ final class ChatSendMessageContextScreenComponent: Component {
     let reactionItems: [ReactionItem]?
     let availableMessageEffects: AvailableMessageEffects?
     let isPremium: Bool
+    let richTextPreview: ChatSendMessageContextScreenRichTextPreview?
     // MARK: exteraGram
     init(
         egTranslationContext: (outgoingMessageTranslateToLang: String?, translate: (() -> Void)?, changeTranslationLanguage: (() -> ())?) = (outgoingMessageTranslateToLang: nil, translate: nil, changeTranslationLanguage: nil),
@@ -94,7 +100,8 @@ final class ChatSendMessageContextScreenComponent: Component {
         openPremiumPaywall: @escaping (ViewController) -> Void,
         reactionItems: [ReactionItem]?,
         availableMessageEffects: AvailableMessageEffects?,
-        isPremium: Bool
+        isPremium: Bool,
+        richTextPreview: ChatSendMessageContextScreenRichTextPreview? = nil
     ) {
         self.egTranslationContext = egTranslationContext
         self.initialData = initialData
@@ -116,6 +123,7 @@ final class ChatSendMessageContextScreenComponent: Component {
         self.reactionItems = reactionItems
         self.availableMessageEffects = availableMessageEffects
         self.isPremium = isPremium
+        self.richTextPreview = richTextPreview
     }
 
     static func ==(lhs: ChatSendMessageContextScreenComponent, rhs: ChatSendMessageContextScreenComponent) -> Bool {
@@ -857,6 +865,8 @@ final class ChatSendMessageContextScreenComponent: Component {
                 presentationData: presentationData,
                 backgroundNode: wallpaperBackgroundNode,
                 textString: textString,
+                richTextPreview: component.richTextPreview,
+                maxRichBubbleWidth: localSourceTextInputViewFrame.width,
                 sourceTextInputView: component.textInputView as? ChatInputTextView,
                 emojiViewProvider: component.emojiViewProvider,
                 sourceMediaPreview: mediaPreview,
@@ -1546,7 +1556,8 @@ public class ChatSendMessageContextScreen: ViewControllerComponentContainer, Cha
         openPremiumPaywall: @escaping (ViewController) -> Void,
         reactionItems: [ReactionItem]?,
         availableMessageEffects: AvailableMessageEffects?,
-        isPremium: Bool
+        isPremium: Bool,
+        richTextPreview: ChatSendMessageContextScreenRichTextPreview? = nil
     ) {
         self.context = context
         
@@ -1572,7 +1583,8 @@ public class ChatSendMessageContextScreen: ViewControllerComponentContainer, Cha
                 openPremiumPaywall: openPremiumPaywall,
                 reactionItems: reactionItems,
                 availableMessageEffects: availableMessageEffects,
-                isPremium: isPremium
+                isPremium: isPremium,
+                richTextPreview: richTextPreview
             ),
             navigationBarAppearance: .none,
             statusBarStyle: .none,

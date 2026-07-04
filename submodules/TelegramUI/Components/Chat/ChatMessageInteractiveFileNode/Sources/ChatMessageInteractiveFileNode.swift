@@ -361,7 +361,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: arguments.context.currentAppConfiguration.with { $0 })
         
-        let transcriptionText = self.forcedAudioTranscriptionText ?? transcribedText(message: message)
+        let transcriptionText = self.forcedAudioTranscriptionText ?? transcribedText(message: EngineMessage(message))
         // MARK: exteraGram
         if transcriptionText == nil && false {
             if premiumConfiguration.audioTransciptionTrialCount > 0 {
@@ -404,7 +404,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
         if case .expanded = self.audioTranscriptionState {
             shouldExpandNow = true
         } else {
-            if let result = transcribedText(message: message) {
+            if let result = transcribedText(message: EngineMessage(message)) {
                 shouldExpandNow = true
                 
                 if case let .success(_, isPending) = result {
@@ -795,7 +795,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                     }
                 }
                 
-                let transcribedText = forcedAudioTranscriptionText ?? transcribedText(message: arguments.message)
+                let transcribedText = forcedAudioTranscriptionText ?? transcribedText(message: EngineMessage(arguments.message))
                 
                 switch audioTranscriptionState {
                 case .inProgress:
@@ -937,9 +937,9 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                     } else {
                         dateFormat = .regular
                     }
-                    let dateText = stringForMessageTimestampStatus(accountPeerId: arguments.context.account.peerId, message: arguments.message, dateTimeFormat: arguments.presentationData.dateTimeFormat, nameDisplayOrder: arguments.presentationData.nameDisplayOrder, strings: arguments.presentationData.strings, format: dateFormat, associatedData: arguments.associatedData)
+                    let dateText = stringForMessageTimestampStatus(accountPeerId: arguments.context.account.peerId, message: EngineMessage(arguments.message), dateTimeFormat: arguments.presentationData.dateTimeFormat, nameDisplayOrder: arguments.presentationData.nameDisplayOrder, strings: arguments.presentationData.strings, format: dateFormat, associatedData: arguments.associatedData)
                     
-                    let displayReactionsInline = shouldDisplayInlineDateReactions(message: arguments.message, isPremium: arguments.associatedData.isPremium, forceInline: arguments.associatedData.forceInlineReactions)
+                    let displayReactionsInline = shouldDisplayInlineDateReactions(message: EngineMessage(arguments.message), isPremium: arguments.associatedData.isPremium, forceInline: arguments.associatedData.forceInlineReactions)
                     var reactionSettings: ChatMessageDateAndStatusNode.TrailingReactionSettings?
                     
                     if displayReactionsInline || arguments.displayReactions {
@@ -974,7 +974,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                         starsCount: starsCount,
                         isPinned: arguments.isPinned && !arguments.associatedData.isInPinnedListMode,
                         hasAutoremove: arguments.message.isSelfExpiring,
-                        canViewReactionList: canViewMessageReactionList(message: arguments.topMessage),
+                        canViewReactionList: canViewMessageReactionList(message: EngineMessage(arguments.topMessage)),
                         animationCache: arguments.controllerInteraction.presentationContext.animationCache,
                         animationRenderer: arguments.controllerInteraction.presentationContext.animationRenderer
                     ))
@@ -1819,7 +1819,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                         }
                     }
                     
-                    image = playerAlbumArt(postbox: context.account.postbox, engine: context.engine, fileReference: .message(message: MessageReference(message), media: file), albumArt: .init(thumbnailResource: ExternalMusicAlbumArtResource(file: .message(message: MessageReference(message), media: file), title: title ?? "", performer: performer ?? "", isThumbnail: true), fullSizeResource: ExternalMusicAlbumArtResource(file: .message(message: MessageReference(message), media: file), title: title ?? "", performer: performer ?? "", isThumbnail: false)), thumbnail: true, overlayColor: UIColor(white: 0.0, alpha: 0.3), drawPlaceholderWhenEmpty: false, attemptSynchronously: !animated)
+                    image = playerAlbumArt(engine: context.engine, fileReference: .message(message: MessageReference(message), media: file), albumArt: .init(thumbnailResource: ExternalMusicAlbumArtResource(file: .message(message: MessageReference(message), media: file), title: title ?? "", performer: performer ?? "", isThumbnail: true), fullSizeResource: ExternalMusicAlbumArtResource(file: .message(message: MessageReference(message), media: file), title: title ?? "", performer: performer ?? "", isThumbnail: false)), thumbnail: true, overlayColor: UIColor(white: 0.0, alpha: 0.3), drawPlaceholderWhenEmpty: false, attemptSynchronously: !animated)
                 }
             }
             let statusNode = SemanticStatusNode(backgroundNodeColor: backgroundNodeColor, foregroundNodeColor: foregroundNodeColor, image: image, overlayForegroundNodeColor: presentationData.theme.theme.chat.message.mediaOverlayControlColors.foregroundColor)

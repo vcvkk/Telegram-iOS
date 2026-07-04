@@ -1133,7 +1133,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                     impressionCount: !presentationData.isPreview ? dateAndStatus.viewCount : nil,
                     dateText: dateAndStatus.dateText,
                     type: dateAndStatus.type,
-                    layoutInput: .standalone(reactionSettings: shouldDisplayInlineDateReactions(message: message, isPremium: associatedData.isPremium, forceInline: associatedData.forceInlineReactions) ? ChatMessageDateAndStatusNode.StandaloneReactionSettings() : nil),
+                    layoutInput: .standalone(reactionSettings: shouldDisplayInlineDateReactions(message: EngineMessage(message), isPremium: associatedData.isPremium, forceInline: associatedData.forceInlineReactions) ? ChatMessageDateAndStatusNode.StandaloneReactionSettings() : nil),
                     constrainedSize: CGSize(width: nativeSize.width - 30.0, height: CGFloat.greatestFiniteMagnitude),
                     availableReactions: associatedData.availableReactions,
                     savedMessageTags: associatedData.savedMessageTags,
@@ -1147,7 +1147,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                     starsCount: dateAndStatus.starsCount,
                     isPinned: dateAndStatus.isPinned,
                     hasAutoremove: message.isSelfExpiring,
-                    canViewReactionList: canViewMessageReactionList(message: message),
+                    canViewReactionList: canViewMessageReactionList(message: EngineMessage(message)),
                     animationCache: presentationContext.animationCache,
                     animationRenderer: presentationContext.animationRenderer
                 ))

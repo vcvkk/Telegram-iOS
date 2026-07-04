@@ -1085,7 +1085,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             }
             strongSelf.paneContainerNode.updateSelectedMessageIds(strongSelf.state.selectedMessageIds, animated: true)
         }, sendCurrentMessage: { _, _ in
-        }, sendMessage: { _ in
+        }, sendMessage: { _, _ in
         }, sendSticker: { _, _, _, _, _, _, _, _, _ in
             return false
         }, sendEmoji: { _, _, _ in
@@ -1102,8 +1102,8 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 return
             }
             strongSelf.openUrl(url: url.url, concealed: url.concealed, external: url.external ?? false)
-        }, shareCurrentLocation: {
-        }, shareAccountContact: {
+        }, shareCurrentLocation: { _ in
+        }, shareAccountContact: { _ in
         }, sendBotCommand: { _, _ in
         }, openInstantPage: { [weak self] message, associatedData in
             guard let strongSelf = self, let navigationController = strongSelf.controller?.navigationController as? NavigationController else {
@@ -1218,7 +1218,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         }, displaySwipeToReplyHint: {
         }, dismissReplyMarkupMessage: { _ in
         }, openMessagePollResults: { _, _ in
-        }, openPollCreation: { _ in
+        }, openPollCreation: { _, _ in
         }, openPollMedia: { _, _ in
         }, displayPollSolution: { _, _ in
         }, displayPsa: { _, _ in
@@ -1264,7 +1264,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             self.openPremiumGift()
         }, openUniqueGift: { _ in
         }, openMessageFeeException: {
-        }, requestMessageUpdate: { _, _ in
+        }, requestMessageUpdate: { _, _, _ in
         }, cancelInteractiveKeyboardGestures: {
         }, dismissTextInput: {
         }, scrollToMessageId: { _ in

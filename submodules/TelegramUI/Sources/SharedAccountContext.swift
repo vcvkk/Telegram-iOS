@@ -2421,7 +2421,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             },
             toggleMessagesSelection: { _, _ in },
             sendCurrentMessage: { _, _ in },
-            sendMessage: { _ in },
+            sendMessage: { _, _ in },
             sendSticker: { _, _, _, _, _, _, _, _, _ in return false },
             sendEmoji: { _, _, _ in },
             sendGif: { _, _, _, _, _ in return false },
@@ -2434,8 +2434,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             requestMessageActionUrlAuth: { _, _ in },
             activateSwitchInline: { _, _, _ in },
             openUrl: { _ in },
-            shareCurrentLocation: {},
-            shareAccountContact: {},
+            shareCurrentLocation: { _ in },
+            shareAccountContact: { _ in },
             sendBotCommand: { _, _ in },
             openInstantPage: { _, _ in  },
             openWallpaper: { _ in  },
@@ -2514,7 +2514,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             },
             openMessagePollResults: { _, _ in
             },
-            openPollCreation: { _ in
+            openPollCreation: { _, _ in
             },
             openPollMedia: { _, _ in
             },
@@ -2596,7 +2596,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             },
             openMessageFeeException: {
             },
-            requestMessageUpdate: { _, _ in
+            requestMessageUpdate: { _, _, _ in
             },
             cancelInteractiveKeyboardGestures: {
             },
