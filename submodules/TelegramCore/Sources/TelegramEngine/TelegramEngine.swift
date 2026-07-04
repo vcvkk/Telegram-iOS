@@ -21,6 +21,10 @@ public final class TelegramEngine {
         return Peers(account: self.account)
     }()
 
+    public lazy var peersNearby: PeersNearby = {
+        return PeersNearby(account: self.account)
+    }()
+
     public lazy var auth: Auth = {
         return Auth(account: self.account)
     }()
