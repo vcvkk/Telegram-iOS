@@ -46,6 +46,8 @@ import TextFormat
 import ChatTextLinkEditUI
 import AttachmentTextInputPanelNode
 import ChatEntityKeyboardInputNode
+import EntityKeyboard
+import EmojiStatusSelectionComponent
 import HashtagSearchUI
 import PeerInfoStoryGridScreen
 import TelegramAccountAuxiliaryMethods
@@ -2287,6 +2289,18 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         openJoinChatWebViewImpl(context: context, parentController: parentController, updatedPresentationData: updatedPresentationData, webView: webView)
     }
 
+    public func makeEmojiStatusSelectionController(context: AccountContext, mode: EmojiStatusSelectionControllerMode, sourceView: UIView, emojiContent: Signal<AnyObject, NoError>, currentSelection: Int64?, color: UIColor?, destinationItemView: @escaping () -> UIView?) -> ViewController {
+        return EmojiStatusSelectionController(
+            context: context,
+            mode: mode,
+            sourceView: sourceView,
+            emojiContent: emojiContent |> map { $0 as! EmojiPagerContentComponent },
+            currentSelection: currentSelection,
+            color: color,
+            destinationItemView: destinationItemView
+        )
+    }
+
     public func makeDeviceContactInfoController(context: ShareControllerAccountContext, environment: ShareControllerEnvironment, subject: DeviceContactInfoSubject, completed: (() -> Void)?, cancelled: (() -> Void)?) -> ViewController {
         return deviceContactInfoController(context: context, environment: environment, subject: subject, completed: completed, cancelled: cancelled)
     }
@@ -3755,16 +3769,21 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return controller
     }
     
-    public func makeStickerPackScreen(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, mainStickerPack: StickerPackReference, stickerPacks: [StickerPackReference], loadedStickerPacks: [LoadedStickerPack], actionTitle: String?, isEditing: Bool, expandIfNeeded: Bool, parentNavigationController: NavigationController?, sendSticker: ((FileMediaReference, UIView?, CGRect?) -> Bool)?, actionPerformed: ((Bool) -> Void)?) -> ViewController {
+    public func makeStickerPackScreen(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, mainStickerPack: StickerPackReference, stickerPacks: [StickerPackReference], loadedStickerPacks: [LoadedStickerPack], actionTitle: String?, isEditing: Bool, expandIfNeeded: Bool, parentNavigationController: NavigationController?, sendSticker: ((FileMediaReference, UIView?, CGRect?) -> Bool)?, actionPerformed: (([StickerPackScreenActionResult]) -> Void)?) -> ViewController {
         return StickerPackScreen(context: context, updatedPresentationData: updatedPresentationData, mainStickerPack: mainStickerPack, stickerPacks: stickerPacks, loadedStickerPacks: loadedStickerPacks, actionTitle: actionTitle, isEditing: isEditing, expandIfNeeded: expandIfNeeded, parentNavigationController: parentNavigationController, sendSticker: sendSticker, actionPerformed: { actions in
-            if let (_, _, action) = actions.first {
+            guard let actionPerformed = actionPerformed else {
+                return
+            }
+            actionPerformed(actions.map { info, items, action in
+                let mappedAction: StickerPackScreenActionKind
                 switch action {
                 case .add:
-                    actionPerformed?(true)
-                case .remove:
-                    actionPerformed?(false)
+                    mappedAction = .add
+                case let .remove(positionInList):
+                    mappedAction = .remove(positionInList: positionInList)
                 }
-            }
+                return StickerPackScreenActionResult(info: info, items: items, action: mappedAction)
+            })
         })
     }
     

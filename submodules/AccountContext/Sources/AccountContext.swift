@@ -1338,7 +1338,7 @@ public final class TextProcessingScreenSendContextActions {
 
 public enum TextProcessingScreenMode {
     case edit(saveRestoreStateId: EnginePeer.Id?, completion: (TextWithEntities) -> Void, send: ((TextWithEntities) -> Void)?, sendContextActions: TextProcessingScreenSendContextActions?)
-    case translate(fromLanguage: String?)
+    case translate(fromLanguage: String?, applyResult: ((TextWithEntities) -> Void)?)
     // MARK: exteraGram
     case preview(style: TelegramComposeAIMessageMode.CloudStyle.Custom, authorPeer: EnginePeer?, initialPreview: AIMessageStylePreview?, isAlreadyAdded: Bool, added: () -> Void)
 }
@@ -1483,6 +1483,7 @@ public protocol SharedAccountContext: AnyObject {
     func openResolvedUrl(_ resolvedUrl: ResolvedUrl, context: AccountContext, urlContext: OpenURLContext, navigationController: NavigationController?, forceExternal: Bool, forceUpdate: Bool, openPeer: @escaping (EnginePeer, ChatControllerInteractionNavigateToPeer) -> Void, sendFile: ((FileMediaReference) -> Void)?, sendSticker: ((FileMediaReference, UIView?, CGRect?) -> Bool)?, sendEmoji: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)?, requestMessageActionUrlAuth: ((MessageActionUrlSubject) -> Void)?, joinVoiceChat: ((PeerId, String?, CachedChannelData.ActiveCall) -> Void)?, present: @escaping (ViewController, Any?) -> Void, dismissInput: @escaping () -> Void, contentContext: Any?, progress: Promise<Bool>?, completion: (() -> Void)?)
     func openUserGeneratedUrl(context: AccountContext, peerId: EnginePeer.Id?, url: String, webpage: TelegramMediaWebpage?, concealed: Bool, forceConcealed: Bool, skipUrlAuth: Bool, skipConcealedAlert: Bool, forceDark: Bool, present: @escaping (ViewController) -> Void, openResolved: @escaping (ResolvedUrl) -> Void, progress: Promise<Bool>?, alertDisplayUpdated: ((ViewController?) -> Void)?, concealedAlertOption: OpenUserGeneratedUrlConcealedAlertOption?) -> Disposable
     func openJoinChatWebView(context: AccountContext, parentController: ViewController, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, webView: JoinChatWebView)
+    func makeEmojiStatusSelectionController(context: AccountContext, mode: EmojiStatusSelectionControllerMode, sourceView: UIView, emojiContent: Signal<AnyObject, NoError>, currentSelection: Int64?, color: UIColor?, destinationItemView: @escaping () -> UIView?) -> ViewController
     func openAddContact(context: AccountContext, peer: EnginePeer?, firstName: String, lastName: String, phoneNumber: String, label: String, present: @escaping (ViewController, Any?) -> Void, pushController: @escaping (ViewController) -> Void, completed: @escaping () -> Void)
     func openAddPersonContact(context: AccountContext, peerId: PeerId, pushController: @escaping (ViewController) -> Void, present: @escaping (ViewController, Any?) -> Void)
     func presentContactsWarningSuppression(context: AccountContext, present: (ViewController, Any?) -> Void)
@@ -1510,7 +1511,7 @@ public protocol SharedAccountContext: AnyObject {
     func makeGiftStoreController(context: AccountContext, peerId: EnginePeer.Id, gift: StarGift.Gift) -> ViewController
     func makePremiumPrivacyControllerController(context: AccountContext, subject: PremiumPrivacySubject, peerId: EnginePeer.Id) -> ViewController
     func makePremiumBoostLevelsController(context: AccountContext, peerId: EnginePeer.Id, subject: BoostSubject, boostStatus: ChannelBoostStatus, myBoostStatus: MyBoostStatus, forceDark: Bool, openStats: (() -> Void)?) -> ViewController
-    func makeStickerPackScreen(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, mainStickerPack: StickerPackReference, stickerPacks: [StickerPackReference], loadedStickerPacks: [LoadedStickerPack], actionTitle: String?, isEditing: Bool, expandIfNeeded: Bool, parentNavigationController: NavigationController?, sendSticker: ((FileMediaReference, UIView?, CGRect?) -> Bool)?, actionPerformed: ((Bool) -> Void)?) -> ViewController
+    func makeStickerPackScreen(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, mainStickerPack: StickerPackReference, stickerPacks: [StickerPackReference], loadedStickerPacks: [LoadedStickerPack], actionTitle: String?, isEditing: Bool, expandIfNeeded: Bool, parentNavigationController: NavigationController?, sendSticker: ((FileMediaReference, UIView?, CGRect?) -> Bool)?, actionPerformed: (([StickerPackScreenActionResult]) -> Void)?) -> ViewController
     func makeCameraScreen(context: AccountContext, mode: CameraScreenMode, cameraHolder: Any?, transitionIn: CameraScreenTransitionIn?, transitionOut: @escaping (Bool) -> CameraScreenTransitionOut?, completion: @escaping (Any, @escaping () -> Void) -> Void, transitionedOut: (() -> Void)?) -> ViewController
     func makeMediaPickerScreen(context: AccountContext, hasSearch: Bool, completion: @escaping (Any) -> Void) -> ViewController
     func makeStoryMediaEditorScreen(context: AccountContext, source: Any?, text: String?, link: (url: String, name: String?)?, remainingCount: Int32, completion: @escaping ([MediaEditorScreenResult], MediaEditorTransitionOutExternalState, @escaping (@escaping () -> Void) -> Void) -> Void) -> ViewController
@@ -1675,6 +1676,23 @@ public protocol ChatSendMessageActionSheetControllerSourceSendButtonNode: ASDisp
 public protocol ChatSendMessageActionSheetController: ViewController {
     typealias SendMode = ChatSendMessageActionSheetControllerSendMode
     typealias SendParameters = ChatSendMessageActionSheetControllerSendParameters
+}
+
+public enum StickerPackScreenActionKind {
+    case add
+    case remove(positionInList: Int)
+}
+
+public struct StickerPackScreenActionResult {
+    public let info: StickerPackCollectionInfo
+    public let items: [StickerPackItem]
+    public let action: StickerPackScreenActionKind
+
+    public init(info: StickerPackCollectionInfo, items: [StickerPackItem], action: StickerPackScreenActionKind) {
+        self.info = info
+        self.items = items
+        self.action = action
+    }
 }
 
 public protocol AccountContext: AnyObject {
