@@ -306,7 +306,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     
     private var accessoryItemButtons: [(ChatTextInputAccessoryItem, AccessoryItemIconButton)] = []
     
-    private var validLayout: (CGFloat, CGFloat, CGFloat, CGFloat, UIEdgeInsets, CGFloat, CGFloat, LayoutMetrics, Bool, Bool)?
+    private var validLayout: (CGFloat, CGFloat, CGFloat, CGFloat, UIEdgeInsets, CGFloat, CGFloat, LayoutMetrics, Bool, Bool, DeviceMetrics)?
     private var leftMenuInset: CGFloat = 0.0
     private var rightSlowModeInset: CGFloat = 0.0
     private var currentTextInputBackgroundWidthOffset: CGFloat = 0.0
@@ -890,15 +890,15 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
         self.mediaActionButtons.micButton.offsetRecordingControls = { [weak self] in
             if let strongSelf = self, let presentationInterfaceState = strongSelf.presentationInterfaceState {
-                if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded) = strongSelf.validLayout {
-                    let _ = strongSelf.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: .immediate, interfaceState: presentationInterfaceState, metrics: metrics, isMediaInputExpanded: isMediaInputExpanded)
+                if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded, deviceMetrics) = strongSelf.validLayout {
+                    let _ = strongSelf.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: .immediate, interfaceState: presentationInterfaceState, metrics: metrics, deviceMetrics: deviceMetrics, isMediaInputExpanded: isMediaInputExpanded)
                 }
             }
         }
         self.mediaActionButtons.micButton.updateCancelTranslation = { [weak self] in
             if let strongSelf = self, let presentationInterfaceState = strongSelf.presentationInterfaceState {
-                if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded) = strongSelf.validLayout {
-                    let _ = strongSelf.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: .immediate, interfaceState: presentationInterfaceState, metrics: metrics, isMediaInputExpanded: isMediaInputExpanded)
+                if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded, deviceMetrics) = strongSelf.validLayout {
+                    let _ = strongSelf.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: .immediate, interfaceState: presentationInterfaceState, metrics: metrics, deviceMetrics: deviceMetrics, isMediaInputExpanded: isMediaInputExpanded)
                 }
             }
         }
@@ -1432,10 +1432,10 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
     
     public func requestLayout(transition: ContainedViewLayoutTransition = .immediate) {
-        guard let presentationInterfaceState = self.presentationInterfaceState, let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded) = self.validLayout else {
+        guard let presentationInterfaceState = self.presentationInterfaceState, let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded, deviceMetrics) = self.validLayout else {
             return
         }
-        let _ = self.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: transition, interfaceState: presentationInterfaceState, metrics: metrics, isMediaInputExpanded: isMediaInputExpanded)
+        let _ = self.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: transition, interfaceState: presentationInterfaceState, metrics: metrics, deviceMetrics: deviceMetrics, isMediaInputExpanded: isMediaInputExpanded)
     }
     
     override public func updateLayout(
@@ -1450,12 +1450,13 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         transition: ContainedViewLayoutTransition,
         interfaceState: ChatPresentationInterfaceState,
         metrics: LayoutMetrics,
+        deviceMetrics: DeviceMetrics,
         isMediaInputExpanded: Bool
     ) -> CGFloat {
         let isFirstTime = self.validLayout == nil
         
         let previousAdditionalSideInsets = self.validLayout?.4
-        self.validLayout = (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded)
+        self.validLayout = (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded, deviceMetrics)
         
         let defaultGlassTintColor: GlassBackgroundView.TintColor
         let defaultGlassTintWithInnerColor: GlassBackgroundView.TintColor
@@ -2916,7 +2917,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             transition.updateAlpha(layer: mediaPreviewPanelNode.tintMaskView.layer, alpha: 1.0)
             transition.updateFrame(view: mediaPreviewPanelNode.tintMaskView, frame: mediaPreviewPanelFrame)
             
-            let _ = mediaPreviewPanelNode.updateLayout(width: mediaPreviewPanelFrame.width, leftInset: 0.0, rightInset: 0.0, bottomInset: 0.0, additionalSideInsets: UIEdgeInsets(), maxHeight: 40.0, maxOverlayHeight: 40.0, isSecondary: false, transition: mediaPreviewPanelTransition, interfaceState: interfaceState, metrics: metrics, isMediaInputExpanded: false)
+            let _ = mediaPreviewPanelNode.updateLayout(width: mediaPreviewPanelFrame.width, leftInset: 0.0, rightInset: 0.0, bottomInset: 0.0, additionalSideInsets: UIEdgeInsets(), maxHeight: 40.0, maxOverlayHeight: 40.0, isSecondary: false, transition: mediaPreviewPanelTransition, interfaceState: interfaceState, metrics: metrics, deviceMetrics: deviceMetrics, isMediaInputExpanded: false)
         } else if let mediaPreviewPanelNode = self.mediaPreviewPanelNode {
             self.mediaPreviewPanelNode = nil
             let mediaPreviewPanelView = mediaPreviewPanelNode.view
@@ -4672,7 +4673,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
     
     private func updateTextHeight(animated: Bool) {
-        if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, _, metrics, _, _) = self.validLayout, let interfaceState = self.presentationInterfaceState {
+        if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, _, metrics, _, _, _) = self.validLayout, let interfaceState = self.presentationInterfaceState {
             var leftInset = leftInset
             var rightInset = rightInset
             if bottomInset <= 32.0 {
