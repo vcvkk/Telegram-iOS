@@ -407,7 +407,7 @@ public final class ShareController: ViewController {
             externalShare: externalShare,
             immediateExternalShare: immediateExternalShare,
             switchableAccounts: switchableAccounts.map { info in
-                return ShareControllerSwitchableAccount(account: ShareControllerAppAccountContext(context: context.sharedContext.makeTempAccountContext(account: info.account)), peer: info.peer)
+                return ShareControllerSwitchableAccount(account: ShareControllerAppAccountContext(context: context.sharedContext.makeTempAccountContext(account: info.account)), peer: EnginePeer(info.peer))
             },
             immediatePeerId: immediatePeerId,
             updatedPresentationData: updatedPresentationData,
