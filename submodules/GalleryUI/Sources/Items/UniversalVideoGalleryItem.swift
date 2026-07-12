@@ -1655,7 +1655,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                         scrubberView.setFetchStatusSignal(status |> map(EngineMediaResource.FetchStatus.init), strings: self.presentationData.strings, decimalSeparator: self.presentationData.dateTimeFormat.decimalSeparator, fileSize: file.size)
                     }
                     
-                    self.requiresDownload = !isMediaStreamable(message: message, media: file)
+                    self.requiresDownload = !isMediaStreamable(message: EngineMessage(message), media: file)
                     mediaFileStatus = status |> map(Optional.init)
                     self.fetchControls = FetchControls(fetch: { [weak self] in
                         if let strongSelf = self {
@@ -2151,7 +2151,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
             }
             var isStreamable = false
             if let contentInfo = item.contentInfo, case let .message(message, _) = contentInfo {
-                isStreamable = isMediaStreamable(message: message, media: content.fileReference.media)
+                isStreamable = isMediaStreamable(message: EngineMessage(message), media: content.fileReference.media)
             } else {
                 isStreamable = isMediaStreamable(media: content.fileReference.media)
             }
@@ -3767,7 +3767,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                                         let stringSaved = self.presentationData.strings.Story_TooltipSaved
                                         
                                         let saveFileReference: AnyMediaReference = qualityFile.abstract
-                                        let saveSignal = SaveToCameraRoll.saveToCameraRoll(context: self.context, postbox: self.context.account.postbox, userLocation: .peer(message.id.peerId), mediaReference: saveFileReference)
+                                        let saveSignal = SaveToCameraRoll.saveToCameraRoll(context: self.context, userLocation: .peer(message.id.peerId), mediaReference: saveFileReference)
                                         
                                         let disposable = (saveSignal
                                         |> deliverOnMainQueue).start(next: { [weak saveScreen] progress in
@@ -3813,7 +3813,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                             
                             switch self.fetchStatus {
                             case .Local:
-                                let _ = (SaveToCameraRoll.saveToCameraRoll(context: self.context, postbox: self.context.account.postbox, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: file))
+                                let _ = (SaveToCameraRoll.saveToCameraRoll(context: self.context, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: file))
                                 |> deliverOnMainQueue).start(completed: { [weak self] in
                                     guard let self else {
                                         return
@@ -3880,7 +3880,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                     items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.Gallery_SaveImage, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Download"), color: theme.actionSheet.primaryTextColor) }, action: { [weak self] _, f in
                         f(.default)
 
-                        let _ = (SaveToCameraRoll.saveToCameraRoll(context: context, postbox: context.account.postbox, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: image), video: videoReference)
+                        let _ = (SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: image), video: videoReference)
                         |> deliverOnMainQueue).start(completed: { [weak self] in
                             guard let strongSelf = self else {
                                 return
