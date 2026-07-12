@@ -233,7 +233,7 @@ final class SharePeersContainerNode: ASDisplayNode, ShareContentContainerNode {
                 network: context.stateManager.network,
                 contentSettings: context.contentSettings,
                 theme: theme,
-                peer: info.peer._asPeer(),
+                peer: info.peer,
                 emptyColor: nil,
                 synchronousLoad: false
             )
