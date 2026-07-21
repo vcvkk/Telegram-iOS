@@ -741,7 +741,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                         }
                         let _ = (fetchMediaData(context: context, userLocation: .other, mediaReference: media)
                         |> deliverOnMainQueue).start(next: { [weak self] (value, isImage) in
-                            guard let self, case let .data(data) = value, data.complete, isImage, let image = UIImage(contentsOfFile: data.path) else {
+                            guard let self, case let .data(data) = value, data.isComplete, isImage, let image = UIImage(contentsOfFile: data.path) else {
                                 return
                             }
                             let sendSticker = self.sendSticker
