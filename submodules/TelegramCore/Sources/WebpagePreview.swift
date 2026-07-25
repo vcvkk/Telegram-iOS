@@ -127,7 +127,7 @@ public func webpagePreviewWithProgress(account: Account, urls: [String], webpage
                                     }
                                     
                                     if let imageProvider = metadata.imageProvider {
-                                        imageProvider.loadFileRepresentation(forTypeIdentifier: kUTTypeImage as String, completionHandler: { imageUrl, _ in
+                                        imageProvider.loadFileRepresentation(forTypeIdentifier: "public.image", completionHandler: { imageUrl, _ in
                                             guard let imageUrl, let imageData = try? Data(contentsOf: imageUrl) else {
                                                 completeWithImage(nil)
                                                 return

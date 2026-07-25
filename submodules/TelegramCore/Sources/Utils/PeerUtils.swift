@@ -13,6 +13,8 @@ public extension Peer {
             return group.title
         case let channel as TelegramChannel:
             return channel.title
+        case let community as TelegramCommunity:
+            return community.title
         default:
             return ""
         }
@@ -61,6 +63,8 @@ public extension Peer {
             return nil
         case let channel as TelegramChannel:
             return channel.usernames.first(where: { $0.isActive }).map { $0.username } ?? channel.username
+        case _ as TelegramCommunity:
+            return nil
         default:
             return nil
         }
@@ -74,6 +78,8 @@ public extension Peer {
             return []
         case let channel as TelegramChannel:
             return channel.usernames
+        case _ as TelegramCommunity:
+            return []
         default:
             return []
         }
@@ -87,6 +93,8 @@ public extension Peer {
             return nil
         case let channel as TelegramChannel:
             return channel.usernames.first(where: { $0.flags.contains(.isEditable) }).map { $0.username } ?? channel.username
+        case _ as TelegramCommunity:
+            return nil
         default:
             return nil
         }
@@ -127,6 +135,14 @@ public extension Peer {
             } else {
                 return []
             }
+        case let community as TelegramCommunity:
+            if community.title.startIndex != community.title.endIndex {
+                return [
+                    String(community.title[..<community.title.index(after: community.title.startIndex)].uppercased()),
+                ]
+            } else {
+                return []
+            }
         default:
             return []
         }
@@ -139,6 +155,8 @@ public extension Peer {
             return group.photo
         } else if let channel = self as? TelegramChannel {
             return channel.photo
+        } else if let community = self as? TelegramCommunity {
+            return community.photo
         }
         return []
     }

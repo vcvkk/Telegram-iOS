@@ -2436,6 +2436,10 @@ func resolveNotificationSettings(list: [TelegramPeerNotificationSettings], defau
 }
 
 public func messagesForNotification(transaction: Transaction, id: MessageId, alwaysReturnMessage: Bool) -> (messages: [Message], notify: Bool, sound: PeerMessageSound, displayContents: Bool, threadData: MessageHistoryThreadData?) {
+    if id.namespace == Namespaces.Message.EphemeralLocal {
+        return ([], false, defaultCloudPeerNotificationSound, false, nil)
+    }
+
     guard let message = transaction.getMessage(id) else {
         Logger.shared.log("AccountStateManager", "notification message doesn't exist")
         return ([], false, defaultCloudPeerNotificationSound, false, nil)

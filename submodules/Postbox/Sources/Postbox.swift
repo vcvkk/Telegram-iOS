@@ -3556,6 +3556,11 @@ final class PostboxImpl {
                             peers[id] = peer
                         }
                     }
+                    if let peer = self.peerTable.get(peerId), let containerPeerId = peer.containerPeerId {
+                        if let containerPeer = self.peerTable.get(containerPeerId) {
+                            peers[containerPeerId] = containerPeer
+                        }
+                    }
                     additionalDataEntries.append(.cachedPeerDataPeers(peerId, peers))
                 case let .message(id):
                     let messages = self.getMessageGroup(at: id)
