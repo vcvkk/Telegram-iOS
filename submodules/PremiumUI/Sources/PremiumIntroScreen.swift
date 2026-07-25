@@ -3827,9 +3827,16 @@ private final class PremiumIntroScreenComponent: CombinedComponent {
             if !buttonIsHidden {
                 var buttonTitle: String = "" // MARK: exteraGram
                 var buttonSubtitle: String?
-                if case let .auth(price) = context.component.source {
+                if case let .auth(price, days) = context.component.source {
                     buttonTitle = environment.strings.Premium_Week_SignUp(price).string
-                    buttonSubtitle = environment.strings.Premium_Week_SignUpInfo
+                    if days == 7 {
+                        buttonSubtitle = environment.strings.Premium_Week_SignUpInfo
+                    } else if days > 0 {
+                        let daysString = environment.strings.Premium_SignUp_SignUpNewInfo_Days(days)
+                        buttonSubtitle = environment.strings.Premium_SignUp_SignUpNewInfo(daysString).string
+                    } else {
+                        buttonSubtitle = environment.strings.Premium_SignUp_SignUpNewInfoNone
+                    }
                 } else if isUnusedGift {
                     buttonTitle = environment.strings.Premium_Gift_ApplyLink
                 } else if state.isPremium == true && state.canUpgrade {

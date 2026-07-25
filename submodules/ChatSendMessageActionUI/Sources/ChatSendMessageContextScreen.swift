@@ -880,6 +880,19 @@ final class ChatSendMessageContextScreenComponent: Component {
                 isEditMessage = true
             }
             
+            // The bubble's right edge is pinned to the send button, so constrain the
+            // rich layout to the span between that edge and a fixed left margin
+            // instead of letting it use the full container width.
+            let richSendButtonWidth: CGFloat
+            if component.sourceSendButton is ContextExtractedContentContainingView {
+                richSendButtonWidth = sourceSendButtonFrame.width
+            } else {
+                richSendButtonWidth = min(sourceSendButtonFrame.width, 40.0)
+            }
+            let richBubbleRightEdge = sourceSendButtonFrame.maxX - richSendButtonWidth
+            let richBubbleLeftMargin: CGFloat = 16.0
+            let maxRichBubbleWidth = max(1.0, min(messageItemViewContainerSize.width, richBubbleRightEdge - richBubbleLeftMargin))
+
             let messageItemSize = messageItemView.update(
                 context: component.context,
                 presentationData: presentationData,

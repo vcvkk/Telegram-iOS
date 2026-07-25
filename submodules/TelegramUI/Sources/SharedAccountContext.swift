@@ -2290,8 +2290,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return OpenUserGeneratedUrl.openUserGeneratedUrl(context: context, peerId: peerId, url: url, webpage: webpage, concealed: concealed, forceConcealed: forceConcealed, skipUrlAuth: skipUrlAuth, skipConcealedAlert: skipConcealedAlert, forceDark: forceDark, present: present, openResolved: openResolved, progress: progress, alertDisplayUpdated: alertDisplayUpdated, concealedAlertOption: concealedAlertOption)
     }
 
-    public func openJoinChatWebView(context: AccountContext, parentController: ViewController, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, webView: JoinChatWebView) {
-        openJoinChatWebViewImpl(context: context, parentController: parentController, updatedPresentationData: updatedPresentationData, webView: webView)
+    public func openJoinChatWebView(context: AccountContext, parentController: ViewController, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, webView: JoinChatWebView, chatTitle: String) {
+        openJoinChatWebViewImpl(context: context, parentController: parentController, updatedPresentationData: updatedPresentationData, webView: webView, chatTitle: chatTitle)
     }
 
     public func makeCommunitiesScreen(context: AccountContext, peerId: EnginePeer.Id?) -> ViewController {
@@ -3077,8 +3077,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             mappedSource = .copyProtection
         case .aiTools:
             mappedSource = .aiTools
-        case let .auth(price):
-            mappedSource = .auth(price)
+        case .richText:
+            mappedSource = .richText
+        case let .auth(price, days):
+            mappedSource = .auth(price, days)
         case let .premiumGift(file):
             mappedSource = .premiumGift(file)
         }
@@ -3161,6 +3163,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             mappedSubject = .copyProtection
         case .aiTools:
             mappedSubject = .aiTools
+        case .richText:
+            mappedSubject = .richText
         case .business:
             mappedSubject = .business
             buttonText = presentationData.strings.Chat_EmptyStateIntroFooterPremiumActionButton
