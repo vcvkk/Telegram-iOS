@@ -360,7 +360,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     private var strings: PresentationStrings?
     
     private let hapticFeedback = HapticFeedback()
-    
+
+    public var isAIEnabled: Bool = false
+
     // MARK: exteraGram
     private var sendWithReturnKey: Bool
     private var sendWithReturnKeyDisposable: Disposable?
