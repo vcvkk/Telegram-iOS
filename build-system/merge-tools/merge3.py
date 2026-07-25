@@ -57,18 +57,32 @@ SKIP_PREFIXES = (
     ".git/", "bazel-", "build-input/", "exteraGram/",
     "submodules/ffmpeg/Sources/FFMpeg/", "third-party/",
 )
-SKIP_SUFFIXES = (".png", ".jpg", ".jpeg", ".pdf", ".zip", ".tgs", ".mp4", ".mp3",
-                 ".caf", ".ttf", ".otf", ".webp", ".ico", ".car", ".xcuserstate")
+# Binary assets: never merged line-by-line, but they still have to travel with
+# the release — missing an .fbs-adjacent icon shows up as a broken asset catalog,
+# not a compile error, so it is easy to miss.
+BINARY_SUFFIXES = (".png", ".jpg", ".jpeg", ".pdf", ".zip", ".tgs", ".mp4", ".mp3",
+                   ".caf", ".ttf", ".otf", ".webp", ".ico", ".car")
+SKIP_SUFFIXES = (".xcuserstate",)
 
+# .fbs are FlatBuffers schemas that generate the TelegramCore_* types at build
+# time; leaving one behind produces a wall of "cannot find type" errors far away
+# from the actual cause (this is exactly how TelegramCommunity.fbs was missed).
 TEXT_SUFFIXES = (".swift", ".m", ".mm", ".h", ".c", ".cc", ".cpp", ".hpp",
                  "BUILD", ".bzl", ".json", ".yml", ".yaml", ".sh", ".py",
-                 ".strings", ".plist", ".modulemap", ".entitlements", ".pbxproj")
+                 ".strings", ".plist", ".modulemap", ".entitlements", ".pbxproj",
+                 ".fbs", ".md", ".txt", ".gitignore")
+
+
+def is_binary_asset(rel_path):
+    if any(rel_path.startswith(p) for p in SKIP_PREFIXES):
+        return False
+    return rel_path.endswith(BINARY_SUFFIXES)
 
 
 def is_mergeable(rel_path):
     if any(rel_path.startswith(p) for p in SKIP_PREFIXES):
         return False
-    if rel_path.endswith(SKIP_SUFFIXES):
+    if rel_path.endswith(SKIP_SUFFIXES) or rel_path.endswith(BINARY_SUFFIXES):
         return False
     return rel_path.endswith(TEXT_SUFFIXES) or os.path.basename(rel_path) == "BUILD"
 
@@ -197,17 +211,20 @@ def main():
         if not os.path.isdir(root):
             parser.error(f"not a directory: {root} (run fetch_upstream.sh first)")
 
-    candidates = list_files(args.base) | list_files(args.theirs) | list_files(REPO_ROOT)
-    candidates = {p for p in candidates if is_mergeable(p)}
+    all_files = list_files(args.base) | list_files(args.theirs) | list_files(REPO_ROOT)
+    candidates = {p for p in all_files if is_mergeable(p)}
+    assets = {p for p in all_files if is_binary_asset(p)}
 
-    if args.paths:
-        selected = set()
-        for pattern in args.paths:
-            for path in candidates:
-                if path.startswith(pattern.rstrip("*").rstrip("/")) or \
-                        fnmatch.fnmatch(path, pattern):
-                    selected.add(path)
-        candidates = selected
+    def in_scope(path):
+        if not args.paths:
+            return True
+        return any(
+            path.startswith(p.rstrip("*").rstrip("/")) or fnmatch.fnmatch(path, p)
+            for p in args.paths
+        )
+
+    candidates = {p for p in candidates if in_scope(p)}
+    assets = {p for p in assets if in_scope(p)}
 
     buckets = {}
     for rel_path in sorted(candidates):
@@ -223,13 +240,34 @@ def main():
             shutil.copyfile(os.path.join(args.theirs, rel_path), target)
         buckets.setdefault(state, []).append((rel_path, detail))
 
+    # Binary assets: copy upstream's version when we never diverged from BASE.
+    for rel_path in sorted(assets):
+        ours = os.path.join(REPO_ROOT, rel_path)
+        base = os.path.join(args.base, rel_path)
+        theirs = os.path.join(args.theirs, rel_path)
+        has_ours, has_base, has_theirs = (os.path.isfile(ours), os.path.isfile(base),
+                                          os.path.isfile(theirs))
+        if not has_theirs:
+            continue
+        if has_ours and same(ours, theirs):
+            continue
+        if has_ours and has_base and not same(ours, base):
+            buckets.setdefault("asset-ours-modified", []).append(
+                (rel_path, "we changed this asset; upstream changed it too"))
+            continue
+        state = "asset-new" if not has_ours else "asset-updated"
+        if apply_changes:
+            os.makedirs(os.path.dirname(ours), exist_ok=True)
+            shutil.copyfile(theirs, ours)
+        buckets.setdefault(state, []).append((rel_path, "binary asset"))
+
     mode = "APPLY" if apply_changes else "AUDIT"
     scope = ", ".join(args.paths) if args.paths else "whole tree"
     print(f"=== merge3 {mode} · {scope} ===")
     print(f"    BASE   {args.base}")
     print(f"    THEIRS {args.theirs}\n")
 
-    order = ["conflict", "stale", "theirs-deleted-modified", "theirs-new",
+    order = ["conflict", "stale", "theirs-deleted-modified", "asset-ours-modified", "theirs-new", "asset-new", "asset-updated",
              "theirs-deleted", "clean", "ours-only", "unchanged", "error", "skip"]
     for state in order:
         if state in buckets:

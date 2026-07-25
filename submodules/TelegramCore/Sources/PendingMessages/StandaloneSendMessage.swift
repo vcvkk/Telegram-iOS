@@ -362,6 +362,7 @@ private func sendUploadedMessageContent(
     return postbox.transaction { transaction -> Signal<Never, StandaloneSendMessagesError> in
         // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
         let isPremium = transaction.getPeer(accountPeerId)?.isPremium ?? false
+        var apiRichMessage: Api.InputRichMessage?
         if peerId.namespace == Namespaces.Peer.SecretChat {
             var secretFile: SecretChatOutgoingFile?
             switch content.content {
@@ -484,6 +485,9 @@ private func sendUploadedMessageContent(
                     allowPaidStars = attribute.stars.value
                 } else if let attribute = attribute as? SuggestedPostMessageAttribute {
                     suggestedPost = attribute.apiSuggestedPost(fixMinTime: Int32(Date().timeIntervalSince1970 + 10))
+                } else if let attribute = attribute as? RichTextMessageAttribute {
+                    apiRichMessage = attribute.apiInputRichMessage()
+                    flags |= Int32(1 << 23)
                 }
             }
             
@@ -557,7 +561,7 @@ private func sendUploadedMessageContent(
                         flags |= 1 << 22
                     }
                 
-                    sendMessageRequest = network.requestWithAdditionalInfo(Api.functions.messages.sendMessage(flags: flags, peer: inputPeer, replyTo: replyTo, message: text, randomId: uniqueId, replyMarkup: nil, entities: messageEntities, scheduleDate: scheduleTime, scheduleRepeatPeriod: scheduleRepeatPeriod, sendAs: sendAsInputPeer, quickReplyShortcut: nil, effect: nil, allowPaidStars: allowPaidStars, suggestedPost: suggestedPost, richMessage: nil), info: .acknowledgement, tag: dependencyTag)
+                    sendMessageRequest = network.requestWithAdditionalInfo(Api.functions.messages.sendMessage(flags: flags, peer: inputPeer, replyTo: replyTo, message: text, randomId: uniqueId, replyMarkup: nil, entities: messageEntities, scheduleDate: scheduleTime, scheduleRepeatPeriod: scheduleRepeatPeriod, sendAs: sendAsInputPeer, quickReplyShortcut: nil, effect: nil, allowPaidStars: allowPaidStars, suggestedPost: suggestedPost, richMessage: apiRichMessage), info: .acknowledgement, tag: dependencyTag)
                 case let .media(inputMedia, text):
                     if bubbleUpEmojiOrStickersets {
                         flags |= Int32(1 << 15)
@@ -733,6 +737,7 @@ private func sendMessageContent(account: Account, peerId: PeerId, attributes: [M
     return account.postbox.transaction { transaction -> Signal<Void, NoError> in
         // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
         let isPremium = transaction.getPeer(account.peerId)?.isPremium ?? false
+        var apiRichMessage: Api.InputRichMessage?
         if peerId.namespace == Namespaces.Peer.SecretChat {
             return .complete()
         } else if let peer = transaction.getPeer(peerId), let inputPeer = apiInputPeer(peer) {
@@ -778,6 +783,9 @@ private func sendMessageContent(account: Account, peerId: PeerId, attributes: [M
                     allowPaidStars = attribute.stars.value
                 } else if let attribute = attribute as? SuggestedPostMessageAttribute {
                     suggestedPost = attribute.apiSuggestedPost(fixMinTime: Int32(Date().timeIntervalSince1970 + 10))
+                } else if let attribute = attribute as? RichTextMessageAttribute {
+                    apiRichMessage = attribute.apiInputRichMessage()
+                    flags |= Int32(1 << 23)
                 }
             }
             
@@ -814,7 +822,7 @@ private func sendMessageContent(account: Account, peerId: PeerId, attributes: [M
                         replyTo = .inputReplyToMessage(.init(flags: flags, replyToMsgId: threadId, topMsgId: threadId, replyToPeerId: nil, quoteText: nil, quoteEntities: nil, quoteOffset: nil, monoforumPeerId: nil, todoItemId: nil, pollOption: nil))
                     }
 
-                    sendMessageRequest = account.network.request(Api.functions.messages.sendMessage(flags: flags, peer: inputPeer, replyTo: replyTo, message: text, randomId: uniqueId, replyMarkup: nil, entities: messageEntities, scheduleDate: scheduleTime, scheduleRepeatPeriod: scheduleRepeatPeriod, sendAs: sendAsInputPeer, quickReplyShortcut: nil, effect: nil, allowPaidStars: allowPaidStars, suggestedPost: nil, richMessage: nil))
+                    sendMessageRequest = account.network.request(Api.functions.messages.sendMessage(flags: flags, peer: inputPeer, replyTo: replyTo, message: text, randomId: uniqueId, replyMarkup: nil, entities: messageEntities, scheduleDate: scheduleTime, scheduleRepeatPeriod: scheduleRepeatPeriod, sendAs: sendAsInputPeer, quickReplyShortcut: nil, effect: nil, allowPaidStars: allowPaidStars, suggestedPost: nil, richMessage: apiRichMessage))
                     |> `catch` { _ -> Signal<Api.Updates, NoError> in
                         return .complete()
                     }

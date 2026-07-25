@@ -1541,6 +1541,7 @@ public final class PendingMessageManager {
                 var uniqueId: Int64 = 0
                 var forwardSourceInfoAttribute: ForwardSourceInfoAttribute?
                 var messageEntities: [Api.MessageEntity]?
+                var apiRichMessage: Api.InputRichMessage?
                 var replyMessageId: Int32?
                 var replyPeerId: PeerId?
                 var replyQuote: EngineMessageReplyQuote?
@@ -1753,7 +1754,7 @@ public final class PendingMessageManager {
                             flags |= 1 << 22
                         }
                     
-                        sendMessageRequest = network.requestWithAdditionalInfo(Api.functions.messages.sendMessage(flags: flags, peer: inputPeer, replyTo: replyTo, message: message.text, randomId: uniqueId, replyMarkup: nil, entities: messageEntities, scheduleDate: scheduleTime, scheduleRepeatPeriod: scheduleRepeatPeriod, sendAs: sendAsInputPeer, quickReplyShortcut: quickReplyShortcut, effect: messageEffectId, allowPaidStars: allowPaidStars, suggestedPost: suggestedPost, richMessage: nil), info: .acknowledgement, tag: dependencyTag)
+                        sendMessageRequest = network.requestWithAdditionalInfo(Api.functions.messages.sendMessage(flags: flags, peer: inputPeer, replyTo: replyTo, message: message.text, randomId: uniqueId, replyMarkup: nil, entities: messageEntities, scheduleDate: scheduleTime, scheduleRepeatPeriod: scheduleRepeatPeriod, sendAs: sendAsInputPeer, quickReplyShortcut: quickReplyShortcut, effect: messageEffectId, allowPaidStars: allowPaidStars, suggestedPost: suggestedPost, richMessage: apiRichMessage), info: .acknowledgement, tag: dependencyTag)
                     case let .media(inputMedia, text):
                         if bubbleUpEmojiOrStickersets {
                             flags |= Int32(1 << 15)
