@@ -134,14 +134,6 @@ public final class PremiumGradientBackgroundComponent: Component {
                 
                 self.gradientLayer.add(animation, forKey: "movement")
                 
-//                let secondPreviousValue = self.gradientLayer.startPoint
-//                let secondAnimation = CABasicAnimation(keyPath: "startPoint")
-//                secondAnimation.duration = 4.5
-//                secondAnimation.fromValue = secondPreviousValue
-//                secondAnimation.toValue = secondNewValue
-//
-//                self.gradientLayer.add(secondAnimation, forKey: "movement2")
-                
                 CATransaction.commit()
             }
         }
@@ -1137,6 +1129,26 @@ private final class DemoSheetContent: CombinedComponent {
                     )
                 )
                 
+                availableItems[.richText] = DemoPagerComponent.Item(
+                    AnyComponentWithIdentity(
+                        id: PremiumDemoScreen.Subject.richText,
+                        component: AnyComponent(
+                            PageComponent(
+                                content: AnyComponent(PhoneDemoComponent(
+                                    context: component.context,
+                                    position: .top,
+                                    model: .island,
+                                    videoFile: configuration.videos["rich_formatting"],
+                                    decoration: .badgeStars
+                                )),
+                                title: strings.Premium_RichText,
+                                text: strings.Premium_RichTextInfo,
+                                textColor: textColor
+                            )
+                        )
+                    )
+                )
+                
                 let index: Int = 0
                 var items: [DemoPagerComponent.Item] = []
                 if let item = availableItems.first(where: { $0.value.content.id == component.subject as AnyHashable }) {
@@ -1230,7 +1242,9 @@ private final class DemoSheetContent: CombinedComponent {
             case .copyProtection:
                 text = strings.Premium_CopyProtectionInfo
             case .aiTools:
-                text = "Transform your messages and entire chats in your preferred style and language."
+                text = strings.Premium_AiToolsInfo
+            case .richText:
+                text = strings.Premium_RichTextInfo
             default:
                 text = ""
             }
@@ -1320,6 +1334,8 @@ private final class DemoSheetContent: CombinedComponent {
                         case .copyProtection:
                             buttonText = strings.Premium_PaidMessages_Proceed
                         case .aiTools:
+                            buttonText = strings.Premium_PaidMessages_Proceed
+                        case .richText:
                             buttonText = strings.Premium_PaidMessages_Proceed
                         default:
                             buttonText = strings.Common_OK
@@ -1529,6 +1545,7 @@ public class PremiumDemoScreen: ViewControllerComponentContainer {
         case todo
         case copyProtection
         case aiTools
+        case richText
         
         case businessLocation
         case businessHours
@@ -1593,6 +1610,8 @@ public class PremiumDemoScreen: ViewControllerComponentContainer {
                 return .copyProtection
             case .aiTools:
                 return .aiTools
+            case .richText:
+                return .richText
             case .businessLocation:
                 return .businessLocation
             case .businessHours:

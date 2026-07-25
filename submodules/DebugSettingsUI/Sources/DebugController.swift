@@ -1335,7 +1335,17 @@ private enum DebugControllerEntry: ItemListNodeEntry {
                     transaction.updateSharedData(ApplicationSpecificSharedDataKeys.experimentalUISettings, { settings in
                         var settings = settings?.get(ExperimentalUISettings.self) ?? ExperimentalUISettings.defaultSettings
                         settings.debugRipple = value
-                        return PreferencesEntry(settings)
+                        return EnginePreferencesEntry(settings)
+                    })
+                }).start()
+            })
+        case let .debugRichText(value):
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Force Text Field v2", value: value, sectionId: self.section, style: .blocks, updated: { value in
+                let _ = arguments.sharedContext.accountManager.transaction ({ transaction in
+                    transaction.updateSharedData(ApplicationSpecificSharedDataKeys.experimentalUISettings, { settings in
+                        var settings = settings?.get(ExperimentalUISettings.self) ?? ExperimentalUISettings.defaultSettings
+                        settings.forceNewTextInput = value
+                        return EnginePreferencesEntry(settings)
                     })
                 }).start()
             })
@@ -1621,6 +1631,7 @@ private func debugControllerEntries(context: AccountContext?, sharedContext: Sha
         entries.append(.fakeGlass(experimentalSettings.fakeGlass))
         entries.append(.forceClearGlass(experimentalSettings.forceClearGlass))
         entries.append(.debugRipple(experimentalSettings.debugRipple))
+        entries.append(.debugRichText(experimentalSettings.forceNewTextInput))
         #if DEBUG
         entries.append(.browserExperiment(experimentalSettings.browserExperiment))
         #else

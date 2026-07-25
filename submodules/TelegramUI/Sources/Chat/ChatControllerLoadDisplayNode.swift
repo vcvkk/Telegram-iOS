@@ -1171,7 +1171,7 @@ extension ChatControllerImpl {
                     }
                     return updatedState
                 })
-                self.searchResult.set(.single((results, state, .general(scope: .channels, groupId: nil, tags: nil, minDate: nil, maxDate: nil, folderId: nil))))
+                self.searchResult.set(.single((results, state, .general(scope: .channels, groupId: nil, tags: nil, minDate: nil, maxDate: nil, folderId: nil, communityId: nil))))
             }
         }
         
@@ -1746,14 +1746,23 @@ extension ChatControllerImpl {
                                 }
                             }
                             
-                            let inputText = chatInputStateStringWithAppliedEntities(message.text, entities: entities)
+=======
+                            let editInputState: ChatTextInputState
+                            if let richTextAttribute = message.attributes.first(where: { $0 is RichTextMessageAttribute }) as? RichTextMessageAttribute {
+                                let content = chatInputContent(fromInstantPage: richTextAttribute.instantPage)
+                                editInputState = ChatTextInputState(content: content, selectionRange: content.length ..< content.length)
+                            } else {
+                                let inputText = chatInputStateStringWithAppliedEntities(message.text, entities: entities)
+                                editInputState = ChatTextInputState(inputText: inputText)
+                            }
+>>>>>>> theirs
                             var disableUrlPreviews: [String] = []
                             if webpageUrl == nil {
-                                disableUrlPreviews = detectUrls(inputText)
+                                disableUrlPreviews = detectUrls(editInputState.inputText)
                             }
-                            
+
                             var updated = state.updatedInterfaceState { interfaceState in
-                                return interfaceState.withUpdatedEditMessage(ChatEditMessageState(messageId: messageId, inputState: ChatTextInputState(inputText: inputText), disableUrlPreviews: disableUrlPreviews, inputTextMaxLength: inputTextMaxLength, mediaCaptionIsAbove: nil))
+                                return interfaceState.withUpdatedEditMessage(ChatEditMessageState(messageId: messageId, inputState: editInputState, disableUrlPreviews: disableUrlPreviews, inputTextMaxLength: inputTextMaxLength, mediaCaptionIsAbove: nil))
                             }
                             
                             let (updatedState, updatedPreviewQueryState) = updatedChatEditInterfaceMessageState(context: strongSelf.context, state: updated, message: message)
@@ -2131,7 +2140,7 @@ extension ChatControllerImpl {
                         }.updatedInputMode({ _ in updatedMode })
                 })
                 
-                if !strongSelf.presentationInterfaceState.interfaceState.effectiveInputState.inputText.string.isEmpty {
+                if !strongSelf.presentationInterfaceState.interfaceState.effectiveInputState.isEmpty {
                     strongSelf.silentPostTooltipController?.dismiss()
                 }
             }
@@ -2206,7 +2215,10 @@ extension ChatControllerImpl {
                 }
                 
                 let text = trimChatInputText(convertMarkdownToAttributes(expandedInputStateAttributedString(editMessage.inputState.inputText)))
-                
+
+                let content = editMessage.inputState.content
+                let richText: RichTextMessageAttribute? = content.isEntityExpressible() ? nil : RichTextMessageAttribute(instantPage: instantPage(from: content), fullInstantPage: nil)
+
                 let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
                 var entitiesAttribute: TextEntitiesMessageAttribute?
                 if !entities.isEmpty {
@@ -2251,7 +2263,7 @@ extension ChatControllerImpl {
                     return
                 }
                 
-                if text.length == 0 {
+                if text.length == 0 && content.isEmpty {
                     if strongSelf.presentationInterfaceState.editMessageState?.mediaReference != nil {
                     } else if message.media.contains(where: { media in
                         switch media {
@@ -2288,9 +2300,12 @@ extension ChatControllerImpl {
                         if let currentMessage = currentMessage {
                             let currentEntities = currentMessage.textEntitiesAttribute?.entities ?? []
                             let currentWebpagePreviewAttribute = currentMessage.webpagePreviewAttribute ?? WebpagePreviewMessageAttribute(leadingPreview: false, forceLargeMedia: nil, isManuallyAdded: true, isSafe: false)
-                            
-                            if currentMessage.text != text.string || currentEntities != entities || updatingMedia || webpagePreviewAttribute != currentWebpagePreviewAttribute || disableUrlPreview {
-                                strongSelf.context.account.pendingUpdateMessageManager.add(messageId: editMessage.messageId, text: text.string, media: media, entities: entitiesAttribute, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, invertMediaAttribute: invertedMediaAttribute, disableUrlPreview: disableUrlPreview)
+                            let currentRichText = currentMessage.attributes.first(where: { $0 is RichTextMessageAttribute }) as? RichTextMessageAttribute
+
+                            do {
+                                if currentMessage.text != text.string || currentEntities != entities || currentRichText != nil || richText != nil || updatingMedia || webpagePreviewAttribute != currentWebpagePreviewAttribute || disableUrlPreview {
+                                    strongSelf.context.account.pendingUpdateMessageManager.add(messageId: editMessage.messageId, text: richText != nil ? "" : text.string, media: media, entities: richText != nil ? nil : entitiesAttribute, richText: richText, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, invertMediaAttribute: invertedMediaAttribute, disableUrlPreview: disableUrlPreview)
+                                }
                             }
                         }
                         
@@ -2528,25 +2543,70 @@ extension ChatControllerImpl {
                     } else {
                         messageText = command
                     }
-                    let replyMessageSubject = strongSelf.presentationInterfaceState.interfaceState.replyMessageSubject
-                    strongSelf.chatDisplayNode.setupSendActionOnViewUpdate({
-                        if let strongSelf = self {
-                            strongSelf.chatDisplayNode.collapseInput()
                             
-                            strongSelf.updateChatPresentationInterfaceState(animated: true, interactive: false, {
-                                $0.updatedInterfaceState { $0.withUpdatedReplyMessageSubject(nil).withUpdatedSendMessageEffect(nil).withUpdatedPostSuggestionState(nil).withUpdatedComposeInputState(ChatTextInputState(inputText: NSAttributedString(string: ""))).withUpdatedComposeDisableUrlPreviews([]) }
-                            })
+                    let sendNormally: () -> Void = { [weak self] in
+                        guard let strongSelf = self else {
+                            return
                         }
-                    }, nil)
-                    var attributes: [MessageAttribute] = []
-                    let entities = generateTextEntities(messageText, enabledTypes: .all)
-                    if !entities.isEmpty {
-                        attributes.append(TextEntitiesMessageAttribute(entities: entities))
+                        let replyMessageSubject = strongSelf.presentationInterfaceState.interfaceState.replyMessageSubject
+                        strongSelf.chatDisplayNode.setupSendActionOnViewUpdate({
+                            if let strongSelf = self {
+                                strongSelf.chatDisplayNode.collapseInput()
+
+                                strongSelf.updateChatPresentationInterfaceState(animated: true, interactive: false, {
+                                    $0.updatedInterfaceState { $0.withUpdatedReplyMessageSubject(nil).withUpdatedSendMessageEffect(nil).withUpdatedPostSuggestionState(nil).withUpdatedComposeInputState(ChatTextInputState(inputText: NSAttributedString(string: ""))).withUpdatedComposeDisableUrlPreviews([]) }
+                                })
+                            }
+                        }, nil)
+                        var attributes: [MessageAttribute] = []
+                        let entities = generateTextEntities(messageText, enabledTypes: .all)
+                        if !entities.isEmpty {
+                            attributes.append(TextEntitiesMessageAttribute(entities: entities))
+                        }
+                        strongSelf.sendMessages([.message(text: messageText, attributes: attributes, inlineStickers: [:], mediaReference: nil, threadId: strongSelf.chatLocation.threadId, replyToMessageId: replyMessageSubject?.subjectModel, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])])
+                        strongSelf.interfaceInteraction?.updateShowCommands { _ in
+                            return false
+                        }
                     }
-                    strongSelf.sendMessages([.message(text: messageText, attributes: attributes, inlineStickers: [:], mediaReference: nil, threadId: strongSelf.chatLocation.threadId, replyToMessageId: replyMessageSubject?.subjectModel, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])])
-                    strongSelf.interfaceInteraction?.updateShowCommands { _ in
-                        return false
+
+                    guard let peerId = strongSelf.chatLocation.peerId else {
+                        sendNormally()
+                        return
                     }
+
+                    let _ = (strongSelf.context.engine.peers.peerCommands(id: peerId)
+                    |> take(1)
+                    |> deliverOnMainQueue).startStandalone(next: { [weak self] peerCommands in
+                        guard let strongSelf = self else {
+                            return
+                        }
+
+                        if let resolved = resolveEphemeralBotCommand(text: messageText, peerCommands: peerCommands, forcedBotPeerId: botPeer.id) {
+                            let replyMessageSubject = strongSelf.presentationInterfaceState.interfaceState.replyMessageSubject
+                            strongSelf.chatDisplayNode.setupSendActionOnViewUpdate({
+                                if let strongSelf = self {
+                                    strongSelf.chatDisplayNode.collapseInput()
+
+                                    strongSelf.updateChatPresentationInterfaceState(animated: true, interactive: false, {
+                                        $0.updatedInterfaceState { $0.withUpdatedReplyMessageSubject(nil).withUpdatedSendMessageEffect(nil).withUpdatedPostSuggestionState(nil).withUpdatedComposeInputState(ChatTextInputState(inputText: NSAttributedString(string: ""))).withUpdatedComposeDisableUrlPreviews([]) }
+                                    })
+                                }
+                            }, nil)
+
+                            var attributes: [MessageAttribute] = [
+                                EphemeralOutgoingMessageAttribute(botPeerId: resolved.botPeerId, randomId: 0, state: .sending)
+                            ]
+                            if !resolved.entities.isEmpty {
+                                attributes.append(TextEntitiesMessageAttribute(entities: resolved.entities))
+                            }
+                            strongSelf.sendMessages([.message(text: resolved.text, attributes: attributes, inlineStickers: [:], mediaReference: nil, threadId: strongSelf.chatLocation.threadId, replyToMessageId: replyMessageSubject?.subjectModel, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])])
+                            strongSelf.interfaceInteraction?.updateShowCommands { _ in
+                                return false
+                            }
+                        } else {
+                            sendNormally()
+                        }
+                    })
                 }
             }
         }, sendShortcut: { [weak self] shortcutId in
@@ -3733,6 +3793,20 @@ extension ChatControllerImpl {
             |> deliverOnMainQueue).startStandalone()
         }, openLinkEditing: { [weak self] in
             if let strongSelf = self {
+                // New rich-text editor backend: the editor owns the document, so read/apply the link through its
+                // native API rather than the legacy ChatTextInputState. The same chatTextLinkEditController UI is reused.
+                if let richNode = strongSelf.chatDisplayNode.textInputPanelNode?.richTextInputNode, richNode.usesNativeRichTextEngine {
+                    let selectedText = richNode.selectedRichText()
+                    let existingLink = richNode.currentRichTextLinkURL()
+                    let controller = chatTextLinkEditController(context: strongSelf.context, updatedPresentationData: strongSelf.updatedPresentationData, text: strongSelf.presentationData.strings.TextFormat_AddLinkText(selectedText).string, link: existingLink, apply: { [weak richNode] link, _ in
+                        guard let richNode else { return }
+                        if let link {
+                            richNode.applyRichTextLink(link.isEmpty ? nil : link)
+                        }
+                    })
+                    strongSelf.present(controller, in: .window(.root))
+                    return
+                }
                 var selectionRange: Range<Int>?
                 var text: NSAttributedString?
                 var inputMode: ChatInputMode?
@@ -4577,23 +4651,59 @@ extension ChatControllerImpl {
             let (_, language) = canTranslateText(context: context, text: text.string, showTranslate: true, ignoredLanguages: nil)
             
             let entities = generateChatInputTextEntities(text)
-            presentTranslateScreen(
-                context: self.context,
-                text: text.string,
-                entities: entities,
-                canCopy: true,
-                fromLanguage: language,
-                replaceText: { text, entities in
-                    replace(chatInputStateStringWithAppliedEntities(text, entities: entities))
-                },
-                pushController: { [weak self] c in
-                    self?.push(c)
-                },
-                presentController: { [weak self] c in
-                    self?.present(c, in: .window(.root))
-                },
-                display: { [weak self] c in
-                    self?.push(c)
+
+            let translationConfiguration = TranslationConfiguration.with(appConfiguration: self.context.currentAppConfiguration.with { $0 })
+            var useSystemTranslation = false
+            switch translationConfiguration.manual {
+            case .system:
+                if #available(iOS 18.0, *) {
+                    useSystemTranslation = true
+                }
+            default:
+                break
+            }
+
+            if useSystemTranslation {
+                presentTranslateScreen(
+                    context: self.context,
+                    text: text.string,
+                    entities: entities,
+                    canCopy: true,
+                    fromLanguage: language,
+                    replaceText: { text, entities in
+                        replace(chatInputStateStringWithAppliedEntities(text, entities: entities))
+                    },
+                    pushController: { [weak self] c in
+                        self?.push(c)
+                    },
+                    presentController: { [weak self] c in
+                        self?.present(c, in: .window(.root))
+                    },
+                    display: { [weak self] c in
+                        self?.push(c)
+                    }
+                )
+            } else {
+                Task { @MainActor [weak self] in
+                    guard let self else {
+                        return
+                    }
+                    self.push(await TextProcessingScreen(
+                        context: self.context,
+                        mode: .translate(fromLanguage: language, applyResult: { text in
+                            switch text {
+                            case let .plain(text, entities):
+                                replace(chatInputStateStringWithAppliedEntities(text, entities: entities))
+                            case .rich, .empty:
+                                // This flow translates the (plain) contents of the text input panel, and the API
+                                // only returns a rich result for rich input, so there is nothing to apply here.
+                                break
+                            }
+                        }),
+                        inputText: .plain(text: text.string, entities: entities),
+                        copyResult: nil,
+                        translateChat: nil
+                    ))
                 }
             )
         }, sendEmoji: { [weak self] text, attribute, immediately in
@@ -4606,6 +4716,11 @@ extension ChatControllerImpl {
                 return
             }
             self.chatDisplayNode.openAICompose()
+        }, openExpandedInput: { [weak self] in
+            guard let self else {
+                return
+            }
+            self.chatDisplayNode.openExpandedInput()
         }, openSetPeerAvatar: { [weak self] in
             guard let self, let peer = self.presentationInterfaceState.renderedPeer?.peer else {
                 return

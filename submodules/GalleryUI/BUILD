@@ -55,6 +55,7 @@ swift_library(
         "//submodules/TooltipUI",
         "//submodules/TelegramNotices",
         "//submodules/Pasteboard",
+        "//submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer",
         "//submodules/AdUI",
         "//submodules/TelegramUI/Components/Ads/AdsInfoScreen",
         "//submodules/TelegramUI/Components/Ads/AdsReportScreen",

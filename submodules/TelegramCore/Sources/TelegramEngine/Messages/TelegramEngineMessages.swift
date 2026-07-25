@@ -715,6 +715,23 @@ public extension TelegramEngine {
                 }
             }
         }
+
+        public func translateRichMessage(messageId: EngineMessage.Id, toLang: String, tone: TranslationTone = .neutral) -> Signal<InstantPage?, TranslationError> {
+            let account = self.account
+            return account.postbox.transaction { transaction -> Api.InputPeer? in
+                return transaction.getPeer(messageId.peerId).flatMap(apiInputPeer)
+            }
+            |> castError(TranslationError.self)
+            |> mapToSignal { inputPeer -> Signal<InstantPage?, TranslationError> in
+                guard let inputPeer else {
+                    return .fail(.generic)
+                }
+                return _internal_translateRichMessages(account: account, inputPeer: inputPeer, messageIds: [messageId], toLang: toLang, tone: tone)
+                |> map { pages in
+                    return pages[messageId]
+                }
+            }
+        }
         
         public func translateMessages(messageIds: [EngineMessage.Id], fromLang: String?, toLang: String, enableLocalIfPossible: Bool, tone: TranslationTone = .neutral) -> Signal<Never, TranslationError> {
             return _internal_translateMessages(account: self.account, messageIds: messageIds, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: enableLocalIfPossible, tone: tone)

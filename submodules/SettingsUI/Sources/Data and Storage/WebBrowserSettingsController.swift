@@ -23,8 +23,8 @@ private final class WebBrowserSettingsControllerArguments {
     let updateDefaultBrowser: (String?) -> Void
     let clearCookies: () -> Void
     let clearCache: () -> Void
-    let addException: () -> Void
-    let removeException: (String) -> Void
+    let addException: (Bool) -> Void
+    let removeException: (AccountWebBrowserException) -> Void
     let clearExceptions: () -> Void
     
     init(
@@ -32,8 +32,8 @@ private final class WebBrowserSettingsControllerArguments {
         updateDefaultBrowser: @escaping (String?) -> Void,
         clearCookies: @escaping () -> Void,
         clearCache: @escaping () -> Void,
-        addException: @escaping () -> Void,
-        removeException: @escaping (String) -> Void,
+        addException: @escaping (Bool) -> Void,
+        removeException: @escaping (AccountWebBrowserException) -> Void,
         clearExceptions: @escaping () -> Void
     ) {
         self.context = context
@@ -223,13 +223,23 @@ private enum WebBrowserSettingsControllerEntry: ItemListNodeEntry {
                 })
             case let .exceptionsAdd(_, text):
                 return ItemListPeerActionItem(presentationData: presentationData, systemStyle: .glass, icon: PresentationResourcesItemList.plusIconImage(presentationData.theme), title: text, sectionId: self.section, height: .generic, color: .accent, editing: false, action: {
-                    arguments.addException()
+                    arguments.addException(false)
                 })
             case let .exceptionsClear(_, text):
                 return ItemListPeerActionItem(presentationData: presentationData, systemStyle: .glass, icon: PresentationResourcesItemList.deleteIconImage(presentationData.theme), title: text, sectionId: self.section, height: .generic, color: .destructive, editing: false, action: {
                     arguments.clearExceptions()
                 })
-            case let .exceptionsInfo(_, text):
+            case let .alwaysHeader(_, text):
+                return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
+            case let .alwaysException(_, _, exception):
+                return WebBrowserDomainExceptionItem(presentationData: presentationData, systemStyle: .glass, context: arguments.context, title: exception.title, label: exception.domain, favicon: exception.favicon, sectionId: self.section, style: .blocks, deleted: {
+                    arguments.removeException(exception)
+                })
+            case let .alwaysAdd(_, text):
+                return ItemListPeerActionItem(presentationData: presentationData, systemStyle: .glass, icon: PresentationResourcesItemList.plusIconImage(presentationData.theme), title: text, sectionId: self.section, height: .generic, color: .accent, editing: false, action: {
+                    arguments.addException(true)
+                })
+            case let .alwaysExceptionsInfo(_, text):
                 return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         }
     }
@@ -250,10 +260,14 @@ private func webBrowserSettingsControllerEntries(context: AccountContext, presen
         index += 1
     }
     
-    if settings.defaultWebBrowser == nil {
-        entries.append(.clearCookies(presentationData.theme, presentationData.strings.WebBrowser_ClearCookies))
-//        entries.append(.clearCache(presentationData.theme, presentationData.strings.WebBrowser_ClearCache))
-        entries.append(.clearCookiesInfo(presentationData.theme, presentationData.strings.WebBrowser_ClearCookies_Info))
+    entries.append(.browserInfo(presentationData.theme, presentationData.strings.WebBrowser_OpenLinksInfo))
+    
+    entries.append(.clearCookies(presentationData.theme, presentationData.strings.WebBrowser_ClearCookies))
+    entries.append(.clearCookiesInfo(presentationData.theme, presentationData.strings.WebBrowser_ClearCookies_Info))
+    
+    if accountSettings.openExternalBrowser {
+        entries.append(.neverHeader(presentationData.theme, presentationData.strings.WebBrowser_Exceptions_OpenInApp))
+        entries.append(.neverAdd(presentationData.theme, presentationData.strings.WebBrowser_Exceptions_AddException))
         
         entries.append(.exceptionsHeader(presentationData.theme, presentationData.strings.WebBrowser_Exceptions_Title))
         entries.append(.exceptionsAdd(presentationData.theme, presentationData.strings.WebBrowser_Exceptions_AddException))
@@ -277,8 +291,8 @@ private func webBrowserSettingsControllerEntries(context: AccountContext, presen
 public func webBrowserSettingsController(context: AccountContext) -> ViewController {
     var clearCookiesImpl: (() -> Void)?
     var clearCacheImpl: (() -> Void)?
-    var addExceptionImpl: (() -> Void)?
-    var removeExceptionImpl: ((String) -> Void)?
+    var addExceptionImpl: ((Bool) -> Void)?
+    var removeExceptionImpl: ((AccountWebBrowserException) -> Void)?
     var clearExceptionsImpl: (() -> Void)?
     
     let arguments = WebBrowserSettingsControllerArguments(
@@ -294,8 +308,8 @@ public func webBrowserSettingsController(context: AccountContext) -> ViewControl
         clearCache: {
             clearCacheImpl?()
         },
-        addException: {
-            addExceptionImpl?()
+        addException: { external in
+            addExceptionImpl?(external)
         },
         removeException: { domain in
             removeExceptionImpl?(domain)
@@ -398,9 +412,9 @@ public func webBrowserSettingsController(context: AccountContext) -> ViewControl
         controller?.present(alertController, in: .window(.root))
     }
     
-    addExceptionImpl = { [weak controller] in
+    addExceptionImpl = { [weak controller] external in
         var dismissImpl: (() -> Void)?
-        let linkController = webBrowserDomainController(context: context, apply: { url in
+        let linkController = webBrowserDomainController(context: context, external: external, apply: { url in
             if let url {
                 let _ = (fetchDomainExceptionInfo(context: context, url: url)
                 |> deliverOnMainQueue).startStandalone(next: { newException in

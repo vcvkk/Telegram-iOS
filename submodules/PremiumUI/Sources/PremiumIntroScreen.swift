@@ -330,8 +330,14 @@ public enum PremiumSource: Equatable {
             } else {
                 return false
             }
-        case let .auth(lhsPrice):
-            if case let .auth(rhsPrice) = rhs, lhsPrice == rhsPrice {
+        case .richText:
+            if case .richText = rhs {
+                return true
+            } else {
+                return false
+            }
+        case let .auth(lhsPrice, lhsDays):
+            if case let .auth(rhsPrice, rhsDays) = rhs, lhsPrice == rhsPrice, lhsDays == rhsDays {
                 return true
             } else {
                 return false
@@ -392,7 +398,8 @@ public enum PremiumSource: Equatable {
     case todo
     case copyProtection
     case aiTools
-    case auth(String)
+    case richText
+    case auth(String, Int32)
     case premiumGift(TelegramMediaFile)
     
     var identifier: String? {
@@ -493,6 +500,8 @@ public enum PremiumSource: Equatable {
             return "pm_noforwards"
         case .aiTools:
             return "ai_compose"
+        case .richText:
+            return "rich_formatting"
         case .auth:
             return "auth"
         case .premiumGift:
@@ -528,6 +537,7 @@ public enum PremiumPerk: CaseIterable {
     case todo
     case copyProtection
     case aiTools
+    case richText
     
     case businessLocation
     case businessHours
@@ -565,7 +575,8 @@ public enum PremiumPerk: CaseIterable {
             .messageEffects,
             .todo,
             .copyProtection,
-            .aiTools
+            .aiTools,
+            .richText
         ]
     }
     
@@ -645,6 +656,8 @@ public enum PremiumPerk: CaseIterable {
             return "pm_noforwards"
         case .aiTools:
             return "ai_compose"
+        case .richText:
+            return "rich_formatting"
         case .business:
             return "business"
         case .businessLocation:
@@ -720,6 +733,8 @@ public enum PremiumPerk: CaseIterable {
             return strings.Premium_CopyProtection
         case .aiTools:
             return strings.Premium_AiTools
+        case .richText:
+            return strings.Premium_RichText
         case .businessLocation:
             return strings.Business_Location
         case .businessHours:
@@ -793,6 +808,8 @@ public enum PremiumPerk: CaseIterable {
             return strings.Premium_CopyProtectionInfo
         case .aiTools:
             return strings.Premium_AiToolsInfo
+        case .richText:
+            return strings.Premium_RichTextInfo
         case .businessLocation:
             return strings.Business_LocationInfo
         case .businessHours:
@@ -866,6 +883,8 @@ public enum PremiumPerk: CaseIterable {
             return "Item List/Icons/NoForward"
         case .aiTools:
             return "Item List/Icons/AITools"
+        case .richText:
+            return "Item List/Icons/RichText"
         case .businessLocation:
             return "Item List/Icons/Location"
         case .businessHours:
@@ -891,6 +910,7 @@ struct PremiumIntroConfiguration {
         return PremiumIntroConfiguration(perks: [
             .stories,
             .aiTools,
+            .richText,
             .moreUpload,
             .doubleLimits,
             .lastSeen,
@@ -955,8 +975,8 @@ struct PremiumIntroConfiguration {
             }
             
             #if DEBUG
-            if !perks.contains(.aiTools) {
-                perks.insert(.aiTools, at: 1)
+            if !perks.contains(.richText) {
+                perks.insert(.richText, at: 1)
             }
             #endif
                         
@@ -1637,7 +1657,7 @@ private final class PremiumIntroScreenContentComponent: CombinedComponent {
             
             super.init()
             
-            self.newPerks = [PremiumPerk.aiTools.identifier, PremiumPerk.copyProtection.identifier]
+            self.newPerks = [PremiumPerk.aiTools.identifier, PremiumPerk.richText.identifier]
             
             let premiumIntroConfiguration: Signal<PremiumIntroConfiguration, NoError>
             let accountPeer: Signal<EnginePeer?, NoError>
@@ -1968,6 +1988,7 @@ private final class PremiumIntroScreenContentComponent: CombinedComponent {
                 UIColor(rgb: 0xa34cd7),
                 UIColor(rgb: 0x9b4fed),
                 UIColor(rgb: 0x8958ff),
+                UIColor(rgb: 0x8958ff),
                 UIColor(rgb: 0x676bff),
                 UIColor(rgb: 0x676bff),
                 UIColor(rgb: 0x6172ff),
@@ -2224,6 +2245,8 @@ private final class PremiumIntroScreenContentComponent: CombinedComponent {
                                 demoSubject = .copyProtection
                             case .aiTools:
                                 demoSubject = .aiTools
+                            case .richText:
+                                demoSubject = .richText
                             case .business:
                                 demoSubject = .business
                             default:

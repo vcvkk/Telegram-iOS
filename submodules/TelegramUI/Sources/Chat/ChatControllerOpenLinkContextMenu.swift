@@ -15,9 +15,100 @@ import ChatControllerInteraction
 import UrlWhitelist
 import OpenInExternalAppUI
 import SafariServices
+import TelegramPresentationData
 
 // MARK: exteraGram
 import ShareController
+
+private struct ChatLinkOpenMode {
+    let shouldOpenInApp: Bool
+}
+
+private enum ChatLinkReverseOpenTarget {
+    case inApp
+    case externalBrowser
+    
+    func title(strings: PresentationStrings) -> String {
+        switch self {
+        case .inApp:
+            return strings.WebBrowser_Exception_OpenInApp
+        case .externalBrowser:
+            return strings.WebBrowser_Exception_OpenInBrowser
+        }
+    }
+    
+    var openExternalBrowser: Bool {
+        switch self {
+        case .inApp:
+            return false
+        case .externalBrowser:
+            return true
+        }
+    }
+}
+
+private func chatLinkContextMenuCanonicalUrl(from url: String) -> URL? {
+    var urlWithScheme = url
+    if !url.contains("://") && !url.hasPrefix("mailto:") {
+        urlWithScheme = "http://" + url
+    }
+    if let parsed = URL(string: urlWithScheme) {
+        return parsed
+    } else if let encoded = (urlWithScheme as NSString).addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) {
+        return URL(string: encoded)
+    }
+    return nil
+}
+
+private func chatLinkContextMenuOpenMode(context: AccountContext, url: String) -> Signal<ChatLinkOpenMode?, NoError> {
+    let lowercasedUrl = url.lowercased()
+    if lowercasedUrl.hasPrefix("mailto:") || lowercasedUrl.hasPrefix("tel:") || lowercasedUrl.hasPrefix("calshow:") {
+        return .single(nil)
+    }
+
+    guard let parsedUrl = chatLinkContextMenuCanonicalUrl(from: url) else {
+        return .single(nil)
+    }
+
+    let scheme = (parsedUrl.scheme ?? "").lowercased()
+    guard scheme == "http" || scheme == "https" || scheme == "tonsite" else {
+        return .single(nil)
+    }
+
+    let host = parsedUrl.host?.lowercased() ?? ""
+    if host.isEmpty {
+        return .single(nil)
+    }
+    if host == "t.me" || host == "telegram.me" || host == "telegram.dog" {
+        return .single(nil)
+    }
+    if host.hasSuffix(".ton") || scheme.hasPrefix("tonsite") {
+        return .single(nil)
+    }
+
+    return context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.webBrowserSettings))
+    |> take(1)
+    |> map { accountSettingsEntry -> ChatLinkOpenMode? in
+        let accountSettings = accountSettingsEntry?.get(AccountWebBrowserSettings.self) ?? AccountWebBrowserSettings.defaultSettings
+        let normalizedHost = ".\(host)"
+        let exceptions = accountSettings.openExternalBrowser ? accountSettings.inAppExceptions : accountSettings.externalExceptions
+        var isExceptedDomain = false
+        for exception in exceptions {
+            if normalizedHost.hasSuffix(".\(exception.domain.lowercased())") {
+                isExceptedDomain = true
+                break
+            }
+        }
+
+        let shouldOpenInApp: Bool
+        if accountSettings.openExternalBrowser {
+            shouldOpenInApp = isExceptedDomain
+        } else {
+            shouldOpenInApp = !isExceptedDomain
+        }
+        return ChatLinkOpenMode(shouldOpenInApp: shouldOpenInApp)
+    }
+}
 
 extension ChatControllerImpl {
     private func presentOpenLinkConfirmation(_ url: String, target: ChatLinkReverseOpenTarget) {
@@ -50,7 +141,7 @@ extension ChatControllerImpl {
                             Queue.mainQueue().after(0.5) {
                                 let tooltipScreen = UndoOverlayController(
                                     presentationData: self.presentationData,
-                                    content: .actionSucceeded(title: "Exception Added", text: "This site will always open in-app.", cancel: "", destructive: false),
+                                    content: .actionSucceeded(title: self.presentationData.strings.WebBrowser_ExceptionAdded_Title, text: self.presentationData.strings.WebBrowser_ExceptionAdded_Text, cancel: "", destructive: false),
                                     elevatedLayout: false,
                                     animateInAsReplacement: false,
                                     action: { _ in
@@ -107,7 +198,7 @@ extension ChatControllerImpl {
             },
             progress: nil,
             alertDisplayUpdated: nil,
-            concealedAlertOption: OpenUserGeneratedUrlConcealedAlertOption(title: target.checkboxTitle, action: { [weak self] in
+            concealedAlertOption: OpenUserGeneratedUrlConcealedAlertOption(title: target.title(strings: self.presentationData.strings), action: { [weak self] in
                 guard let self else {
                     return
                 }
@@ -316,6 +407,11 @@ extension ChatControllerImpl {
                     return
                 }
 
+            if let openMode {
+                let reverseText = openMode.shouldOpenInApp ? self.presentationData.strings.Chat_ContextMenu_OpenInBrowser : self.presentationData.strings.Chat_ContextMenu_OpenInApp
+                items.append(
+                    .action(ContextMenuActionItem(text: reverseText, icon: { theme in return generateTintedImage(image: openMode.shouldOpenInApp ? UIImage(bundleImageName: "Chat/Context Menu/Globe") : UIImage(bundleImageName: "Chat/Context Menu/Browser"), color: theme.contextMenu.primaryColor) }, action: { [weak self] _, f in
+                        f(.default)
                 self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: false), in: .window(.root))
             }))
         )
