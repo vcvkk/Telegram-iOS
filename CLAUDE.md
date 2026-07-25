@@ -61,7 +61,8 @@ and strands files at the old version.
    ```
    Add an entry to `fork_registry.json` whenever a bump turns out to have
    dropped something.
-6. **CI.** Push to a `claude/**` branch runs `validate.yml` (debug, compile
-   only, `--keep_going`, error digest in the run summary); `master` runs the
-   full release build. Don't push in bursts — each push cancels the previous
-   validate run.
+6. **CI.** Both workflows run on `master` only: `validate.yml` (debug, compile
+   only, `--keep_going`, error digest in the run summary) for fast feedback,
+   and `main.yml` for the full release build. Pushes to other branches do not
+   trigger CI. Don't push in bursts — each push cancels the previous run of
+   both workflows, and a cancelled run does not save the bazel cache.

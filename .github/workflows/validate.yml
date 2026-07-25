@@ -10,7 +10,7 @@ name: Validate build
 on:
   push:
     branches:
-      - 'claude/**'
+      - master
     paths-ignore:
       - 'build-system/merge-tools/**'
       - '**/*.md'
