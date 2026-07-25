@@ -1,0 +1,142 @@
+{
+  "_comment": [
+    "Declarations and features the fork depends on that upstream does NOT have,",
+    "or removed. A version bump that copies upstream files over ours silently",
+    "deletes these; every entry below was actually lost during the 12.8 bump and",
+    "cost at least one CI round to rediscover.",
+    "",
+    "Each entry: 'pattern' is a Python regex searched in 'path'. If 'path' is a",
+    "directory it must exist and at least one file under it must match (or, with",
+    "no pattern, the directory just has to exist).",
+    "",
+    "Add an entry whenever a merge turns out to have dropped something."
+  ],
+  "features": [
+    {
+      "name": "PeersNearby: UI module",
+      "path": "submodules/PeersNearbyUI",
+      "note": "Upstream deleted the whole feature; the fork keeps it."
+    },
+    {
+      "name": "PeersNearby: engine namespace class",
+      "path": "submodules/TelegramCore/Sources/TelegramEngine/PeersNearby/TelegramEnginePeersNearby.swift",
+      "pattern": "final class PeersNearby"
+    },
+    {
+      "name": "PeersNearby: engine accessor",
+      "path": "submodules/TelegramCore/Sources/TelegramEngine/TelegramEngine.swift",
+      "pattern": "var peersNearby: PeersNearby"
+    },
+    {
+      "name": "PeersNearby: state operation",
+      "path": "submodules/TelegramCore/Sources/Account/AccountIntermediateState.swift",
+      "pattern": "case UpdatePeersNearby"
+    },
+    {
+      "name": "PeersNearby: state mutation helper",
+      "path": "submodules/TelegramCore/Sources/Account/AccountIntermediateState.swift",
+      "pattern": "func updatePeersNearby"
+    },
+    {
+      "name": "PeersNearby: final-state field",
+      "path": "submodules/TelegramCore/Sources/Account/AccountIntermediateState.swift",
+      "pattern": "updatedPeersNearby"
+    },
+    {
+      "name": "PeersNearby: preferences key",
+      "path": "submodules/TelegramCore/Sources/SyncCore/SyncCore_Namespaces.swift",
+      "pattern": "static let peersNearby"
+    },
+    {
+      "name": "PeersNearby: state manager signal",
+      "path": "submodules/TelegramCore/Sources/State/AccountStateManager.swift",
+      "pattern": "func updatedPeersNearby\\("
+    },
+    {
+      "name": "PeersNearby: visibility icons (resources)",
+      "path": "submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesItemList.swift",
+      "pattern": "func makeVisibleIcon|func makeInvisibleIcon"
+    },
+    {
+      "name": "PeersNearby: visibility icon resource keys",
+      "path": "submodules/TelegramPresentationData/Sources/Resources/PresentationResourceKey.swift",
+      "pattern": "itemListMakeVisibleIcon"
+    },
+    {
+      "name": "EmojiStatusSelectionControllerMode",
+      "path": "submodules/AccountContext/Sources/AccountContext.swift",
+      "pattern": "enum EmojiStatusSelectionControllerMode"
+    },
+    {
+      "name": "makeEmojiStatusSelectionController (protocol)",
+      "path": "submodules/AccountContext/Sources/AccountContext.swift",
+      "pattern": "func makeEmojiStatusSelectionController"
+    },
+    {
+      "name": "makeEmojiStatusSelectionController (impl)",
+      "path": "submodules/TelegramUI/Sources/SharedAccountContext.swift",
+      "pattern": "func makeEmojiStatusSelectionController"
+    },
+    {
+      "name": "StickerPackScreenActionResult / Kind",
+      "path": "submodules/AccountContext/Sources/AccountContext.swift",
+      "pattern": "struct StickerPackScreenActionResult"
+    },
+    {
+      "name": "EntityKeyboard revealHiddenPanels",
+      "path": "submodules/TelegramUI/Components/EntityKeyboard/Sources/EntityKeyboard.swift",
+      "pattern": "func revealHiddenPanels"
+    },
+    {
+      "name": "ChatSendMessageContextScreenRichTextPreview",
+      "path": "submodules/ChatSendMessageActionUI/Sources/ChatSendMessageContextScreen.swift",
+      "pattern": "protocol ChatSendMessageContextScreenRichTextPreview"
+    },
+    {
+      "name": "OpenUserGeneratedUrlConcealedAlertOption",
+      "path": "submodules/AccountContext/Sources/AccountContext.swift",
+      "pattern": "struct OpenUserGeneratedUrlConcealedAlertOption"
+    },
+    {
+      "name": "openJoinChatWebView (protocol)",
+      "path": "submodules/AccountContext/Sources/AccountContext.swift",
+      "pattern": "func openJoinChatWebView"
+    },
+    {
+      "name": "openUserGeneratedUrl (protocol)",
+      "path": "submodules/AccountContext/Sources/AccountContext.swift",
+      "pattern": "func openUserGeneratedUrl"
+    },
+    {
+      "name": "LegacyController navigationBarStyle parameter",
+      "path": "submodules/LegacyUI/Sources/LegacyController.swift",
+      "pattern": "navigationBarStyle: NavigationBar.Style"
+    },
+    {
+      "name": "ResolvedBotAdminRights.manageTopics",
+      "path": "submodules/AccountContext/Sources/AccountContext.swift",
+      "pattern": "static let manageTopics"
+    },
+    {
+      "name": "TextProcessingScreenMode.translate applyResult",
+      "path": "submodules/AccountContext/Sources/AccountContext.swift",
+      "pattern": "case translate\\(fromLanguage: String\\?, applyResult:"
+    },
+    {
+      "name": "EGGTranslate wired into TelegramCore",
+      "path": "submodules/TelegramCore/BUILD",
+      "pattern": "EGGTranslate"
+    }
+  ],
+  "hook_markers": [
+    "// MARK: exteraGram",
+    "EGSimpleSettings.shared",
+    "EGPluginHooks"
+  ],
+  "min_hook_counts": {
+    "// MARK: exteraGram": 365,
+    "EGSimpleSettings.shared": 298,
+    "EGPluginHooks": 114,
+    "_comment": "Floors, not exact values. A merge that wipes fork hooks shows up as a drop below these. Refresh with --update-baseline after intentionally adding/removing hooks."
+  }
+}
