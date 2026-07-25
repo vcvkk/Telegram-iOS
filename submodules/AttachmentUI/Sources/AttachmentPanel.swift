@@ -1128,7 +1128,7 @@ final class AttachmentPanel: ASDisplayNode, ASScrollViewDelegate, ASGestureRecog
         }, setupEditMessage: { _, _ in
         }, beginMessageSelection: { _, _ in
         }, cancelMessageSelection: { _ in
-        }, deleteSelectedMessages: { _ in
+        }, deleteSelectedMessages: {
         }, reportSelectedMessages: {
         }, reportMessages: { _, _ in
         }, blockMessageAuthor: { _, _ in
@@ -1425,6 +1425,8 @@ final class AttachmentPanel: ASDisplayNode, ASScrollViewDelegate, ASGestureRecog
                 })
             })
         }, openScheduledMessages: {
+        // MARK: exteraGram
+        }, openPeersNearby: {
         }, displaySearchResultsTooltip: { _, _ in
         }, unarchivePeer: {
         }, scrollToTop: {

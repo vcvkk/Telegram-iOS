@@ -62,7 +62,7 @@ public final class ChatRecentActionsController: TelegramBaseController {
         }, setupEditMessage: { _, _ in
         }, beginMessageSelection: { _, _ in
         }, cancelMessageSelection: { _ in
-        }, deleteSelectedMessages: { _ in
+        }, deleteSelectedMessages: {
         }, reportSelectedMessages: {
         }, reportMessages: { _, _ in
         }, blockMessageAuthor: { _, _ in
@@ -143,6 +143,8 @@ public final class ChatRecentActionsController: TelegramBaseController {
         }, displaySlowmodeTooltip: { _, _ in
         }, displaySendMessageOptions: { _, _ in
         }, openScheduledMessages: {
+        // MARK: exteraGram
+        }, openPeersNearby: {
         }, displaySearchResultsTooltip: { _, _ in
         }, unarchivePeer: {
         }, scrollToTop: {
