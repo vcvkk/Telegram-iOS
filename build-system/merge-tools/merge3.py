@@ -31,6 +31,16 @@ Usage:
     merge3.py --audit  --base /tmp/upstream/release-12.8 --theirs /tmp/upstream/release-12.9.2
     merge3.py --apply  --base ... --theirs ... --paths submodules/TelegramCore
     merge3.py --audit  --base ... --theirs ... --paths 'submodules/TelegramUI/**'
+
+Apply each path exactly once, then commit. Re-running --apply over a path that
+was already merged would diff the resolved files against BASE again and
+re-conflict them; the guard in do_merge() refuses that, but the clean workflow
+is one pass per layer.
+
+Likewise, an --audit re-run after a layer is applied still reports conflicts for
+the files that were hand-merged (they now differ from both BASE and THEIRS by
+design). That is expected and is not a sign of unfinished work — use it to plan
+a layer, not to verify one.
 """
 
 import argparse
@@ -135,6 +145,15 @@ def do_merge(rel_path, base_root, theirs_root, apply_changes):
     ours = os.path.join(REPO_ROOT, rel_path)
     base = os.path.join(base_root, rel_path)
     theirs = os.path.join(theirs_root, rel_path)
+
+    # --apply is not idempotent: once a file has been merged and hand-resolved,
+    # re-running would diff the resolved file against BASE again and re-conflict
+    # it, silently undoing the manual work. Refuse to touch a file that still
+    # has markers, and never re-merge on a second pass over the same path.
+    with open(ours, "r", errors="replace") as handle:
+        current = handle.read()
+    if "<<<<<<< ours" in current:
+        return ("skip", "already has conflict markers — resolve them first")
 
     # git merge-file writes into the "current" file, so work on a copy.
     tmp = ours + ".merge3.tmp"
