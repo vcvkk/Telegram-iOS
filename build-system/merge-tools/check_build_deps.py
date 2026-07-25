@@ -78,6 +78,30 @@ def read(path):
         return handle.read()
 
 
+def strip_build_comments(text):
+    """Drop `#` comments from a BUILD file.
+
+    Several BUILD files keep deps commented out (e.g. Utils/DeviceModel has
+    "# MARK: exteraGram" followed by commented-out AccountContext). Parsing
+    those as real edges invents dependency cycles that Bazel never sees.
+    """
+    out = []
+    for line in text.split("\n"):
+        in_string = False
+        quote = ""
+        for i, ch in enumerate(line):
+            if in_string:
+                if ch == quote and line[i - 1 : i] != "\\":
+                    in_string = False
+            elif ch in "\"'":
+                in_string, quote = True, ch
+            elif ch == "#":
+                line = line[:i]
+                break
+        out.append(line)
+    return "\n".join(out)
+
+
 def canonical(label, rel_dir=None):
     """Normalize a label to //path:target form."""
     if label.startswith(":"):
@@ -95,7 +119,7 @@ def build_graph():
         rel_dir = os.path.relpath(os.path.dirname(build_path), REPO_ROOT)
         if rel_dir.startswith("bazel-") or "/bazel-" in rel_dir:
             continue
-        src = read(build_path)
+        src = strip_build_comments(read(build_path))
         for match in MODULE_RULE_RE.finditer(src):
             body = match.group("body")
             name_match = NAME_RE.search(body)
@@ -109,6 +133,44 @@ def build_graph():
                 canonical(d, rel_dir) for d in resolve_deps(body, src, rel_dir)
             }
     return module_of_label, deps_of_label
+
+
+def find_cycle(deps_of_label):
+    """Return one dependency cycle as a list of labels, or None.
+
+    Bazel only reports this during analysis, which costs a CI run (and it
+    reports a single cycle at a time). It happened when a dep was added to
+    GalleryUI that upstream deliberately avoids by routing through
+    sharedContext.makeTextProcessingScreen instead of importing the module.
+    """
+    WHITE, GREY, BLACK = 0, 1, 2
+    color = {}
+    stack = []
+
+    def visit(label):
+        color[label] = GREY
+        stack.append(label)
+        for dep in sorted(deps_of_label.get(label, ())):
+            if dep not in deps_of_label:
+                continue  # external / non-swift target
+            state = color.get(dep, WHITE)
+            if state == GREY:
+                return stack[stack.index(dep):] + [dep]
+            if state == WHITE:
+                found = visit(dep)
+                if found:
+                    return found
+        stack.pop()
+        color[label] = BLACK
+        return None
+
+    sys.setrecursionlimit(10000)
+    for label in sorted(deps_of_label):
+        if color.get(label, WHITE) == WHITE:
+            found = visit(label)
+            if found:
+                return found
+    return None
 
 
 def reachable_modules(label, module_of_label, deps_of_label):
@@ -181,6 +243,17 @@ def main():
             print(f"{module}: {' '.join(sorted(providers[module]))}")
         return 0
 
+    # Cheap and always worth doing: a cycle fails the whole build at analysis
+    # time, before a single file is compiled.
+    cycle = find_cycle(deps_of_label)
+    if cycle:
+        print("FAIL: dependency cycle in the build graph:\n")
+        for label in cycle:
+            print(f"    {label}")
+        print("\nUpstream usually breaks such a cycle with a factory method on"
+              "\nSharedAccountContext instead of a direct module dependency.")
+        return 1
+
     scope = args or SCAN_ROOTS
     findings = []
     checked = 0
@@ -192,7 +265,7 @@ def main():
             rel_dir = os.path.relpath(os.path.dirname(build_path), REPO_ROOT)
             if rel_dir.startswith("bazel-") or "/bazel-" in rel_dir:
                 continue
-            build_src = read(build_path)
+            build_src = strip_build_comments(read(build_path))
             for match in re.finditer(r"swift_library\(\s*(.*?)\n\)", build_src, re.S):
                 body = match.group(1)
                 name_match = NAME_RE.search(body)

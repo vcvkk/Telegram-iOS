@@ -51,7 +51,6 @@ swift_library(
         "//submodules/TelegramUI/Components/MultiAnimationRenderer:MultiAnimationRenderer",
         "//submodules/TelegramUI/Components/SliderContextItem",
         "//submodules/TelegramUI/Components/SectionTitleContextItem",
-        "//submodules/TelegramUI/Components/TextProcessingScreen",
         "//submodules/TooltipUI",
         "//submodules/TelegramNotices",
         "//submodules/Pasteboard",

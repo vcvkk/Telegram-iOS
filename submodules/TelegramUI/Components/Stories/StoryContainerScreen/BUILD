@@ -62,6 +62,7 @@ swift_library(
         "//submodules/ShimmerEffect",
         "//submodules/ImageCompression",
         "//submodules/TelegramUI/Components/TextNodeWithEntities",
+        "//submodules/TelegramUI/Components/TextProcessingScreen",
         "//submodules/InvisibleInkDustNode",
         "//submodules/PresentationDataUtils",
         "//submodules/UrlEscaping",
