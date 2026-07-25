@@ -16,6 +16,11 @@ import TelegramPresentationData
 import TelegramCallsUI
 import TelegramUIPreferences
 import OpenUserGeneratedUrl
+import CommunitiesScreen
+import CommunityAddScreen
+import CommunityEditScreen
+import CommunityRequestsScreen
+import CommunityViewScreen
 import AccountContext
 import DeviceLocationManager
 import ItemListUI
@@ -2287,6 +2292,46 @@ public final class SharedAccountContextImpl: SharedAccountContext {
 
     public func openJoinChatWebView(context: AccountContext, parentController: ViewController, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, webView: JoinChatWebView) {
         openJoinChatWebViewImpl(context: context, parentController: parentController, updatedPresentationData: updatedPresentationData, webView: webView)
+    }
+
+    public func makeCommunitiesScreen(context: AccountContext, peerId: EnginePeer.Id?) -> ViewController {
+        return CommunitiesScreen(context: context, peerId: peerId)
+    }
+
+    public func makeCommunityAddScreen(context: AccountContext, communityId: EnginePeer.Id, peerId: EnginePeer.Id, completed: @escaping (Bool) -> Void) -> ViewController {
+        return CommunityAddScreen(context: context, communityId: communityId, peerId: peerId, completed: completed)
+    }
+
+    public func makeCommunityAddScreen(context: AccountContext, communityId: EnginePeer.Id, peerId: EnginePeer.Id, requiresConfirmation: Bool, completed: @escaping (Bool) -> Void) -> ViewController {
+        return CommunityAddScreen(context: context, communityId: communityId, peerId: peerId, requiresConfirmation: requiresConfirmation, completed: completed)
+    }
+
+    public func makeCommunityAddScreen(context: AccountContext, peerId: EnginePeer.Id, initialVisibility: Bool, completed: @escaping (Bool) -> Void) -> ViewController {
+        return CommunityAddScreen(context: context, peerId: peerId, initialVisibility: initialVisibility, draftCompleted: completed)
+    }
+
+    public func makeCommunityEditScreen(context: AccountContext, communityId: EnginePeer.Id) -> ViewController {
+        return CommunityEditScreen(context: context, communityId: communityId)
+    }
+
+    public func makeCommunityEditScreen(context: AccountContext, mode: CommunityEditScreenMode, completed: @escaping () -> Void) -> ViewController {
+        return CommunityEditScreen(context: context, mode: mode, completed: completed)
+    }
+
+    public func makeCommunityRequestsScreen(context: AccountContext, communityId: EnginePeer.Id, existingContext: CommunityPeerLinkRequestsContext?) -> ViewController {
+        return CommunityRequestsScreen(context: context, communityId: communityId, existingContext: existingContext)
+    }
+
+    public func makeCommunityViewScreen(context: AccountContext, communityId: EnginePeer.Id, mode: CommunityViewScreenMode) -> ViewController {
+        return CommunityViewScreenImpl(context: context, communityId: communityId, mode: mode)
+    }
+
+    public func makeCommunityPeerSelectionScreen(context: AccountContext, communityId: EnginePeer.Id, selectionOptions: CommunityPeerSelectionOptions) -> ViewController {
+        return CommunityViewScreenImpl(context: context, communityId: communityId, mode: .fullscreen, selectionOptions: selectionOptions)
+    }
+
+    public func makeCreateChannelController(context: AccountContext, completion: @escaping (PeerId, @escaping () -> Void) -> Void) -> ViewController {
+        return createChannelController(context: context, mode: .community, completion: completion)
     }
 
     public func makeEmojiStatusSelectionController(context: AccountContext, mode: EmojiStatusSelectionControllerMode, sourceView: UIView, emojiContent: Signal<AnyObject, NoError>, currentSelection: Int64?, color: UIColor?, destinationItemView: @escaping () -> UIView?) -> ViewController {
