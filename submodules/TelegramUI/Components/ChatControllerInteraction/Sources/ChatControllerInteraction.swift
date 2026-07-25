@@ -293,7 +293,12 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public let sendGift: (EnginePeer.Id) -> Void
     public let openUniqueGift: (String) -> Void
     public let openMessageFeeException: () -> Void
-    public let requestMessageUpdate: (MessageId, Bool, ControlledTransition?) -> Void
+    public let requestMessageUpdate: (EngineMessage.Id, Bool, ControlledTransition?) -> Void
+    /// Synchronous editability predicate for rich-text checkbox toggling (bridges the
+    /// internal `canEditMessage`, which the component module cannot call). Mirrors `canSetupReply`.
+    public let canEditMessageRichText: (EngineRawMessage) -> Bool
+    /// Toggle a rich-message checklist checkbox at `path` to `value` and persist via an edit.
+    public let toggleMessageRichTextCheckbox: (EngineMessage.Id, [Int], Bool) -> Void
     public let cancelInteractiveKeyboardGestures: () -> Void
     public let dismissTextInput: () -> Void
     public let scrollToMessageId: (MessageIndex) -> Void
@@ -482,8 +487,10 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
         playShakeAnimation: @escaping () -> Void,
         displayQuickShare: @escaping (MessageId, ASDisplayNode, ContextGesture) -> Void,
         updateChatLocationThread: @escaping (Int64?, ChatControllerAnimateInnerChatSwitchDirection?) -> Void,
-        requestToggleTodoMessageItem: @escaping (MessageId, Int32, Bool) -> Void,
-        displayTodoToggleUnavailable: @escaping (MessageId) -> Void,
+        requestToggleTodoMessageItem: @escaping (EngineMessage.Id, Int32, Bool) -> Void,
+        displayTodoToggleUnavailable: @escaping (EngineMessage.Id) -> Void,
+        canEditMessageRichText: @escaping (EngineRawMessage) -> Bool = { _ in false },
+        toggleMessageRichTextCheckbox: @escaping (EngineMessage.Id, [Int], Bool) -> Void = { _, _, _ in },
         openStarsPurchase: @escaping (Int64?) -> Void,
         openRankInfo: @escaping (EnginePeer, ChatRankInfoScreenRole, String) -> Void,
         openSetPeerAvatar: @escaping () -> Void,
@@ -605,6 +612,8 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
         self.openMessageFeeException = openMessageFeeException
         
         self.requestMessageUpdate = requestMessageUpdate
+        self.canEditMessageRichText = canEditMessageRichText
+        self.toggleMessageRichTextCheckbox = toggleMessageRichTextCheckbox
         self.cancelInteractiveKeyboardGestures = cancelInteractiveKeyboardGestures
         self.dismissTextInput = dismissTextInput
         self.scrollToMessageId = scrollToMessageId

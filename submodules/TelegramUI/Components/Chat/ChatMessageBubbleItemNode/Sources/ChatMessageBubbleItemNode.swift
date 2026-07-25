@@ -69,6 +69,7 @@ import ChatMessageInvoiceBubbleContentNode
 import ChatMessageMapBubbleContentNode
 import ChatMessageMediaBubbleContentNode
 import ChatMessageProfilePhotoSuggestionContentNode
+import ChatMessageCommunityChangedBubbleContentNode
 import ChatMessageBirthdateSuggestionContentNode
 import ChatMessageRestrictedBubbleContentNode
 import ChatMessageStoryMentionContentNode
@@ -243,6 +244,8 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
                     skipText = true
                 } else if case .suggestedProfilePhoto = action.action {
                     result.append((message, ChatMessageProfilePhotoSuggestionContentNode.self, itemAttributes, BubbleItemAttributes(isAttachment: false, neighborType: .text, neighborSpacing: .default)))
+                } else if case let .communityChanged(communityId) = action.action, let communityId, message.peers[communityId] is TelegramCommunity {
+                    result.append((message, ChatMessageCommunityChangedBubbleContentNode.self, itemAttributes, BubbleItemAttributes(isAttachment: false, neighborType: .text, neighborSpacing: .default)))
                 } else if case .setChatWallpaper = action.action {
                     result.append((message, ChatMessageWallpaperBubbleContentNode.self, itemAttributes, BubbleItemAttributes(isAttachment: false, neighborType: .text, neighborSpacing: .default)))
                 } else if case .giftCode = action.action {
@@ -331,6 +334,18 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
         var messageText = message.text
         if let updatingMedia = itemAttributes.updatingMedia {
             messageText = updatingMedia.text
+        }
+        
+        var richText: RichTextMessageAttribute?
+        if let updatingMedia = itemAttributes.updatingMedia {
+            richText = updatingMedia.richText
+        } else {
+            for attribute in item.message.attributes {
+                if let attribute = attribute as? RichTextMessageAttribute {
+                    richText = attribute
+                    break
+                }
+            }
         }
                 
         if !messageText.isEmpty || isUnsupportedMedia || isStoryWithText {
@@ -727,6 +742,10 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
     private var rankBackgroundNode: ASImageNode?
     private var rankBadgeNode: TextNode?
     
+    private var ephemeralBadgeBackgroundNode: ASImageNode?
+    private var ephemeralBadgeTextNode: TextNode?
+    private var ephemeralBadgeIconNode: UIImageView?
+
     private var credibilityIconView: ComponentHostView<Empty>?
     private var credibilityIconComponent: EmojiStatusComponent?
     private var credibilityIconContent: EmojiStatusComponent.Content?
@@ -1535,6 +1554,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         let authorNameLayout = TextNode.asyncLayout(self.nameNode)
         let viaMeasureLayout = TextNode.asyncLayout(self.viaMeasureNode)
         let rankBadgeLayout = TextNode.asyncLayout(self.rankBadgeNode)
+        let ephemeralBadgeLayout = TextNode.asyncLayout(self.ephemeralBadgeTextNode)
         let boostBadgeLayout = TextNode.asyncLayout(self.boostBadgeNode)
         let threadInfoLayout = ChatMessageThreadInfoNode.asyncLayout(self.threadInfoNode)
         let forwardInfoLayout = ChatMessageForwardInfoNode.asyncLayout(self.forwardInfoNode)
@@ -1570,6 +1590,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 authorNameLayout: authorNameLayout,
                 viaMeasureLayout: viaMeasureLayout,
                 rankBadgeLayout: rankBadgeLayout,
+                ephemeralBadgeLayout: ephemeralBadgeLayout,
                 boostBadgeLayout: boostBadgeLayout,
                 threadInfoLayout: threadInfoLayout,
                 forwardInfoLayout: forwardInfoLayout,
@@ -1599,6 +1620,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         authorNameLayout: (TextNodeLayoutArguments) -> (TextNodeLayout, () -> TextNode),
         viaMeasureLayout: (TextNodeLayoutArguments) -> (TextNodeLayout, () -> TextNode),
         rankBadgeLayout: (TextNodeLayoutArguments) -> (TextNodeLayout, () -> TextNode),
+        ephemeralBadgeLayout: (TextNodeLayoutArguments) -> (TextNodeLayout, () -> TextNode),
         boostBadgeLayout: (TextNodeLayoutArguments) -> (TextNodeLayout, () -> TextNode),
         threadInfoLayout: (ChatMessageThreadInfoNode.Arguments) -> (CGSize, (Bool) -> ChatMessageThreadInfoNode),
         forwardInfoLayout: (AccountContext, ChatPresentationData, PresentationStrings, ChatMessageForwardInfoType, Peer?, String?, String?, ChatMessageForwardInfoNode.StoryData?, CGSize) -> (CGSize, (CGFloat) -> ChatMessageForwardInfoNode),
@@ -1631,6 +1653,41 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         let incoming = item.content.effectivelyIncoming(item.context.account.peerId, associatedData: item.associatedData)
         
         let messageTheme = incoming ? item.presentationData.theme.theme.chat.message.incoming : item.presentationData.theme.theme.chat.message.outgoing
+        let isEphemeralMessage = Namespaces.Message.allEphemeral.contains(firstMessage.id.namespace)
+        let ephemeralBadgeHeight: CGFloat = 17.0
+        let ephemeralBadgeHorizontalInset: CGFloat = 5.0
+        let ephemeralBadgeIconSize = CGSize(width: 14.0, height: 17.0)
+        let ephemeralBadgeIconSpacing: CGFloat = 3.0
+
+        let ephemeralBadgeText: String?
+        if isEphemeralMessage {
+            if incoming {
+                ephemeralBadgeText = "Only visible to you"
+            } else {
+                var botPeerId: PeerId?
+                for attribute in firstMessage.attributes {
+                    if let attribute = attribute as? EphemeralOutgoingMessageAttribute {
+                        botPeerId = attribute.botPeerId
+                        break
+                    } else if let attribute = attribute as? EphemeralMessageAttribute {
+                        botPeerId = PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(attribute.receiverId))
+                    }
+                }
+
+                let botPeer = botPeerId.flatMap { firstMessage.peers[$0] }
+                let botName: String
+                if let addressName = botPeer?.addressName, !addressName.isEmpty {
+                    botName = "@\(addressName)"
+                } else if let botPeer {
+                    botName = EnginePeer(botPeer).compactDisplayTitle
+                } else {
+                    botName = "bot"
+                }
+                ephemeralBadgeText = "Only visible to \(botName)"
+            }
+        } else {
+            ephemeralBadgeText = nil
+        }
         
         var sourceReference: SourceReferenceMessageAttribute?
         for attribute in item.content.firstMessage.attributes {
@@ -2212,6 +2269,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         }
         
         var hidesHeaders = false
+        var forceReactionsOutside = false
         var shareButtonOffset: CGPoint?
         var avatarOffset: CGFloat?
         var index = 0
@@ -2276,6 +2334,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             if properties.hidesHeaders {
                 hidesHeaders = true
             }
+            if properties.wantsReactionsOutside {
+                forceReactionsOutside = true
+            }
             if let offset = properties.avatarOffset {
                 avatarOffset = offset
                 if !offset.isZero {
@@ -2312,7 +2373,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         var bottomNodeMergeStatus: ChatMessageBubbleMergeStatus = mergedBottom.merged ? (incoming ? .Left : .Right) : .None(incoming ? .Incoming : .Outgoing)
         
         let bubbleReactions: ReactionsMessageAttribute
-        if needReactions {
+        if needReactions || forceReactionsOutside {
             bubbleReactions = mergedMessageReactions(attributes: item.message.attributes, isTags: item.message.areReactionsTags(accountPeerId: item.context.account.peerId)) ?? ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
         } else {
             bubbleReactions = ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
@@ -2322,7 +2383,19 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         }
         
         var currentCredibilityIcon: (EmojiStatusComponent.Content, UIColor?)?
+        // MARK: exteraGram
         var isEGCredibilityBadge = false
+        
+        let displayEphemeralBadge: Bool
+        if ephemeralBadgeText != nil && !hidesHeaders && item.message.adAttribute == nil {
+            if let backgroundHiding, case .always = backgroundHiding {
+                displayEphemeralBadge = false
+            } else {
+                displayEphemeralBadge = true
+            }
+        } else {
+            displayEphemeralBadge = false
+        }
 
         var initialDisplayHeader = true
         if hidesHeaders || item.message.adAttribute != nil {
@@ -2345,6 +2418,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     }
                 }
             }
+        }
+        if displayEphemeralBadge {
+            initialDisplayHeader = true
         }
         
         if let peer = firstMessage.peers[firstMessage.id.peerId] as? TelegramChannel, case .broadcast = peer.info, item.content.firstMessage.adAttribute == nil {
@@ -2493,6 +2569,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             if isSummarized {
                 displayHeader = true
             }
+            if displayEphemeralBadge {
+                displayHeader = true
+            }
         }
         
         let firstNodeTopPosition: ChatMessageBubbleRelativePosition
@@ -2587,7 +2666,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 } else {
                     dateFormat = .regular
                 }
-                let dateText = stringForMessageTimestampStatus(accountPeerId: item.context.account.peerId, message: message, dateTimeFormat: item.presentationData.dateTimeFormat, nameDisplayOrder: item.presentationData.nameDisplayOrder, strings: item.presentationData.strings, format: dateFormat, associatedData: item.associatedData)
+                let dateText = stringForMessageTimestampStatus(context: item.context, message: EngineMessage(message), dateTimeFormat: item.presentationData.dateTimeFormat, nameDisplayOrder: item.presentationData.nameDisplayOrder, strings: item.presentationData.strings, format: dateFormat, associatedData: item.associatedData)
                 
                 let statusType: ChatMessageDateAndStatusType
                 if incoming {
@@ -2642,6 +2721,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         var nameNodeOriginY: CGFloat = 0.0
         var nameNodeSizeApply: (CGSize, () -> TextNode?) = (CGSize(), { nil })
         var rankBadgeNodeSizeApply: (CGSize, () -> TextNode?, UIColor?) = (CGSize(), { nil }, nil)
+        var ephemeralBadgeOriginY: CGFloat = 0.0
+        var ephemeralBadgeNodeSizeApply: (CGSize, CGSize, () -> TextNode?) = (CGSize(), CGSize(), { nil })
         var boostNodeSizeApply: (CGSize, () -> TextNode?) = (CGSize(), { nil })
         var viaWidth: CGFloat = 0.0
 
@@ -2820,9 +2901,31 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 } else if rankBadgeSizeAndApply.0.size.width > 0.0 {
                     headerSizeWidth += rankBadgeSizeAndApply.0.size.width + 3.0
                 }
-                                
+
                 headerSize.width = max(headerSize.width, headerSizeWidth)
                 headerSize.height += nameNodeSizeApply.0.height
+            }
+
+            if displayEphemeralBadge, let ephemeralBadgeText {
+                let textColor = incoming ? UIColor(rgb: 0x49a355) : messageTheme.secondaryTextColor
+                let attributedString = NSAttributedString(string: ephemeralBadgeText, font: inlineBotPrefixFont, textColor: textColor)
+                let reservedWidth = ephemeralBadgeIconSize.width + ephemeralBadgeIconSpacing + ephemeralBadgeHorizontalInset * 2.0
+                let sizeAndApply = ephemeralBadgeLayout(TextNodeLayoutArguments(attributedString: attributedString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: max(0.0, maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right - reservedWidth), height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+                if sizeAndApply.0.size.width > 0.0 {
+                    let backgroundSize = CGSize(width: sizeAndApply.0.size.width + ephemeralBadgeIconSize.width + ephemeralBadgeIconSpacing + ephemeralBadgeHorizontalInset * 2.0, height: ephemeralBadgeHeight)
+                    ephemeralBadgeNodeSizeApply = (sizeAndApply.0.size, backgroundSize, {
+                        return sizeAndApply.1()
+                    })
+
+                    if headerSize.height.isZero {
+                        headerSize.height += 7.0
+                    } else {
+                        headerSize.height += 3.0
+                    }
+                    ephemeralBadgeOriginY = headerSize.height - 1.0
+                    headerSize.width = max(headerSize.width, backgroundSize.width + bubbleWidthInsets)
+                    headerSize.height += ephemeralBadgeHeight + 2.0
+                }
             }
 
             if !ignoreForward && !isInstantVideo, let forwardInfo = firstMessage.forwardInfo {
@@ -3714,6 +3817,11 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 currentCredibilityIcon: currentCredibilityIcon,
                 isEGCredibilityBadge: isEGCredibilityBadge,
                 rankBadgeNodeSizeApply: rankBadgeNodeSizeApply,
+                ephemeralBadgeNodeSizeApply: ephemeralBadgeNodeSizeApply,
+                ephemeralBadgeOriginY: layoutInsets.top + ephemeralBadgeOriginY + detachedContentNodesHeight + additionalTopHeight,
+                ephemeralBadgeIconSize: ephemeralBadgeIconSize,
+                ephemeralBadgeIconSpacing: ephemeralBadgeIconSpacing,
+                ephemeralBadgeHorizontalInset: ephemeralBadgeHorizontalInset,
                 boostNodeSizeApply: boostNodeSizeApply,
                 contentUpperRightCorner: contentUpperRightCorner,
                 threadInfoSizeApply: threadInfoSizeApply,
@@ -3784,6 +3892,11 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         currentCredibilityIcon: (EmojiStatusComponent.Content, UIColor?)?,
         isEGCredibilityBadge: Bool,
         rankBadgeNodeSizeApply: (CGSize, () -> TextNode?, UIColor?),
+        ephemeralBadgeNodeSizeApply: (CGSize, CGSize, () -> TextNode?),
+        ephemeralBadgeOriginY: CGFloat,
+        ephemeralBadgeIconSize: CGSize,
+        ephemeralBadgeIconSpacing: CGFloat,
+        ephemeralBadgeHorizontalInset: CGFloat,
         boostNodeSizeApply: (CGSize, () -> TextNode?),
         contentUpperRightCorner: CGPoint,
         threadInfoSizeApply: (CGSize, (Bool) -> ChatMessageThreadInfoNode?),
@@ -4532,6 +4645,103 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             strongSelf.boostButtonNode = nil
             strongSelf.boostHighlightNode?.removeFromSupernode()
             strongSelf.boostHighlightNode = nil
+        }
+
+        if let ephemeralBadgeTextNode = ephemeralBadgeNodeSizeApply.2() {
+            strongSelf.ephemeralBadgeTextNode = ephemeralBadgeTextNode
+            ephemeralBadgeTextNode.displaysAsynchronously = !item.presentationData.isPreview && !item.presentationData.theme.theme.forceSync
+
+            let messageTheme = incoming ? item.presentationData.theme.theme.chat.message.incoming : item.presentationData.theme.theme.chat.message.outgoing
+            let textColor = incoming ? UIColor(rgb: 0x49a355) : messageTheme.secondaryTextColor
+            let backgroundColor = textColor.withMultipliedAlpha(0.1)
+            let backgroundFrame = CGRect(origin: CGPoint(x: contentOrigin.x + layoutConstants.text.bubbleInsets.left, y: layoutConstants.bubble.contentInsets.top + ephemeralBadgeOriginY), size: ephemeralBadgeNodeSizeApply.1)
+            let iconFrame = CGRect(origin: CGPoint(x: backgroundFrame.minX + ephemeralBadgeHorizontalInset, y: floorToScreenPixels(backgroundFrame.midY - ephemeralBadgeIconSize.height * 0.5)), size: ephemeralBadgeIconSize)
+            let textFrame = CGRect(origin: CGPoint(x: iconFrame.maxX + ephemeralBadgeIconSpacing, y: floorToScreenPixels(backgroundFrame.midY - ephemeralBadgeNodeSizeApply.0.height * 0.5)), size: ephemeralBadgeNodeSizeApply.0)
+
+            if ephemeralBadgeTextNode.supernode == nil {
+                if !ephemeralBadgeTextNode.isNodeLoaded {
+                    ephemeralBadgeTextNode.isUserInteractionEnabled = false
+                }
+                strongSelf.clippingNode.addSubnode(ephemeralBadgeTextNode)
+                ephemeralBadgeTextNode.frame = textFrame
+
+                if animation.isAnimated {
+                    ephemeralBadgeTextNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
+                }
+            } else {
+                animation.animator.updateFrame(layer: ephemeralBadgeTextNode.layer, frame: textFrame, completion: nil)
+            }
+
+            let backgroundNode: ASImageNode
+            if let current = strongSelf.ephemeralBadgeBackgroundNode {
+                backgroundNode = current
+            } else {
+                backgroundNode = ASImageNode()
+                backgroundNode.displaysAsynchronously = false
+                backgroundNode.isUserInteractionEnabled = false
+                strongSelf.ephemeralBadgeBackgroundNode = backgroundNode
+            }
+            if themeUpdated || backgroundNode.image == nil {
+                backgroundNode.image = generateStretchableFilledCircleImage(radius: backgroundFrame.height * 0.5, color: backgroundColor)
+            }
+            if backgroundNode.supernode == nil {
+                strongSelf.clippingNode.insertSubnode(backgroundNode, belowSubnode: ephemeralBadgeTextNode)
+                backgroundNode.frame = backgroundFrame
+
+                if animation.isAnimated {
+                    backgroundNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
+                }
+            } else {
+                animation.animator.updateFrame(layer: backgroundNode.layer, frame: backgroundFrame, completion: nil)
+            }
+
+            let iconNode: UIImageView
+            if let current = strongSelf.ephemeralBadgeIconNode {
+                iconNode = current
+            } else {
+                iconNode = UIImageView()
+                iconNode.isUserInteractionEnabled = false
+                iconNode.contentMode = .scaleAspectFit
+                strongSelf.ephemeralBadgeIconNode = iconNode
+                strongSelf.clippingNode.view.addSubview(iconNode)
+
+                if animation.isAnimated {
+                    iconNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
+                }
+            }
+            if themeUpdated || iconNode.image == nil {
+                iconNode.image = UIImage(bundleImageName: "Chat/Message/Hidden")?.withRenderingMode(.alwaysTemplate)
+            }
+            iconNode.tintColor = textColor
+            animation.animator.updateFrame(layer: iconNode.layer, frame: iconFrame, completion: nil)
+        } else {
+            if animation.isAnimated {
+                if let backgroundNode = strongSelf.ephemeralBadgeBackgroundNode {
+                    strongSelf.ephemeralBadgeBackgroundNode = nil
+                    backgroundNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.1, removeOnCompletion: false, completion: { [weak backgroundNode] _ in
+                        backgroundNode?.removeFromSupernode()
+                    })
+                }
+                if let textNode = strongSelf.ephemeralBadgeTextNode {
+                    strongSelf.ephemeralBadgeTextNode = nil
+                    textNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.1, removeOnCompletion: false, completion: { [weak textNode] _ in
+                        textNode?.removeFromSupernode()
+                    })
+                }
+                if let iconNode = strongSelf.ephemeralBadgeIconNode {
+                    strongSelf.ephemeralBadgeIconNode = nil
+                    iconNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.1, removeOnCompletion: false, completion: { [weak iconNode] _ in
+                        iconNode?.removeFromSuperview()
+                    })
+                }
+            } else {
+                strongSelf.ephemeralBadgeBackgroundNode?.removeFromSupernode()
+                strongSelf.ephemeralBadgeBackgroundNode = nil
+                strongSelf.ephemeralBadgeTextNode?.removeFromSupernode()
+                strongSelf.ephemeralBadgeTextNode = nil
+                strongSelf.ephemeralBadgeIconNode?.removeFromSuperview()
+                strongSelf.ephemeralBadgeIconNode = nil
+            }
         }
             
         let timingFunction = kCAMediaTimingFunctionSpring        
@@ -6369,7 +6579,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
     override public func transitionNode(id: MessageId, media: Media, adjustRect: Bool) -> (ASDisplayNode, CGRect, () -> (UIView?, UIView?))? {
         for contentNode in self.contentNodes {
             if let result = contentNode.transitionNode(messageId: id, media: media, adjustRect: adjustRect) {
-                if self.contentNodes.count == 1 && self.contentNodes.first is ChatMessageMediaBubbleContentNode && self.nameNode == nil && self.rankBadgeNode == nil && self.forwardInfoNode == nil && self.replyInfoNode == nil {
+                if self.contentNodes.count == 1 && self.contentNodes.first is ChatMessageMediaBubbleContentNode && self.nameNode == nil && self.rankBadgeNode == nil && self.ephemeralBadgeTextNode == nil && self.forwardInfoNode == nil && self.replyInfoNode == nil {
                     return (result.0, result.1, { [weak self] in
                         guard let strongSelf = self, let resultView = result.2().0 else {
                             return (nil, nil)
@@ -6416,7 +6626,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             for contentNode in self.contentNodes {
                 if let contentItem = contentNode.item {
                     if contentNode.updateHiddenMedia(item.controllerInteraction.hiddenMedia[contentItem.message.id]) {
-                        if self.contentNodes.count == 1 && self.contentNodes.first is ChatMessageMediaBubbleContentNode && self.nameNode == nil && self.rankBadgeNode == nil && self.forwardInfoNode == nil && self.replyInfoNode == nil {
+                        if self.contentNodes.count == 1 && self.contentNodes.first is ChatMessageMediaBubbleContentNode && self.nameNode == nil && self.rankBadgeNode == nil && self.ephemeralBadgeTextNode == nil && self.forwardInfoNode == nil && self.replyInfoNode == nil {
                             hasHiddenBackground = true
                         }
                         if let mosaicStatusNode = self.mosaicStatusNode, mosaicStatusNode.frame.intersects(contentNode.frame) {

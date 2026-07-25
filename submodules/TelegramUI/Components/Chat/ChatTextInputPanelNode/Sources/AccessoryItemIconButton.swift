@@ -165,7 +165,7 @@ final class AccessoryItemIconButton: HighlightTrackingButton, GlassBackgroundVie
                 if let timeout = timeout {
                     return (nil, shortTimeIntervalString(strings: strings, value: timeout), strings.VoiceOver_SelfDestructTimerOn(timeIntervalString(strings: strings, value: timeout)).string, 1.0, UIEdgeInsets())
                 } else {
-                    return (PresentationResourcesChat.chatInputTextFieldTimerImage(theme), nil, strings.VoiceOver_SelfDestructTimerOff, 1.0, UIEdgeInsets(top: 0.0, left: 0.0, bottom: 0.0, right: 0.0))
+                    return (PresentationResourcesChat.chatInputTextFieldTimerImage(theme), nil, strings.VoiceOver_SelfDestructTimerOff, 1.0, UIEdgeInsets(top: 1.0, left: 0.0, bottom: -1.0, right: 0.0))
                 }
             case .scheduledMessages:
                 return (PresentationResourcesChat.chatInputTextFieldScheduleImage(theme), nil, strings.VoiceOver_ScheduledMessages, 1.0, UIEdgeInsets())
@@ -192,13 +192,14 @@ final class AccessoryItemIconButton: HighlightTrackingButton, GlassBackgroundVie
         let previousItem = self.item
         self.item = item
         
-        let (updatedImage, text, _, _, _) = AccessoryItemIconButton.imageAndInsets(item: item, theme: self.theme, strings: self.strings)
+        let (updatedImage, text, _, _, insets) = AccessoryItemIconButton.imageAndInsets(item: item, theme: self.theme, strings: self.strings)
         
         if let image = self.iconImageView.image {
             self.iconImageView.image = updatedImage
             
             let bottomInset: CGFloat = 0.0
             var imageFrame = CGRect(origin: CGPoint(x: floor((size.width - image.size.width) / 2.0), y: floor((size.height - image.size.height) / 2.0) - bottomInset), size: image.size)
+            imageFrame.origin.y += insets.top
             if case .scheduledMessages = item {
                 imageFrame.origin.y += 1.0
             }

@@ -2928,6 +2928,11 @@ let storyMaxCombinedVideoDuration: Double = storyMaxVideoDuration * Double(story
 let avatarMaxVideoDuration: Double = 10.0
 
 public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UIDropInteractionDelegate {
+    public enum AvatarClipStyle {
+        case round
+        case roundedRect
+    }
+
     public enum Mode {
         public enum StickerEditorMode {
             case generic(canSend: Bool)
@@ -2939,7 +2944,7 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
         case storyEditor(remainingCount: Int32)
         case stickerEditor(mode: StickerEditorMode)
         case botPreview
-        case avatarEditor
+        case avatarEditor(clipStyle: AvatarClipStyle = .round)
         case coverEditor(dimensions: CGSize)
     }
     
@@ -4707,6 +4712,7 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
                 let destinationLocalFrame = destinationView.convert(transitionOut.destinationRect, to: self.view)
                 let destinationScale = destinationLocalFrame.width / self.previewContainerView.frame.width
                 let destinationAspectRatio = destinationLocalFrame.height / destinationLocalFrame.width
+                let targetCornerRadius = destinationScale > 0.0 ? transitionOut.destinationCornerRadius / destinationScale : 0.0
                 
                 var destinationSnapshotView: UIView?
                 if let destinationNode = destinationView.asyncdisplaykit_node as? AvatarNode {
@@ -4714,7 +4720,7 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
                     if let image = destinationNode.unroundedImage {
                         destinationTransitionView = UIImageView(image: image)
                         destinationTransitionView?.bounds = destinationNode.bounds
-                        destinationTransitionView?.layer.cornerRadius = destinationNode.bounds.width / 2.0
+                        destinationTransitionView?.layer.cornerRadius = transitionOut.destinationCornerRadius
                     } else if let snapshotView = destinationView.snapshotView(afterScreenUpdates: false) {
                         destinationTransitionView = snapshotView
                     } else {
@@ -4742,7 +4748,7 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
                     if let image = destinationNode.unroundedImage {
                         destinationTransitionView = UIImageView(image: image)
                         destinationTransitionView?.bounds = destinationNode.bounds
-                        destinationTransitionView?.layer.cornerRadius = destinationNode.bounds.width / 2.0
+                        destinationTransitionView?.layer.cornerRadius = transitionOut.destinationCornerRadius
                     } else if let snapshotView = destinationView.snapshotView(afterScreenUpdates: false) {
                         destinationTransitionView = snapshotView
                     } else {
@@ -4784,16 +4790,9 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
                     })
                 }
                 
-                let targetCornerRadius: CGFloat
-                if transitionOut.destinationCornerRadius > 0.0 {
-                    targetCornerRadius = self.previewContainerView.bounds.width
-                } else {
-                    targetCornerRadius = 0.0
-                }
-                
                 self.previewContainerView.layer.animate(
                     from: self.previewContainerView.layer.cornerRadius as NSNumber,
-                    to: targetCornerRadius / 2.0 as NSNumber,
+                    to: targetCornerRadius as NSNumber,
                     keyPath: "cornerRadius",
                     timingFunction: kCAMediaTimingFunctionSpring,
                     duration: 0.4,
@@ -4809,7 +4808,7 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
                         componentView.layer.animateBounds(from: componentView.bounds, to: CGRect(origin: CGPoint(x: 0.0, y: (componentView.bounds.height - componentView.bounds.width) / 2.0), size: CGSize(width: componentView.bounds.width, height: componentView.bounds.width)), duration: 0.4, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
                         componentView.layer.animate(
                             from: componentView.layer.cornerRadius as NSNumber,
-                            to: componentView.bounds.width / 2.0 as NSNumber,
+                            to: targetCornerRadius as NSNumber,
                             keyPath: "cornerRadius",
                             timingFunction: kCAMediaTimingFunctionSpring,
                             duration: 0.4,
@@ -6522,8 +6521,18 @@ public final class MediaEditorScreenImpl: ViewController, MediaEditorScreen, UID
                 var cropScrollRect = CGSize(width: previewSize.width, height: previewSize.width).centered(around: stickerFrameRect.center)
                 
                 switch controller.mode {
-                case .avatarEditor:
-                    overlayInnerRect = UIBezierPath(cgPath: CGPath(ellipseIn: stickerFrameRect, transform: nil))
+                case let .avatarEditor(clipStyle):
+                    switch clipStyle {
+                    case .round:
+                        overlayInnerRect = UIBezierPath(cgPath: CGPath(ellipseIn: stickerFrameRect, transform: nil))
+                    case .roundedRect:
+                        overlayInnerRect = UIBezierPath(cgPath: CGPath(
+                            roundedRect: stickerFrameRect,
+                            cornerWidth: stickerFrameWidth / 4.0,
+                            cornerHeight: stickerFrameWidth / 4.0,
+                            transform: nil
+                        ))
+                    }
                     stickerFrameLayer.isHidden = true
                 case let .coverEditor(dimensions):
                     let fittedSize: CGSize

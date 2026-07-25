@@ -65,6 +65,7 @@ public final class ChatListNavigationBar: Component {
     public let tabsNodeIsSearch: Bool
     public let accessoryPanelContainer: ASDisplayNode?
     public let accessoryPanelContainerHeight: CGFloat
+    public let hasEdgeEffect: Bool
     public let activateSearch: (NavigationBarSearchContentNode) -> Void
     public let openStatusSetup: (UIView) -> Void
     public let allowAutomaticOrder: () -> Void
@@ -88,6 +89,7 @@ public final class ChatListNavigationBar: Component {
         tabsNodeIsSearch: Bool,
         accessoryPanelContainer: ASDisplayNode?,
         accessoryPanelContainerHeight: CGFloat,
+        hasEdgeEffect: Bool = true,
         activateSearch: @escaping (NavigationBarSearchContentNode) -> Void,
         openStatusSetup: @escaping (UIView) -> Void,
         allowAutomaticOrder: @escaping () -> Void
@@ -110,6 +112,7 @@ public final class ChatListNavigationBar: Component {
         self.tabsNodeIsSearch = tabsNodeIsSearch
         self.accessoryPanelContainer = accessoryPanelContainer
         self.accessoryPanelContainerHeight = accessoryPanelContainerHeight
+        self.hasEdgeEffect = hasEdgeEffect
         self.activateSearch = activateSearch
         self.openStatusSetup = openStatusSetup
         self.allowAutomaticOrder = allowAutomaticOrder
@@ -168,6 +171,9 @@ public final class ChatListNavigationBar: Component {
             return false
         }
         if lhs.accessoryPanelContainerHeight != rhs.accessoryPanelContainerHeight {
+            return false
+        }
+        if lhs.hasEdgeEffect != rhs.hasEdgeEffect {
             return false
         }
         return true
@@ -694,6 +700,9 @@ public final class ChatListNavigationBar: Component {
             if component.activeSearch == nil {
                 color = component.theme.list.plainBackgroundColor.mixedWith(component.theme.chatList.pinnedItemBackgroundColor, alpha: self.pinnedFraction)
             }
+            if !component.hasEdgeEffect {
+                color = component.theme.list.itemModalBlocksBackgroundColor
+            }
             self.edgeEffectView.updateColor(color: color, transition: transition)
         }
         
@@ -805,6 +814,8 @@ public final class ChatListNavigationBar: Component {
             }
             
             self.updateEdgeEffectColor(transition: transition)
+            
+            self.edgeEffectView.isHidden = !component.hasEdgeEffect
             
             return size
         }

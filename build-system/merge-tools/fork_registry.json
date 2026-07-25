@@ -126,6 +126,11 @@
       "name": "EGGTranslate wired into TelegramCore",
       "path": "submodules/TelegramCore/BUILD",
       "pattern": "EGGTranslate"
+    },
+    {
+      "name": "PeersNearby: input panel interaction hook",
+      "path": "submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelComponent.swift",
+      "pattern": "openPeersNearby"
     }
   ],
   "hook_markers": [
