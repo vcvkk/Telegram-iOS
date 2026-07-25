@@ -139,3 +139,15 @@ jobs:
         with:
           path: ~/telegram-bazel-cache
           key: bazel-${{ runner.os }}-dbg-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'versions.json') }}-${{ github.run_id }}
+
+      # Repeat of the "Error summary" step, kept last on purpose: the cache
+      # save/upload steps emit ~130 lines of progress noise, which pushes the
+      # digest out of reach of a cheap `tail` of the job log. Anything reading
+      # the log through the API gets the diagnostics without paging back.
+      - name: Error summary (tail)
+        if: always()
+        run: |
+          if [ ! -f /tmp/errors.txt ]; then exit 0; fi
+          echo "================ COMPILE ERRORS ================"
+          cat /tmp/errors.txt
+          echo "==============================================="
