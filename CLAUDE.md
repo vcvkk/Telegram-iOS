@@ -58,7 +58,19 @@ and strands files at the old version.
    python3 build-system/merge-tools/fork_inventory.py        # fork-only declarations survived
    python3 build-system/merge-tools/check_duplicate_types.py # no redeclarations
    python3 build-system/merge-tools/check_build_deps.py      # no "no such module"
+   python3 build-system/merge-tools/check_api_drift.py --upstream /tmp/upstream/release-<NEW>
    ```
+   `check_api_drift.py` is the one worth running *first*. It compares the
+   `AccountContext` protocol surface and its `SharedAccountContext`
+   implementation against upstream, normalising away the deliberate
+   `Peer`/`Message`/`postbox:` divergence, and reports what is left. That
+   residue is always a cross-module bridge left behind while its callers and
+   its underlying factory moved on — a shape the compiler only reports after
+   everything ahead of it in the graph builds, so each one otherwise costs a
+   full CI round. Four of the 12.9.2 rounds went to exactly this
+   (`makeTextProcessingScreen`, `makeAvatarMediaPickerScreen`,
+   `makeLinkEditController`, `makeGalleryCaptionPanelView`).
+
    Add an entry to `fork_registry.json` whenever a bump turns out to have
    dropped something.
 6. **CI.** Both workflows run on `master` only: `validate.yml` (debug, compile

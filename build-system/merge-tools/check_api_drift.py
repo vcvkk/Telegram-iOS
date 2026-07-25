@@ -21,14 +21,16 @@ Exits non-zero when drift is found.
 """
 
 import argparse
+import glob
 import os
 import re
 import sys
 
 # Files whose declarations are cross-module contracts: a mismatch here is not
-# caught until late in the build, so they are worth checking eagerly.
-DEFAULT_PATHS = [
-    "submodules/AccountContext/Sources/AccountContext.swift",
+# caught until late in the build, so they are worth checking eagerly. The whole
+# of AccountContext is the protocol surface; SharedAccountContext implements it.
+DEFAULT_PATH_GLOBS = [
+    "submodules/AccountContext/Sources/*.swift",
     "submodules/TelegramUI/Sources/SharedAccountContext.swift",
 ]
 
@@ -53,18 +55,37 @@ MODULE_QUALIFIER = re.compile(
     r"\b(?:TelegramCore|Postbox|Display|TelegramUIPreferences|AccountContext)\."
 )
 
-FUNC_START = re.compile(r"\s*(?:public\s+|private\s+|internal\s+)?func\s+(\w+)\s*\(")
+ACCESS = r"(?:public\s+|private\s+|internal\s+|fileprivate\s+|open\s+)?"
+
+# A declaration is anything whose shape is part of the module's API surface:
+# functions, enum cases, and stored properties. The 12.9.2 bump lost drift in
+# all three (`makeGalleryCaptionPanelView`, `TextProcessingScreenMode.generate`,
+# `TextProcessingScreenSendContextActions.send`), so checking only `func` is
+# not enough.
+DECL_PATTERNS = [
+    re.compile(r"\s*" + ACCESS + r"(?:static\s+)?func\s+(\w+)\s*[(<]"),
+    re.compile(r"\s*case\s+(\w+)\s*[({]"),
+    re.compile(r"\s*" + ACCESS + r"(?:static\s+)?(?:let|var)\s+(\w+)\s*:"),
+]
+
+
+def match_declaration(line):
+    for pattern in DECL_PATTERNS:
+        match = pattern.match(line)
+        if match:
+            return match
+    return None
 
 
 def collect_signatures(path):
-    """Map function name -> list of one-line signatures declared in `path`."""
+    """Map declaration name -> list of one-line signatures declared in `path`."""
     with open(path, encoding="utf-8", errors="replace") as handle:
         lines = handle.read().split("\n")
 
     signatures = {}
     index = 0
     while index < len(lines):
-        match = FUNC_START.match(lines[index])
+        match = match_declaration(lines[index])
         if not match:
             index += 1
             continue
@@ -99,6 +120,9 @@ def normalize(signature):
         result = result.replace(engine_type, fork_type)
     # The fork keeps `postbox:` argument labels where upstream renamed them.
     result = result.replace("engine:", "postbox:")
+    # `let` vs `var` is never a caller-side compile break, and the fork turns
+    # several upstream `let`s into computed `var`s (see PeerNameColors.Colors).
+    result = re.sub(r"\b(?:let|var)\s+", "var ", result)
     return result
 
 
@@ -106,7 +130,7 @@ def check(relative_path, upstream_root):
     upstream_path = os.path.join(upstream_root, relative_path)
     if not os.path.exists(relative_path) or not os.path.exists(upstream_path):
         print(f"skip {relative_path}: missing on one side")
-        return []
+        return None
 
     ours = collect_signatures(relative_path)
     theirs = collect_signatures(upstream_path)
@@ -135,14 +159,22 @@ def main():
     parser.add_argument(
         "--paths",
         nargs="*",
-        default=DEFAULT_PATHS,
-        help="repo-relative files to check",
+        default=None,
+        help="repo-relative files to check (default: the AccountContext surface)",
     )
     args = parser.parse_args()
 
+    paths = args.paths
+    if paths is None:
+        paths = sorted(
+            path for pattern in DEFAULT_PATH_GLOBS for path in glob.glob(pattern)
+        )
+
     total = 0
-    for relative_path in args.paths:
+    for relative_path in paths:
         drift = check(relative_path, args.upstream)
+        if drift is None:
+            continue
         total += len(drift)
         if not drift:
             print(f"OK: {relative_path} — no API drift vs upstream")

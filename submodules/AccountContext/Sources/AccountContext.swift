@@ -796,7 +796,7 @@ public enum PeerInfoControllerMode {
     case generic
     case calls(messages: [Message])
     case nearbyPeer(distance: Int32)
-    case group(PeerId)
+    case group(sourceMessageId: MessageId)
     case reaction(MessageId)
     case forumTopic(thread: ChatReplyThreadMessage)
     case recommendedChannels
@@ -1361,10 +1361,10 @@ public protocol ChannelMembersSearchController: ViewController {
 
 public final class TextProcessingScreenSendContextActions {
     public let peerId: EnginePeer.Id
-    public let send: (TextWithEntities, ChatSendMessageActionSheetController.SendMode, ChatSendMessageActionSheetController.SendParameters?) -> Void
-    public let schedule: (TextWithEntities, ChatSendMessageActionSheetController.SendParameters?) -> Void
+    public let send: (ComposedRichMessage, ChatSendMessageActionSheetController.SendMode, ChatSendMessageActionSheetController.SendParameters?) -> Void
+    public let schedule: (ComposedRichMessage, ChatSendMessageActionSheetController.SendParameters?) -> Void
     
-    public init(peerId: EnginePeer.Id, send: @escaping (TextWithEntities, ChatSendMessageActionSheetController.SendMode, ChatSendMessageActionSheetController.SendParameters?) -> Void, schedule: @escaping (TextWithEntities, ChatSendMessageActionSheetController.SendParameters?) -> Void) {
+    public init(peerId: EnginePeer.Id, send: @escaping (ComposedRichMessage, ChatSendMessageActionSheetController.SendMode, ChatSendMessageActionSheetController.SendParameters?) -> Void, schedule: @escaping (ComposedRichMessage, ChatSendMessageActionSheetController.SendParameters?) -> Void) {
         self.peerId = peerId
         self.send = send
         self.schedule = schedule
@@ -1372,10 +1372,10 @@ public final class TextProcessingScreenSendContextActions {
 }
 
 public enum TextProcessingScreenMode {
-    case edit(saveRestoreStateId: EnginePeer.Id?, completion: (TextWithEntities) -> Void, send: ((TextWithEntities) -> Void)?, sendContextActions: TextProcessingScreenSendContextActions?)
-    case translate(fromLanguage: String?, applyResult: ((TextWithEntities) -> Void)?)
-    // MARK: exteraGram
+    case edit(saveRestoreStateId: EnginePeer.Id?, completion: (ComposedRichMessage) -> Void, send: ((ComposedRichMessage) -> Void)?, sendContextActions: TextProcessingScreenSendContextActions?)
+    case translate(fromLanguage: String?, applyResult: ((ComposedRichMessage) -> Void)?)
     case preview(style: TelegramComposeAIMessageMode.CloudStyle.Custom, authorPeer: EnginePeer?, initialPreview: AIMessageStylePreview?, isAlreadyAdded: Bool, added: () -> Void)
+    case generate(completion: (ComposedRichMessage) -> Void)
 }
 
 public enum EmojiStatusSelectionControllerMode {
