@@ -1627,8 +1627,8 @@ public protocol SharedAccountContext: AnyObject {
         context: AccountContext,
         theme: PresentationTheme?,
         mode: TextProcessingScreenMode,
-        inputText: TextWithEntities,
-        copyResult: ((TextWithEntities) -> Void)?,
+        inputText: ComposedRichMessage,
+        copyResult: ((ComposedRichMessage) -> Void)?,
         translateChat: ((String) -> Void)?
     ) async -> ViewController
     func makeCreateBotScreen(

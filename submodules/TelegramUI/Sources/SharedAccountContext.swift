@@ -4494,8 +4494,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         context: AccountContext,
         theme: PresentationTheme?,
         mode: TextProcessingScreenMode,
-        inputText: TextWithEntities,
-        copyResult: ((TextWithEntities) -> Void)?,
+        inputText: ComposedRichMessage,
+        copyResult: ((ComposedRichMessage) -> Void)?,
         translateChat: ((String) -> Void)?
     ) async -> ViewController {
         return await TextProcessingScreen(
