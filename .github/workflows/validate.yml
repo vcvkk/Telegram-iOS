@@ -1,0 +1,138 @@
+name: Validate build
+
+# Fast compile-only check used while iterating on merges/fixes.
+#
+# Differences from main.yml (which stays the release gate):
+#   - debug_arm64 (-c dbg) instead of release (-c opt + WMO + osize)
+#   - no dSYM generation, no IPA packaging, no artifact upload, no release
+#   - --continueOnError (=> bazel --keep_going) so one run reports the errors of
+#     every independent module instead of stopping at the first failure
+on:
+  push:
+    branches:
+      - 'claude/**'
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: 'Build configuration (debug_arm64 or release_arm64)'
+        required: false
+        default: 'debug_arm64'
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          fetch-depth: '0'
+
+      - name: Set active Xcode path
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE_PATH" ]; then
+            XCODE_PATH=$(xcode-select -p | sed 's|/Contents/Developer||')
+          fi
+          echo "Using Xcode at: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
+
+      # Own key track for debug artifacts, with fallback to any bazel cache.
+      - name: Restore Bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/telegram-bazel-cache
+          key: bazel-${{ runner.os }}-dbg-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'versions.json') }}-${{ github.run_id }}
+          restore-keys: |
+            bazel-${{ runner.os }}-dbg-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'versions.json') }}-
+            bazel-${{ runner.os }}-dbg-
+            bazel-${{ runner.os }}-
+
+      - name: Create canonical source directory
+        run: |
+          set -x
+          sudo mkdir -p /Users/Shared
+          cp -R $GITHUB_WORKSPACE /Users/Shared/
+          mv /Users/Shared/$(basename $GITHUB_WORKSPACE) /Users/Shared/telegram-ios
+
+      - name: Compile
+        id: compile
+        run: |
+          set -o pipefail
+          SOURCE_DIR=/Users/Shared/telegram-ios
+          BAZEL_USER_ROOT="/private/var/tmp/_bazel_containerhost"
+          cd $SOURCE_DIR
+
+          BUILD_NUMBER_OFFSET="$(cat build_number_offset)"
+          export COMMIT_COUNT=$(git rev-list --count HEAD)
+          export BUILD_NUMBER="$(($COMMIT_COUNT+$BUILD_NUMBER_OFFSET))"
+
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+
+          python3 -u build-system/Make/Make.py \
+            --bazelUserRoot="$BAZEL_USER_ROOT" \
+            --cacheDir="$HOME/telegram-bazel-cache" \
+            --overrideXcodeVersion \
+            build \
+            --continueOnError \
+            --configurationPath="build-system/appstore-configuration.json" \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --configuration=${{ github.event.inputs.configuration || 'debug_arm64' }} \
+            --buildNumber="$BUILD_NUMBER" \
+            2>&1 | tee /tmp/build.log
+
+      # Compact error digest so a failing run can be triaged from the summary
+      # without downloading the ~700 KB raw log.
+      - name: Error summary
+        if: always()
+        run: |
+          if [ ! -f /tmp/build.log ]; then echo "No build log."; exit 0; fi
+          python3 build-system/merge-tools/parse_ci_errors.py /tmp/build.log \
+            | tee /tmp/errors.txt
+          {
+            echo '## Compile errors'
+            echo '```'
+            cat /tmp/errors.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build.log
+          retention-days: 7
+
+      - name: Trim Bazel cache
+        if: always()
+        run: |
+          CACHE_DIR="$HOME/telegram-bazel-cache"
+          [ -d "$CACHE_DIR" ] || exit 0
+          LIMIT_MB=7000
+          SIZE_MB=$(du -sm "$CACHE_DIR" | cut -f1)
+          echo "Bazel disk cache: ${SIZE_MB} MB (limit ${LIMIT_MB} MB)"
+          if [ "$SIZE_MB" -gt "$LIMIT_MB" ]; then
+            NEED_BYTES=$(( (SIZE_MB - LIMIT_MB) * 1048576 ))
+            find "$CACHE_DIR" -type f -exec stat -f '%a %z %N' {} + 2>/dev/null \
+              | sort -n > /tmp/cache_lru.txt
+            FREED=0
+            while read -r _atime size path; do
+              rm -f "$path" 2>/dev/null || continue
+              FREED=$(( FREED + size ))
+              if [ "$FREED" -ge "$NEED_BYTES" ]; then break; fi
+            done < /tmp/cache_lru.txt
+            echo "Freed $(( FREED / 1048576 )) MB; now $(du -sm "$CACHE_DIR" | cut -f1) MB"
+          fi
+
+      - name: Save Bazel cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/telegram-bazel-cache
+          key: bazel-${{ runner.os }}-dbg-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'versions.json') }}-${{ github.run_id }}

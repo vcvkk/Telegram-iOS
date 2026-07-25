@@ -31,12 +31,18 @@ jobs:
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
 
-      - name: Cache Bazel
-        uses: actions/cache@v4
+      # Restore-only: the matching save step runs at the end with if: always(),
+      # so the cache keeps growing even when the build fails. With a plain
+      # actions/cache the cache is never saved on failure, which meant every
+      # run rebuilt everything from scratch (0 disk cache hits, ~48 min).
+      - name: Restore Bazel cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/telegram-bazel-cache
-          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'versions.json') }}
+          key: bazel-${{ runner.os }}-opt-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'versions.json') }}-${{ github.run_id }}
           restore-keys: |
+            bazel-${{ runner.os }}-opt-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'versions.json') }}-
+            bazel-${{ runner.os }}-opt-
             bazel-${{ runner.os }}-
 
       - name: Create canonical source directory
@@ -85,6 +91,37 @@ jobs:
           python3 $SOURCE_DIR/.github/scripts/inject_symbols.py \
             "$OUTPUT_PATH/DSYMs" \
             "$OUTPUT_PATH/exteraGram.ipa" || true
+
+      # GitHub caps a repo's cache at 10 GB; an unbounded bazel disk cache would
+      # exceed it and the save would be rejected. Trim oldest entries first.
+      - name: Trim Bazel cache
+        if: always()
+        run: |
+          CACHE_DIR="$HOME/telegram-bazel-cache"
+          [ -d "$CACHE_DIR" ] || exit 0
+          LIMIT_MB=7000
+          SIZE_MB=$(du -sm "$CACHE_DIR" | cut -f1)
+          echo "Bazel disk cache: ${SIZE_MB} MB (limit ${LIMIT_MB} MB)"
+          if [ "$SIZE_MB" -gt "$LIMIT_MB" ]; then
+            NEED_BYTES=$(( (SIZE_MB - LIMIT_MB) * 1048576 ))
+            # Least-recently-accessed first. BSD stat: %a=atime %z=size %N=path.
+            find "$CACHE_DIR" -type f -exec stat -f '%a %z %N' {} + 2>/dev/null \
+              | sort -n > /tmp/cache_lru.txt
+            FREED=0
+            while read -r _atime size path; do
+              rm -f "$path" 2>/dev/null || continue
+              FREED=$(( FREED + size ))
+              if [ "$FREED" -ge "$NEED_BYTES" ]; then break; fi
+            done < /tmp/cache_lru.txt
+            echo "Freed $(( FREED / 1048576 )) MB; now $(du -sm "$CACHE_DIR" | cut -f1) MB"
+          fi
+
+      - name: Save Bazel cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/telegram-bazel-cache
+          key: bazel-${{ runner.os }}-opt-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'versions.json') }}-${{ github.run_id }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
