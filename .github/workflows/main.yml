@@ -4,12 +4,24 @@ on:
   push:
     branches:
       - master
+    # Changes that cannot affect the built app should not spend a ~48 min
+    # release build (merge tooling, docs, the validate workflow itself).
+    paths-ignore:
+      - 'build-system/merge-tools/**'
+      - '.github/workflows/validate.yml'
+      - '**/*.md'
   workflow_dispatch:
     inputs:
       configuration:
         description: 'Build configuration (release_arm64 or debug_arm64)'
         required: false
         default: 'release_arm64'
+
+# Without this, a burst of pushes queues several full release builds that then
+# run for ~48 min each; only the newest commit is worth building.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:

@@ -11,6 +11,9 @@ on:
   push:
     branches:
       - 'claude/**'
+    paths-ignore:
+      - 'build-system/merge-tools/**'
+      - '**/*.md'
   workflow_dispatch:
     inputs:
       configuration:
