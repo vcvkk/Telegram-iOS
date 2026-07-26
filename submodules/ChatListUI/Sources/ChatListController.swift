@@ -5353,13 +5353,14 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 |> delay(0.8, queue: Queue.mainQueue())
                 let progressDisposable = progressSignal.start()
                 
-                let signal: Signal<Never, JoinChannelError> = self.context.peerChannelMemberCategoriesContextsManager.join(engine: self.context.engine, peerId: peerId, hash: nil)
+                let signal: Signal<JoinChannelResult, JoinChannelError> = self.context.peerChannelMemberCategoriesContextsManager.join(engine: self.context.engine, peerId: peerId, hash: nil)
                 |> afterDisposed {
                     Queue.mainQueue().async {
                         progressDisposable.dispose()
                     }
                 }
                 
+                var didJoin = false
                 self.joinForumDisposable.set((signal
                 |> deliverOnMainQueue).startStrict(next: { [weak self] result in
                     guard let self else {
@@ -7037,7 +7038,7 @@ private final class ChatListLocationContext {
                             return (nil, value)
                         }
                     } else {
-                        return context.peerChannelMemberCategoriesContextsManager.recentOnlineSmall(engine: context.engine, postbox: context.account.postbox, network: context.account.network, accountPeerId: context.account.peerId, peerId: peerId)
+                        return context.peerChannelMemberCategoriesContextsManager.recentOnlineSmall(engine: context.engine, accountPeerId: context.account.peerId, peerId: peerId)
                         |> map { value -> (total: Int32?, recent: Int32?) in
                             return (value.total, value.recent)
                         }
@@ -7567,7 +7568,7 @@ private final class ChatListLocationContext {
                 dateTimeFormat: presentationData.dateTimeFormat,
                 nameDisplayOrder: presentationData.nameDisplayOrder,
                 displayBackground: false,
-                content: .peer(peerView: ChatTitleContent.PeerData(peerView: peerView), customTitle: nil, customSubtitle: nil, onlineMemberCount: onlineMemberCount, isScheduledMessages: false, isMuted: nil, customMessageCount: nil, isEnabled: true),
+                content: .peer(peerView: ChatTitleContent.PeerData(peerView: peerView), customTitle: nil, customSubtitle: nil, onlineMemberCount: onlineMemberCount, isScheduledMessages: false, isMuted: nil, customMessageCount: nil, hidePeerStatus: false, isEnabled: true),
                 activities: nil,
                 networkState: nil,
                 tapped: { [weak self] in

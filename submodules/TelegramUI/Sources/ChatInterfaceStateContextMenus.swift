@@ -1321,7 +1321,6 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                 UIPasteboard.general.string = diceEmoji
                             } else {
                                 let copyTextWithEntities = {
-=======
                                     if let richMessageInstantPage {
                                         // Copy a rich message in the new WYSIWYG-editor clipboard formats
                                         // (fragment + RTF + plain) so it pastes into the composer with full
@@ -1333,7 +1332,6 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                         })
                                         return
                                     }
->>>>>>> theirs
                                     var messageText = message.text
                                     var messageEntities: [MessageTextEntity]?
                                     var restrictedText: String?

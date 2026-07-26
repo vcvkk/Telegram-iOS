@@ -5012,7 +5012,6 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                     }
                 }
                 
-=======
                 if sendAsRichMessage {
                     var attributes: [MessageAttribute] = [RichTextMessageAttribute(instantPage: instantPage(from: composeContent), fullInstantPage: nil)]
 
@@ -5046,7 +5045,6 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                             let entities: [MessageTextEntity]
                             if case let .customChatContents(customChatContents) = self.chatPresentationInterfaceState.subject, case .businessLinkSetup = customChatContents.kind {
                                 entities = generateChatInputTextEntities(text, generateLinks: false)
->>>>>>> theirs
                             } else {
                                 attributes.append(WebpagePreviewMessageAttribute(leadingPreview: !urlPreview.positionBelowText, forceLargeMedia: urlPreview.largeMedia, isManuallyAdded: true, isSafe: false))
                             }

@@ -3647,6 +3647,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
         }, openActiveSessions: {
         }, openBirthdaySetup: {
         }, performActiveSessionAction: { _, _ in
+        }, performBotConnectionReviewAction: { _, _ in
         }, openChatFolderUpdates: {
         }, hideChatFolderUpdates: {
         }, openStories: { [weak self] subject, sourceNode in
@@ -4663,8 +4664,8 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                     } else {
                         gesture?.cancel()
                     }
-                }, clearRecentlySearchedPeers: {
-                    interaction.clearRecentSearch()
+                }, clearRecentlySearchedPeers: { sourceNode in
+                    interaction.clearRecentSearch(sourceNode)
                 }, deletePeer: { peerId in
                     let _ = context.engine.peers.removeRecentlySearchedPeer(peerId: peerId).startStandalone()
                 }, animationCache: strongSelf.animationCache, animationRenderer: strongSelf.animationRenderer, openStories: { peerId, avatarNode in
@@ -5954,6 +5955,7 @@ public final class ChatListSearchShimmerNode: ASDisplayNode {
             }, present: { _ in }, openForumThread: { _, _ in }, openStorageManagement: {}, openPasswordSetup: {}, openPremiumIntro: {}, openPremiumGift: { _, _ in }, openPremiumManagement: {}, openActiveSessions: {
             }, openBirthdaySetup: {
             }, performActiveSessionAction: { _, _ in
+            }, performBotConnectionReviewAction: { _, _ in
             }, openChatFolderUpdates: {}, hideChatFolderUpdates: {
             }, openStories: { _, _ in
             }, openStarsTopup: { _ in

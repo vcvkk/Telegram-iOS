@@ -59,7 +59,16 @@ and strands files at the old version.
    python3 build-system/merge-tools/check_duplicate_types.py # no redeclarations
    python3 build-system/merge-tools/check_build_deps.py      # no "no such module"
    python3 build-system/merge-tools/check_api_drift.py --upstream /tmp/upstream/release-<NEW>
+   python3 build-system/merge-tools/check_syntax_debt.py --upstream /tmp/upstream/release-<NEW>
    ```
+   `check_syntax_debt.py` fails on leftover conflict markers — eight orphaned
+   `>>>>>>> theirs` lines sat committed in `TelegramUI/Sources` for a whole
+   bump, invisible because that module only compiles once everything below it
+   is green. It also lists files whose delimiter balance differs from
+   upstream's; that part is advisory (fork edits shift it legitimately) but it
+   is how two broken merge resolutions were found — a stray `)` where a `}`
+   should have closed an `else`, and an unclosed closure followed by a second
+   `.startStrict(`.
    `check_api_drift.py` is the one worth running *first*. It compares the
    `AccountContext` protocol surface and its `SharedAccountContext`
    implementation against upstream, normalising away the deliberate

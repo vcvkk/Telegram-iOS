@@ -274,9 +274,7 @@ func chatMessageDisplaySendMessageOptions(selfController: ChatControllerImpl, no
                     )
                 }
             }
-=======
 
->>>>>>> theirs
             let controller = makeChatSendMessageActionSheetController(
                 egTranslationContext: egTranslationContext,
                 initialData: initialData,

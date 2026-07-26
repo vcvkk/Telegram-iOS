@@ -2829,7 +2829,7 @@ public class ChatMessagePollBubbleContentNode: ChatMessageBubbleContentNode {
                     }
                 }
                 
-                if let poll = poll, isPollEffectivelyClosed(message: EngineMessage(message), poll: poll) {
+                if let poll = poll, isPollEffectivelyClosed(message: message, poll: poll) {
                     typeText = item.presentationData.strings.MessagePoll_LabelClosed
                 } else if let poll = poll {
                     switch poll.kind {
@@ -2929,7 +2929,7 @@ public class ChatMessagePollBubbleContentNode: ChatMessageBubbleContentNode {
                 
                 let isClosed: Bool
                 if let poll = poll {
-                    isClosed = isPollEffectivelyClosed(message: EngineMessage(message), poll: poll)
+                    isClosed = isPollEffectivelyClosed(message: message, poll: poll)
                 } else {
                     isClosed = false
                 }
@@ -3577,7 +3577,7 @@ public class ChatMessagePollBubbleContentNode: ChatMessageBubbleContentNode {
             }
         }
 
-        let isClosed = isPollEffectivelyClosed(message: EngineMessage(item.message), poll: poll)
+        let isClosed = isPollEffectivelyClosed(message: item.message, poll: poll)
         
         let canAlwaysViewResults = !poll.hideResultsUntilClose && poll.isCreator
         var hasAnyVotes = false

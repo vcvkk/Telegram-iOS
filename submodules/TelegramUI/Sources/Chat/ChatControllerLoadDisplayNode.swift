@@ -1746,7 +1746,6 @@ extension ChatControllerImpl {
                                 }
                             }
                             
-=======
                             let editInputState: ChatTextInputState
                             if let richTextAttribute = message.attributes.first(where: { $0 is RichTextMessageAttribute }) as? RichTextMessageAttribute {
                                 let content = chatInputContent(fromInstantPage: richTextAttribute.instantPage)
@@ -1755,7 +1754,6 @@ extension ChatControllerImpl {
                                 let inputText = chatInputStateStringWithAppliedEntities(message.text, entities: entities)
                                 editInputState = ChatTextInputState(inputText: inputText)
                             }
->>>>>>> theirs
                             var disableUrlPreviews: [String] = []
                             if webpageUrl == nil {
                                 disableUrlPreviews = detectUrls(editInputState.inputText)
@@ -4705,7 +4703,7 @@ extension ChatControllerImpl {
                         translateChat: nil
                     ))
                 }
-            )
+            }
         }, sendEmoji: { [weak self] text, attribute, immediately in
             guard let self else {
                 return

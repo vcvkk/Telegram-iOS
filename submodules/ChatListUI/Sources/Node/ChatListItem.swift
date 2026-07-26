@@ -555,7 +555,7 @@ public class ChatListItem: ListViewItem {
             }
             node.insets = ChatListItemNode.insets(first: first, last: last, firstWithHeader: firstWithHeader)
             
-            let (nodeLayout, apply) = node.asyncLayout()(self, params, first, last, firstWithHeader, nextIsPinned)
+            let (nodeLayout, apply) = node.asyncLayout()(self, params, first, last, firstWithHeader, nextIsPinned, nextHasActiveRevealControls)
             
             node.insets = nodeLayout.insets
             node.contentSize = nodeLayout.contentSize
@@ -593,7 +593,7 @@ public class ChatListItem: ListViewItem {
                         animated = false
                     }
                     
-                    let (nodeLayout, apply) = layout(self, params, first, last, firstWithHeader, nextIsPinned)
+                    let (nodeLayout, apply) = layout(self, params, first, last, firstWithHeader, nextIsPinned, nextHasActiveRevealControls)
                     Queue.mainQueue().async {
                         completion(nodeLayout, { _ in
                             apply(false, animated)
@@ -640,7 +640,7 @@ public class ChatListItem: ListViewItem {
         }
     }
         
-    static func mergeType(item: ChatListItem, previousItem: ListViewItem?, nextItem: ListViewItem?) -> (first: Bool, last: Bool, firstWithHeader: Bool, nextIsPinned: Bool) {
+    static func mergeType(item: ChatListItem, previousItem: ListViewItem?, nextItem: ListViewItem?) -> (first: Bool, last: Bool, firstWithHeader: Bool, nextIsPinned: Bool, nextHasActiveRevealControls: Bool) {
         var first = false
         var last = false
         var firstWithHeader = false
@@ -657,14 +657,16 @@ public class ChatListItem: ListViewItem {
             firstWithHeader = item.header != nil
         }
         var nextIsPinned = false
+        var nextHasActiveRevealControls = false
         if let nextItem = nextItem as? ChatListItem {
             if case let .chatList(nextIndex) = nextItem.index, nextIndex.pinningIndex != nil {
                 nextIsPinned = true
             }
+            nextHasActiveRevealControls = nextItem.hasActiveRevealControls
         } else {
             last = true
         }
-        return (first, last, firstWithHeader, nextIsPinned)
+        return (first, last, firstWithHeader, nextIsPinned, nextHasActiveRevealControls)
     }
 }
 
@@ -1460,9 +1462,10 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
     private var cachedChatListQuoteSearchResult: CachedChatListSearchResult?
     private var cachedCustomTextEntities: CachedCustomTextEntities?
     
-    var layoutParams: (ChatListItem, first: Bool, last: Bool, firstWithHeader: Bool, nextIsPinned: Bool, ListViewItemLayoutParams, countersSize: CGFloat)?
+    var layoutParams: (ChatListItem, first: Bool, last: Bool, firstWithHeader: Bool, nextIsPinned: Bool, nextHasActiveRevealControls: Bool, ListViewItemLayoutParams, countersSize: CGFloat)?
     
     private var isHighlighted: Bool = false
+    private var nextHasActiveRevealControls: Bool = false
     private var skipFadeout: Bool = false
     private var customAnimationInProgress: Bool = false
     
@@ -1773,7 +1776,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
         
         self.peerPresenceManager = PeerPresenceStatusManager(update: { [weak self] in
             if let strongSelf = self, let layoutParams = strongSelf.layoutParams {
-                let (_, apply) = strongSelf.asyncLayout()(layoutParams.0, layoutParams.5, layoutParams.1, layoutParams.2, layoutParams.3, layoutParams.4)
+                let (_, apply) = strongSelf.asyncLayout()(layoutParams.0, layoutParams.6, layoutParams.1, layoutParams.2, layoutParams.3, layoutParams.4, layoutParams.5)
                 let _ = apply(false, false)
             }
         })
@@ -2139,8 +2142,8 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
     
     override public func layoutForParams(_ params: ListViewItemLayoutParams, item: ListViewItem, previousItem: ListViewItem?, nextItem: ListViewItem?) {
         let layout = self.asyncLayout()
-        let (first, last, firstWithHeader, nextIsPinned) = ChatListItem.mergeType(item: item as! ChatListItem, previousItem: previousItem, nextItem: nextItem)
-        let (nodeLayout, apply) = layout(item as! ChatListItem, params, first, last, firstWithHeader, nextIsPinned)
+        let (first, last, firstWithHeader, nextIsPinned, nextHasActiveRevealControls) = ChatListItem.mergeType(item: item as! ChatListItem, previousItem: previousItem, nextItem: nextItem)
+        let (nodeLayout, apply) = layout(item as! ChatListItem, params, first, last, firstWithHeader, nextIsPinned, nextHasActiveRevealControls)
         apply(false, false)
         self.contentSize = nodeLayout.contentSize
         self.insets = nodeLayout.insets
@@ -2256,7 +2259,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
         }
     }
     
-    func asyncLayout() -> (_ item: ChatListItem, _ params: ListViewItemLayoutParams, _ first: Bool, _ last: Bool, _ firstWithHeader: Bool, _ nextIsPinned: Bool) -> (ListViewItemNodeLayout, (Bool, Bool) -> Void) {
+    func asyncLayout() -> (_ item: ChatListItem, _ params: ListViewItemLayoutParams, _ first: Bool, _ last: Bool, _ firstWithHeader: Bool, _ nextIsPinned: Bool, _ nextHasActiveRevealControls: Bool) -> (ListViewItemNodeLayout, (Bool, Bool) -> Void) {
         let dateLayout = TextNode.asyncLayout(self.dateNode)
         let textLayout = TextNodeWithEntities.asyncLayout(self.textNode)
         let makeTrailingTextBadgeLayout = TextNode.asyncLayout(self.trailingTextBadgeNode)
@@ -2284,7 +2287,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
         let egCompactMessagePreview = EGCompactMessagePreviewLayout.isEnabled()
         let egAvatarScaleDivisor: CGFloat = EGCompactMessagePreviewLayout.avatarScaleDivisor(compactChatList: egCompactChatList, compactMessagePreview: egCompactMessagePreview)
         
-        return { item, params, first, last, firstWithHeader, nextIsPinned in
+        return { item, params, first, last, firstWithHeader, nextIsPinned, nextHasActiveRevealControls in
             let titleFont = Font.medium(floor(item.presentationData.fontSize.itemListBaseFontSize * 16.0 / 17.0))
             let textFont = Font.regular(floor(item.presentationData.fontSize.itemListBaseFontSize * 15.0 / 17.0))
             let italicTextFont = Font.italic(floor(item.presentationData.fontSize.itemListBaseFontSize * 15.0 / 17.0))
@@ -2510,6 +2513,13 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             var currentGiftIcon: UIImage?
             var currentLocationIcon: UIImage?
             var currentPollIcon: UIImage?
+            
+            // MARK: exteraGram
+            var displayForwardedIcon = false
+            var displayStoryReplyIcon = false
+            var displayGiftIcon = false
+            var displayLocationIcon = false
+            var displayPollIcon = false
             
             var selectableControlSizeAndApply: (CGFloat, (CGSize, Bool) -> ItemListSelectableControlNode)?
             var reorderControlSizeAndApply: (CGFloat, (CGFloat, Bool, ContainedViewLayoutTransition) -> ItemListEditableReorderControlNode)?
@@ -4130,7 +4140,8 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             
             return (layout, { [weak self] synchronousLoads, animated in
                 if let strongSelf = self {
-                    strongSelf.layoutParams = (item, first, last, firstWithHeader, nextIsPinned, params, countersSize)
+                    strongSelf.layoutParams = (item, first, last, firstWithHeader, nextIsPinned, nextHasActiveRevealControls, params, countersSize)
+                    strongSelf.nextHasActiveRevealControls = nextHasActiveRevealControls
                     strongSelf.currentItemHeight = itemHeight
                     strongSelf.cachedChatListText = chatListText
                     strongSelf.cachedChatListSearchResult = chatListSearchResult
@@ -5453,9 +5464,11 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         leftSeparatorInset = editingOffset + leftInset + rawContentRect.origin.x
                         rightSeparatorInset = 16.0
                     } else if (!nextIsPinned && isPinned) || last {
-                        separatorInset = 0.0
+                        leftSeparatorInset = 0.0
+                        rightSeparatorInset = 0.0
                     } else {
-                        separatorInset = editingOffset + leftInset + rawContentRect.origin.x
+                        leftSeparatorInset = editingOffset + leftInset + rawContentRect.origin.x
+                        rightSeparatorInset = 16.0
                     }
                     
                     transition.updateFrame(node: strongSelf.separatorNode, frame: CGRect(origin: CGPoint(x: leftSeparatorInset, y: layoutOffset + itemHeight - separatorHeight), size: CGSize(width: params.width - leftSeparatorInset - rightSeparatorInset, height: separatorHeight)))

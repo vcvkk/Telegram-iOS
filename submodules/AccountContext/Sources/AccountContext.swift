@@ -1540,6 +1540,15 @@ public protocol SharedAccountContext: AnyObject {
         completion: @escaping (UIImage?) -> Void,
         completedWithUploadingImage: @escaping (UIImage, Signal<PeerInfoAvatarUploadStatus, NoError>) -> UIView?
     )
+    func displaySetPhoto(
+        parentController: ViewController,
+        context: AccountContext,
+        peer: EnginePeer,
+        canDelete: Bool,
+        performDelete: @escaping () -> Void,
+        completion: @escaping (UIImage?) -> Void,
+        completedWithUploadingImage: @escaping (UIImage, Signal<PeerInfoAvatarUploadStatus, NoError>) -> UIView?
+    )
     func openAddPeerMembers(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, parentController: ViewController, groupPeer: Peer, selectAddMemberDisposable: MetaDisposable, addMemberDisposable: MetaDisposable)
     func makeInstantPageController(context: AccountContext, message: Message, sourcePeerType: MediaAutoDownloadPeerType?) -> ViewController?
     func makeInstantPageController(context: AccountContext, webPage: TelegramMediaWebpage, anchor: String?, sourceLocation: InstantPageSourceLocation) -> ViewController
@@ -1897,6 +1906,26 @@ public struct StickersSearchConfiguration {
     public static func with(appConfiguration: AppConfiguration) -> StickersSearchConfiguration {
         if let data = appConfiguration.data, let suggestOnlyApi = data["stickers_emoji_suggest_only_api"] as? Bool {
             return StickersSearchConfiguration(disableLocalSuggestions: suggestOnlyApi)
+        } else {
+            return .defaultValue
+        }
+    }
+}
+
+public struct CommunitiesConfiguration {
+    static var defaultValue: CommunitiesConfiguration {
+        return CommunitiesConfiguration(peersLimit: 100)
+    }
+    
+    public let peersLimit: Int32
+    
+    fileprivate init(peersLimit: Int32) {
+        self.peersLimit = peersLimit
+    }
+    
+    public static func with(appConfiguration: AppConfiguration) -> CommunitiesConfiguration {
+        if let data = appConfiguration.data, let peersLimit = data["community_peers_limit"] as? Double {
+            return CommunitiesConfiguration(peersLimit: Int32(peersLimit))
         } else {
             return .defaultValue
         }

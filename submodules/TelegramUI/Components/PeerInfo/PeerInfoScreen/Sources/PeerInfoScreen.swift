@@ -6273,7 +6273,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     self.context.sharedContext.openJoinChatWebView(context: self.context, parentController: controller, updatedPresentationData: self.controller?.updatedPresentationData, webView: webView, chatTitle: peer.compactDisplayTitle)
                 }
             }
-        ).startStrict(error: { [weak self] error in
+        }, error: { [weak self] error in
             guard let self else {
                 return
             }
