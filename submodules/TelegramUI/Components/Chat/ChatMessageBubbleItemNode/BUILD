@@ -61,6 +61,7 @@ swift_library(
         "//submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageFileBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode",
+        "//submodules/TelegramUI/Components/Chat/ChatMessageRichDataBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageItem",
