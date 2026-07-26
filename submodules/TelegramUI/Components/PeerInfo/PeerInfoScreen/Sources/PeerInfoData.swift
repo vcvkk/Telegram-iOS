@@ -452,6 +452,7 @@ final class PeerInfoScreenData {
     let savedMusicContext: ProfileSavedMusicContext?
     let savedMusicState: ProfileSavedMusicContext.State?
     let managedByBot: EnginePeer?
+    let businessConnectedBot: EnginePeer?
     
     let _isContact: Bool
     var forceIsContact: Bool = false
@@ -510,7 +511,8 @@ final class PeerInfoScreenData {
         webAppPermissions: WebAppPermissionsState?,
         savedMusicContext: ProfileSavedMusicContext?,
         savedMusicState: ProfileSavedMusicContext.State?,
-        managedByBot: EnginePeer?
+        managedByBot: EnginePeer?,
+        businessConnectedBot: EnginePeer?
     ) {
         self.regDate = regDate
         self.channelCreationTimestamp = channelCreationTimestamp
@@ -558,6 +560,7 @@ final class PeerInfoScreenData {
         self.savedMusicContext = savedMusicContext
         self.savedMusicState = savedMusicState
         self.managedByBot = managedByBot
+        self.businessConnectedBot = businessConnectedBot
     }
 }
 
@@ -1087,7 +1090,8 @@ func peerInfoScreenSettingsData(context: AccountContext, peerId: EnginePeer.Id, 
             webAppPermissions: nil,
             savedMusicContext: nil,
             savedMusicState: nil,
-            managedByBot: nil
+            managedByBot: nil,
+            businessConnectedBot: nil
         )
     }
 }
@@ -1160,7 +1164,8 @@ func peerInfoScreenData(
                 webAppPermissions: nil,
                 savedMusicContext: nil,
                 savedMusicState: nil,
-                managedByBot: nil
+                managedByBot: nil,
+                businessConnectedBot: nil
             ))
         case let .user(userPeerId, secretChatId, kind):
             let groupsInCommon: GroupsInCommonContext?

@@ -131,6 +131,18 @@
       "name": "PeersNearby: input panel interaction hook",
       "path": "submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelComponent.swift",
       "pattern": "openPeersNearby"
+    },
+    {
+      "name": "App icons: EG Pro gating flag",
+      "path": "submodules/TelegramPresentationData/Sources/PresentationData.swift",
+      "pattern": "isEGPro",
+      "note": "The 12.9.2 merge restored Swiftgram's isSGPro on PresentationAppIcon while every call site in AppDelegate had been renamed to isEGPro."
+    },
+    {
+      "name": "ShareController: EG share-behaviour override",
+      "path": "submodules/ShareController/Sources/ShareController.swift",
+      "pattern": "immediateExternalShareOverridingEGBehaviour",
+      "note": "Same rename, same merge: the declaration came back as ...SGBehaviour while ChatControllerOpenLinkContextMenu passes ...EGBehaviour."
     }
   ],
   "hook_markers": [

@@ -107,6 +107,7 @@ private enum DebugControllerEntry: ItemListNodeEntry {
     case fakeGlass(Bool)
     case forceClearGlass(Bool)
     case debugRipple(Bool)
+    case debugRichText(Bool)
     case browserExperiment(Bool)
     case allForumsHaveTabs(Bool)
     case enableReactionOverrides(Bool)
@@ -148,7 +149,7 @@ private enum DebugControllerEntry: ItemListNodeEntry {
             return DebugControllerSection.web.rawValue
         case .keepChatNavigationStack, .skipReadHistory, .alwaysDisplayTyping, .debugRatingLayout, .crashOnSlowQueries, .crashOnMemoryPressure:
             return DebugControllerSection.experiments.rawValue
-        case .clearTips, .resetNotifications, .crash, .fillLocalSavedMessageCache, .resetDatabase, .resetDatabaseAndCache, .resetHoles, .resetTagHoles, .reindexUnread, .resetCacheIndex, .reindexCache, .resetBiometricsData, .optimizeDatabase, .photoPreview, .knockoutWallpaper, .compressedEmojiCache, .storiesJpegExperiment, .checkSerializedData, .enableQuickReactionSwitch, .experimentalCompatibility, .enableDebugDataDisplay, .fakeGlass, .forceClearGlass, .debugRipple, .browserExperiment, .allForumsHaveTabs, .enableReactionOverrides, .restorePurchases, .disableReloginTokens, .liveStreamV2, .experimentalCallMute, .playerV2, .devRequests, .enableUpdates, .pwa, .enableLocalTranslation:
+        case .clearTips, .resetNotifications, .crash, .fillLocalSavedMessageCache, .resetDatabase, .resetDatabaseAndCache, .resetHoles, .resetTagHoles, .reindexUnread, .resetCacheIndex, .reindexCache, .resetBiometricsData, .optimizeDatabase, .photoPreview, .knockoutWallpaper, .compressedEmojiCache, .storiesJpegExperiment, .checkSerializedData, .enableQuickReactionSwitch, .experimentalCompatibility, .enableDebugDataDisplay, .fakeGlass, .forceClearGlass, .debugRipple, .debugRichText, .browserExperiment, .allForumsHaveTabs, .enableReactionOverrides, .restorePurchases, .disableReloginTokens, .liveStreamV2, .experimentalCallMute, .playerV2, .devRequests, .enableUpdates, .pwa, .enableLocalTranslation:
             return DebugControllerSection.experiments.rawValue
         case .logTranslationRecognition, .resetTranslationStates:
             return DebugControllerSection.translation.rawValue
@@ -250,44 +251,46 @@ private enum DebugControllerEntry: ItemListNodeEntry {
             return 40
         case .debugRipple:
             return 41
-        case .browserExperiment:
+        case .debugRichText:
             return 42
-        case .allForumsHaveTabs:
+        case .browserExperiment:
             return 43
-        case .enableReactionOverrides:
+        case .allForumsHaveTabs:
             return 44
-        case .restorePurchases:
+        case .enableReactionOverrides:
             return 45
-        case .logTranslationRecognition:
+        case .restorePurchases:
             return 46
-        case .resetTranslationStates:
+        case .logTranslationRecognition:
             return 47
-        case .compressedEmojiCache:
+        case .resetTranslationStates:
             return 48
-        case .storiesJpegExperiment:
+        case .compressedEmojiCache:
             return 49
-        case .disableReloginTokens:
+        case .storiesJpegExperiment:
             return 50
-        case .checkSerializedData:
+        case .disableReloginTokens:
             return 51
-        case .enableQuickReactionSwitch:
+        case .checkSerializedData:
             return 52
-        case .liveStreamV2:
+        case .enableQuickReactionSwitch:
             return 53
-        case .experimentalCallMute:
+        case .liveStreamV2:
             return 54
-        case .playerV2:
+        case .experimentalCallMute:
             return 55
-        case .devRequests:
+        case .playerV2:
             return 56
-        case .pwa:
+        case .devRequests:
             return 57
-        case .enableLocalTranslation:
+        case .pwa:
             return 58
-        case .enableUpdates:
+        case .enableLocalTranslation:
             return 59
+        case .enableUpdates:
+            return 60
         case let .preferredVideoCodec(index, _, _, _):
-            return 60 + index
+            return 70 + index
         case .disableVideoAspectScaling:
             return 100
         case .enableNetworkFramework:

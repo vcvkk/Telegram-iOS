@@ -260,6 +260,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     let context: AccountContext
     public internal(set) var chatLocation: ChatLocation
     public internal(set) var subject: ChatControllerSubject?
+    var initialTextInputState: ChatTextInputState?
     
     var botStart: ChatControllerInitialBotStart?
     var attachBotStart: ChatControllerInitialAttachBotStart?
@@ -675,6 +676,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         chatListFilter: Int32? = nil,
         chatNavigationStack: [ChatNavigationStackItem] = [],
         customChatNavigationStack: [EnginePeer.Id]? = nil,
+        initialTextInputState: ChatTextInputState? = nil,
         params: ChatControllerParams? = nil
     ) {
         self.initTimestamp = CFAbsoluteTimeGetCurrent()
@@ -687,6 +689,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.chatLocation = chatLocation
         self.chatLocationContextHolder = chatLocationContextHolder
         self.subject = subject
+        self.initialTextInputState = initialTextInputState
         self.botStart = botStart
         self.attachBotStart = attachBotStart
         self.botAppStart = botAppStart
@@ -10516,11 +10519,11 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         })
     }
     
-    func presentTimerPicker(style: ChatTimerScreenStyle = .default, selectedTime: Int32? = nil, dismissByTapOutside: Bool = true, completion: @escaping (Int32) -> Void) {
+    func presentTimerPicker(style: ChatTimerScreenStyle = .default, selectedTime: Int32? = nil, completion: @escaping (Int32) -> Void) {
         guard case .peer = self.chatLocation else {
             return
         }
-        let controller = ChatTimerScreen(context: self.context, updatedPresentationData: self.updatedPresentationData, style: style, currentTime: selectedTime, dismissByTapOutside: dismissByTapOutside, completion: { time in
+        let controller = ChatTimerScreen(context: self.context, updatedPresentationData: self.updatedPresentationData, style: style, currentTime: selectedTime, completion: { time in
             completion(time)
         })
         self.chatDisplayNode.dismissInput()
@@ -10591,7 +10594,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             return
         }
         
-        let controller = ChatTimerScreen(context: self.context, updatedPresentationData: self.updatedPresentationData, style: .default, mode: .autoremove, currentTime: self.presentationInterfaceState.autoremoveTimeout, dismissByTapOutside: true, completion: { [weak self] value in
+        let controller = ChatTimerScreen(context: self.context, updatedPresentationData: self.updatedPresentationData, style: .default, mode: .autoremove, currentTime: self.presentationInterfaceState.autoremoveTimeout, completion: { [weak self] value in
             guard let strongSelf = self else {
                 return
             }
