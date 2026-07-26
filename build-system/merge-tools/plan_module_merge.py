@@ -85,9 +85,14 @@ EG_DIR = os.path.join(REPO_ROOT, EG_ROOT)
 LAYOUT = {
     # --- packages that exist on Android ---
     "api": [
-        "EGAPI", "EGAPIToken", "EGAPIWebSettings", "EGRequests",
+        "EGAPI", "EGAPIToken", "EGAPIWebSettings",
         "EGDeviceToken", "EGRecentSessionApiId",
     ],
+    # `RegDate` is a bare Codable DTO, which on Android lives in api/dto, not in
+    # the regdate package — that only holds RegDateController. It cannot join
+    # `api` as one module: TelegramCore depends on it while EGAPIToken depends
+    # on TelegramCore, so it takes the lower module of the `api` package.
+    "apicore": ["EGRegDateScheme"],
     "config": ["EGGHSettings", "EGWebSettings"],
     "configcore": [
         "EGSimpleSettings", "EGConfig", "EGGHSettingsScheme",
@@ -99,9 +104,15 @@ LAYOUT = {
     "badges": ["EGBadges", "EGAppBadgeAssets", "EGAppBadgeOffset"],
     "debug": ["EGDebugUI", "EGShowMessageJson", "EGDBReset", "FLEX"],
     "regdate": ["EGRegDate"],
-    "regdatecore": ["EGRegDateScheme"],
+    # `EGSwiftUI` looks like utils/ui on Android, but moving it there is a
+    # cycle: it sits above EGGTranslate and EGStatus while SwiftSoup sits below
+    # them, and `utils` cannot hold both. It stays a component.
     "components": ["EGInputToolbar", "EGSwiftUI", "EGNY"],
     "utils": [
+        # EGRequests is requestsGet/requestsDownload/requestsCustom — the
+        # generic HTTP helper, which Android keeps in utils/network. Only the
+        # API-specific client lives in the api package.
+        "EGRequests",
         "EGSwiftSignalKit", "Wrap", "SwiftSoup", "SFSafariViewControllerPlus",
         "EGKeychainBackupManager", "EGActionRequestHandlerSanitizer",
         "EGContentAnalysis", "EGTabBarHeightModifier",
@@ -124,7 +135,7 @@ LAYOUT = {
 # must not show up as an extra package.
 PACKAGE_OF = {
     "configcore": "config",
-    "regdatecore": "regdate",
+    "apicore": "api",
 }
 
 
