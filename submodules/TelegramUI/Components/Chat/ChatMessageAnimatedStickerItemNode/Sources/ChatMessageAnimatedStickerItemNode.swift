@@ -1355,7 +1355,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                     }
                 }
                 let availableWidth = max(60.0, availableContentWidth + 6.0)
-                forwardInfoSizeApply = makeForwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .standalone, forwardSource, forwardAuthorSignature, forwardPsaType, nil, CGSize(width: availableWidth, height: CGFloat.greatestFiniteMagnitude))
+                forwardInfoSizeApply = makeForwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .standalone, forwardSource.flatMap(EnginePeer.init), forwardAuthorSignature, forwardPsaType, nil, CGSize(width: availableWidth, height: CGFloat.greatestFiniteMagnitude))
             }
             
             var needsReplyBackground = false
@@ -1373,7 +1373,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
             var maxContentWidth = imageSize.width
             var actionButtonsFinalize: ((CGFloat) -> (CGSize, (_ animation: ListViewItemUpdateAnimation) -> ChatMessageActionButtonsNode))?
             if let replyMarkup = replyMarkup {
-                let (minWidth, buttonsLayout) = actionButtonsLayout(item.context, item.presentationData.theme, item.presentationData.chatBubbleCorners, item.presentationData.strings, item.controllerInteraction.presentationContext.backgroundNode, replyMarkup, [:], item.message, baseWidth)
+                let (minWidth, buttonsLayout) = actionButtonsLayout(item.context, item.presentationData.theme, item.presentationData.chatBubbleCorners, item.presentationData.strings, item.controllerInteraction.presentationContext.backgroundNode, replyMarkup, [:], EngineMessage(item.message), baseWidth)
                 maxContentWidth = max(maxContentWidth, minWidth)
                 actionButtonsFinalize = buttonsLayout
             } else if incoming, let attribute = item.message.attributes.first(where: { $0 is SuggestedPostMessageAttribute }) as? SuggestedPostMessageAttribute, attribute.state == nil {
@@ -1422,7 +1422,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                         ],
                         flags: [],
                         placeholder: nil
-                ), customInfos, item.message, baseWidth)
+                ), customInfos, EngineMessage(item.message), baseWidth)
                 maxContentWidth = max(maxContentWidth, minWidth)
                 actionButtonsFinalize = buttonsLayout
             }
@@ -1450,7 +1450,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                     availableReactions: item.associatedData.availableReactions,
                     savedMessageTags: item.associatedData.savedMessageTags,
                     reactions: reactions,
-                    message: item.message,
+                    message: EngineMessage(item.message),
                     associatedData: item.associatedData,
                     accountPeer: item.associatedData.accountPeer,
                     isIncoming: item.message.effectivelyIncoming(item.context.account.peerId),

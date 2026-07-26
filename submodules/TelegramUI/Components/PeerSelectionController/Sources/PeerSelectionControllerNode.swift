@@ -161,7 +161,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
         self.animationCache = context.animationCache
         self.animationRenderer = context.animationRenderer
         
-        self.presentationInterfaceState = ChatPresentationInterfaceState(chatWallpaper: .builtin(WallpaperSettings()), theme: self.presentationData.theme, preferredGlassType: .default, strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat, nameDisplayOrder: self.presentationData.nameDisplayOrder, limitsConfiguration: self.context.currentLimitsConfiguration.with { $0 }, fontSize: self.presentationData.chatFontSize, bubbleCorners: self.presentationData.chatBubbleCorners, accountPeerId: self.context.account.peerId, mode: .standard(.default), chatLocation: .peer(id: PeerId(0)), subject: nil, peerNearbyData: nil, greetingData: nil, pendingUnpinnedAllMessages: false, activeGroupCallInfo: nil, hasActiveGroupCall: false, threadData: nil, isGeneralThreadClosed: nil, replyMessage: nil, accountPeerColor: nil, businessIntro: nil)
+        self.presentationInterfaceState = ChatPresentationInterfaceState(chatWallpaper: .builtin(WallpaperSettings()), theme: self.presentationData.theme, preferredGlassType: .default, strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat, nameDisplayOrder: self.presentationData.nameDisplayOrder, limitsConfiguration: self.context.currentLimitsConfiguration.with { $0 }, fontSize: self.presentationData.chatFontSize, bubbleCorners: self.presentationData.chatBubbleCorners, accountPeerId: self.context.account.peerId, mode: .standard(.default), chatLocation: .peer(id: PeerId(0)), subject: nil, greetingData: nil, pendingUnpinnedAllMessages: false, activeGroupCallInfo: nil, hasActiveGroupCall: false, threadData: nil, isGeneralThreadClosed: nil, replyMessage: nil, accountPeerColor: nil, businessIntro: nil)
         
         self.presentationInterfaceState = self.presentationInterfaceState.updatedInterfaceState { $0.withUpdatedForwardMessageIds(forwardedMessageIds) }
         // MARK: exteraGram
@@ -485,6 +485,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                 
                 var hasOther = false
                 var hasNotOwnMessages = false
+                var hasRichMessages = false
                 for message in messages {
                     if let author = message.effectiveAuthor {
                         if !uniquePeerIds.contains(author.id) {
@@ -513,6 +514,9 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                     }
                     if !isDice && !isMusic {
                         hasOther = true
+                    }
+                    if message.richText != nil {
+                        hasRichMessages = true
                     }
                 }
 
@@ -739,7 +743,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                     }
                 }
                 
-                let controller = chatTextLinkEditController(context: context, updatedPresentationData: (presentationData, .never()), text: text?.string ?? "", link: link, apply: { [weak self] link in
+                let controller = chatTextLinkEditController(context: context, updatedPresentationData: (presentationData, .never()), text: text?.string ?? "", link: link, apply: { [weak self] link, _ in
                     if let strongSelf = self, let inputMode = inputMode, let selectionRange = selectionRange {
                         if let link = link {
                             strongSelf.updateChatPresentationInterfaceState(animated: true, { state in
@@ -935,8 +939,8 @@ final class PeerSelectionControllerNode: ASDisplayNode {
             var selectedPeerMap: [EnginePeer.Id: EnginePeer] = [:]
             for contactPeer in selectedContactPeers {
                 if case let .peer(peer, _, _) = contactPeer {
-                    selectedPeers.append(EnginePeer(peer))
-                    selectedPeerMap[peer.id] = EnginePeer(peer)
+                    selectedPeers.append(peer)
+                    selectedPeerMap[peer.id] = peer
                 }
             }
             return (selectedPeers, selectedPeerMap)
@@ -1625,7 +1629,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
                     contactListNode.openPeer = { [weak self] peer, _, _, _ in
                         if case let .peer(peer, _, _) = peer {
                             self?.contactListNode?.listNode.clearHighlightAnimated(true)
-                            self?.requestOpenPeer?(EnginePeer(peer), nil)
+                            self?.requestOpenPeer?(peer, nil)
                         }
                     }
                     contactListNode.openDisabledPeer = { [weak self] peer, reason in
