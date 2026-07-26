@@ -48,6 +48,7 @@ swift_library(
         "//submodules/ChatPresentationInterfaceState",
         "//submodules/DeviceAccess",
         "//submodules/LocationUI",
+        "//submodules/Weather",
         "//submodules/TelegramUI/Components/AudioWaveformComponent",
         "//submodules/ReactionSelectionNode",
         "//submodules/TelegramUI/Components/VolumeSliderContextItem",
