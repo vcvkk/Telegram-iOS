@@ -58,6 +58,7 @@ and strands files at the old version.
    python3 build-system/merge-tools/fork_inventory.py        # fork-only declarations survived
    python3 build-system/merge-tools/check_duplicate_types.py # no redeclarations
    python3 build-system/merge-tools/check_build_deps.py      # no "no such module"
+   python3 build-system/merge-tools/check_engine_adapters.py # Peer/Message adapters
    python3 build-system/merge-tools/check_api_drift.py --upstream /tmp/upstream/release-<NEW>
    python3 build-system/merge-tools/check_syntax_debt.py --upstream /tmp/upstream/release-<NEW>
    ```
@@ -79,6 +80,16 @@ and strands files at the old version.
    full CI round. Four of the 12.9.2 rounds went to exactly this
    (`makeTextProcessingScreen`, `makeAvatarMediaPickerScreen`,
    `makeLinkEditController`, `makeGalleryCaptionPanelView`).
+
+   `check_engine_adapters.py` covers the fork's single largest source of
+   compile errors: a `Peer`/`Message` handed across the boundary to a module
+   that stayed on `EnginePeer`/`EngineMessage`, or the reverse. It resolves an
+   argument's type only from explicit annotations — a function parameter, a
+   `let x: T`, a stored property, or the parameter list of the closure a
+   `asyncLayout()` returns — and stays quiet when it cannot, so a clean run is
+   not proof. It is the only checker here that reads expressions rather than
+   declarations, so re-validate it against a known-bad file after changing it:
+   it silently found nothing at all through three separate defects of its own.
 
    Add an entry to `fork_registry.json` whenever a bump turns out to have
    dropped something.
