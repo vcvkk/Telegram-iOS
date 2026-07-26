@@ -5082,7 +5082,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                             return
                         }
                         
-                        item.controllerInteraction.requestMessageUpdate(item.message.id, false)
+                        item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
                     }
                 }
             }
@@ -5973,7 +5973,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                                         }
                                         if attribute.isQuote, !replyInfoNode.isQuoteExpanded {
                                             replyInfoNode.isQuoteExpanded = true
-                                            item.controllerInteraction.requestMessageUpdate(item.message.id, false)
+                                            item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
                                             return
                                         }
                                         var progress: Promise<Bool>?
@@ -6005,7 +6005,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                                     }
                                     if attribute.isQuote, !replyInfoNode.isQuoteExpanded {
                                         replyInfoNode.isQuoteExpanded = true
-                                        item.controllerInteraction.requestMessageUpdate(item.message.id, false)
+                                        item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
                                         return
                                     }
                                     
@@ -7582,6 +7582,15 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         return nil
     }
     
+    public func getAnchorRect(anchor: String) -> CGRect? {
+        for contentNode in self.contentNodes {
+            if let result = contentNode.getAnchorRect(anchor: anchor) {
+                return contentNode.view.convert(result, to: self.view)
+            }
+        }
+        return nil
+    }
+
     public func getInnerReplySubjectRect(innerSubject: EngineMessageReplyInnerSubject) -> CGRect? {
         switch innerSubject {
         case let .todoItem(todoItemId):
@@ -7703,10 +7712,10 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         
         if item.controllerInteraction.summarizedMessageIds.contains(item.message.id) {
             item.controllerInteraction.summarizedMessageIds.remove(item.message.id)
-            let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false)
+            let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
         } else {
             item.controllerInteraction.summarizedMessageIds.insert(item.message.id)
-            let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false)
+            let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
             
             let translateToLanguage = item.associatedData.translateToLanguage
             var requestSummary = true
@@ -7721,7 +7730,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 |> deliverOnMainQueue).start(error: { error in
                     if case .limitExceededPremium = error, let parentController = item.controllerInteraction.navigationController()?.topViewController as? ViewController {
                         item.controllerInteraction.summarizedMessageIds.remove(item.message.id)
-                        let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false)
+                        let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
                         let controller = premiumAlertController(
                             context: item.context,
                             parentController: parentController,

@@ -5054,7 +5054,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         }
     }
     
-    func scrollToMessage(index: MessageIndex) {
+    func scrollToMessage(index: MessageIndex, offset: CGFloat = 0.0) {
         self.appliedScrollToMessageId = nil
         self.scrollToMessageIdPromise.set(.single(index))
     }

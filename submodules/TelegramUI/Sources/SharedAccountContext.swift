@@ -2493,6 +2493,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             requestMessageActionUrlAuth: { _, _ in },
             activateSwitchInline: { _, _, _ in },
             openUrl: { _ in },
+            openExternalInstantPage: { _ in
+            },
             shareCurrentLocation: { _ in },
             shareAccountContact: { _ in },
             sendBotCommand: { _, _ in },
@@ -2661,7 +2663,9 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             },
             dismissTextInput: {
             },
-            scrollToMessageId: { _ in
+            scrollToMessageId: { _, _ in
+            },
+            scrollToMessageIdWithAnchor: { _, _ in
             },
             navigateToStory: { _, _ in
             },
@@ -2683,6 +2687,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             },
             openRankInfo: { _, _, _ in
             }, openSetPeerAvatar: {
+            },
+            displayPollRestrictedToast: { _ in
             },
             automaticMediaDownloadSettings: MediaAutoDownloadSettings.defaultSettings,
             pollActionState: ChatInterfacePollActionState(),

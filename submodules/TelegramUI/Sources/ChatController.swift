@@ -4416,7 +4416,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 self.displayPollSolution(solution: solution, sourceNode: sourceNode, isAutomatic: false)
             } else if let messageId = self.controllerInteraction?.currentPollMessageWithTooltip {
                 self.controllerInteraction?.currentPollMessageWithTooltip = nil
-                self.controllerInteraction?.requestMessageUpdate(messageId, false)
+                self.controllerInteraction?.requestMessageUpdate(messageId, false, nil)
             }
         }, displayPsa: { [weak self] type, sourceNode in
             self?.displayPsa(type: type, sourceNode: sourceNode, isAutomatic: false)
@@ -5370,8 +5370,38 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
         }, dismissTextInput: { [weak self] in
             self?.chatDisplayNode.dismissTextInput()
-        }, scrollToMessageId: { [weak self] index in
-            self?.chatDisplayNode.historyNode.scrollToMessage(index: index)
+        }, scrollToMessageId: { [weak self] index, offset in
+            self?.chatDisplayNode.historyNode.scrollToMessage(index: index, offset: offset)
+        }, scrollToMessageIdWithAnchor: { [weak self] index, anchor in
+            guard let self else {
+                return
+            }
+            // Find the bubble for this message (it must be at least partially
+            // visible — we got here from a tap inside it) and compute the
+            // anchor's y in item-local coords. .bottom(anchorY) places the item
+            // so the anchor lands at the visual top of the rotated chat list's
+            // content area; .center(.custom) is bypassed for short items, so it
+            // can't position the anchor uniformly.
+            var anchorY: CGFloat?
+            self.chatDisplayNode.historyNode.forEachVisibleItemNode { itemNode in
+                guard anchorY == nil else {
+                    return
+                }
+                if let itemNode = itemNode as? ChatMessageBubbleItemNode,
+                   itemNode.item?.message.id == index.id,
+                   let rect = itemNode.getAnchorRect(anchor: anchor) {
+                    anchorY = rect.minY
+                }
+            }
+            if let anchorY {
+                self.chatDisplayNode.historyNode.scrollToMessage(
+                    from: index, to: index,
+                    animated: true, highlight: false,
+                    scrollPosition: .bottom(anchorY)
+                )
+            } else {
+                self.chatDisplayNode.historyNode.scrollToMessage(index: index)
+            }
         }, navigateToStory: { [weak self] message, storyId in
             guard let self else {
                 return
@@ -5749,6 +5779,11 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 return
             }
             self.interfaceInteraction?.openSetPeerAvatar()
+        }, displayPollRestrictedToast: { [weak self] messageId in
+            guard let self else {
+                return
+            }
+            self.displayPollRestrictedToast(messageId: messageId)
         }, automaticMediaDownloadSettings: self.automaticMediaDownloadSettings, pollActionState: ChatInterfacePollActionState(), stickerSettings: self.stickerSettings, presentationContext: ChatPresentationContext(context: context, backgroundNode: self.chatBackgroundNode))
         controllerInteraction.enableFullTranslucency = context.sharedContext.energyUsageSettings.fullTranslucency
         
@@ -8431,7 +8466,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         
         let messageId = item.message.id
         self.controllerInteraction?.currentPollMessageWithTooltip = messageId
-        self.controllerInteraction?.requestMessageUpdate(messageId, false)
+        self.controllerInteraction?.requestMessageUpdate(messageId, false, nil)
     }
     
     public func displayPromoAnnouncement(text: String) {
