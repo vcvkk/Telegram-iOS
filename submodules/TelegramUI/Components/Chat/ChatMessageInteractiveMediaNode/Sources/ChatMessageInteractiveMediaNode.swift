@@ -2004,7 +2004,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                     strongSelf.videoNodeDecoration = decoration
                                     let mediaManager = context.sharedContext.mediaManager
                                     
-                                    let streamVideo = isMediaStreamable(message: message, media: updatedVideoFile)
+                                    let streamVideo = isMediaStreamable(message: EngineMessage(message), media: updatedVideoFile)
                                     let loopVideo = updatedVideoFile.isAnimated
                                     
                                     let videoContent: UniversalVideoContent
@@ -2796,7 +2796,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                 }
                                 if let duration = file.duration, !message.flags.contains(.Unsent) {
                                     let durationString = file.isAnimated ? gifTitle : stringForDuration(playerDuration > 0 ? playerDuration : Int32(duration), position: playerPosition)
-                                    if isMediaStreamable(message: message, media: file) {
+                                    if isMediaStreamable(message: EngineMessage(message), media: file) {
                                         badgeContent = .mediaDownload(backgroundColor: messageTheme.mediaDateAndStatusFillColor, foregroundColor: messageTheme.mediaDateAndStatusTextColor, duration: durationString, size: active ? sizeString : nil, muted: muted, active: active)
                                         mediaDownloadState = .fetching(progress: automaticPlayback ? nil : adjustedProgress)
                                         if self.playerStatus?.status == .playing {
@@ -2822,11 +2822,11 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                     badgeContent = .mediaDownload(backgroundColor: messageTheme.mediaDateAndStatusFillColor, foregroundColor: messageTheme.mediaDateAndStatusTextColor, duration: strings.Conversation_Processing, size: nil, muted: false, active: false)
                                 }
                             }
-                            if file.isAnimated && isMediaStreamable(message: message, media: file) {
+                            if file.isAnimated && isMediaStreamable(message: EngineMessage(message), media: file) {
                                 state = automaticPlayback ? .none : state
                             }
                         } else {
-                            if isMediaStreamable(message: message, media: file), let fileSize = file.size, fileSize > 0 && fileSize != .max {
+                            if isMediaStreamable(message: EngineMessage(message), media: file), let fileSize = file.size, fileSize > 0 && fileSize != .max {
                                 let sizeString = "\(dataSizeString(Int64(Float(fileSize) * progress), forceDecimal: true, formatting: formatting)) / \(dataSizeString(fileSize, forceDecimal: true, formatting: formatting))"
                                 
                                 if message.flags.contains(.Unsent), let duration = file.duration {
@@ -2902,7 +2902,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                             do {
                                 let durationString = file.isAnimated ? gifTitle : stringForDuration(playerDuration > 0 ? playerDuration : (file.duration.flatMap { Int32(floor($0)) } ?? 0), position: playerPosition)
                                 if wideLayout {
-                                    if isMediaStreamable(message: message, media: file), let fileSize = file.size, fileSize > 0 && fileSize != .max {
+                                    if isMediaStreamable(message: EngineMessage(message), media: file), let fileSize = file.size, fileSize > 0 && fileSize != .max {
                                         state = automaticPlayback ? .none : .play(messageTheme.mediaOverlayControlColors.foregroundColor)
                                         badgeContent = .mediaDownload(backgroundColor: messageTheme.mediaDateAndStatusFillColor, foregroundColor: messageTheme.mediaDateAndStatusTextColor, duration: durationString, size: dataSizeString(fileSize, formatting: formatting), muted: muted, active: true)
                                         mediaDownloadState = .remote
@@ -2911,7 +2911,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                         badgeContent = .mediaDownload(backgroundColor: messageTheme.mediaDateAndStatusFillColor, foregroundColor: messageTheme.mediaDateAndStatusTextColor, duration: durationString, size: nil, muted: muted, active: false)
                                     }
                                 } else {
-                                    if isMediaStreamable(message: message, media: file) {
+                                    if isMediaStreamable(message: EngineMessage(message), media: file) {
                                         state = automaticPlayback ? .none : .play(messageTheme.mediaOverlayControlColors.foregroundColor)
                                         badgeContent = .text(inset: 12.0, backgroundColor: messageTheme.mediaDateAndStatusFillColor, foregroundColor: messageTheme.mediaDateAndStatusTextColor, text: NSAttributedString(string: durationString), iconName: nil)
                                         mediaDownloadState = .compactRemote

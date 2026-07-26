@@ -634,7 +634,7 @@ final class StorageUsageScreenComponent: Component {
                         for item in fileItems.items {
                             if deselectedFiles.contains(item.message.id) {
                                 selectedSize -= item.size
-                                clearExcludeMessages.append(item.message)
+                                clearExcludeMessages.append(item.message._asMessage())
                             }
                         }
                     }
@@ -644,7 +644,7 @@ final class StorageUsageScreenComponent: Component {
                         for item in fileItems.items {
                             if selectedFiles.contains(item.message.id) {
                                 selectedSize += item.size
-                                clearIncludeMessages.append(item.message)
+                                clearIncludeMessages.append(item.message._asMessage())
                             }
                         }
                     }
@@ -656,7 +656,7 @@ final class StorageUsageScreenComponent: Component {
                         for item in musicItems.items {
                             if deselectedMusic.contains(item.message.id) {
                                 selectedSize -= item.size
-                                clearExcludeMessages.append(item.message)
+                                clearExcludeMessages.append(item.message._asMessage())
                             }
                         }
                     }
@@ -666,7 +666,7 @@ final class StorageUsageScreenComponent: Component {
                         for item in musicItems.items {
                             if selectedMusic.contains(item.message.id) {
                                 selectedSize += item.size
-                                clearIncludeMessages.append(item.message)
+                                clearIncludeMessages.append(item.message._asMessage())
                             }
                         }
                     }
@@ -2455,7 +2455,7 @@ final class StorageUsageScreenComponent: Component {
                                 
                                 if matches {
                                     result.fileItems.append(StorageFileListPanelComponent.Item(
-                                        message: message._asMessage(),
+                                        message: message,
                                         size: messageSize
                                     ))
                                 }
@@ -2475,7 +2475,7 @@ final class StorageUsageScreenComponent: Component {
                                 
                                 if matches {
                                     result.musicItems.append(StorageFileListPanelComponent.Item(
-                                        message: message._asMessage(),
+                                        message: message,
                                         size: messageSize
                                     ))
                                 }
