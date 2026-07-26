@@ -82,8 +82,35 @@ and strands files at the old version.
 
    Add an entry to `fork_registry.json` whenever a bump turns out to have
    dropped something.
+
 6. **CI.** Both workflows run on `master` only: `validate.yml` (debug, compile
    only, `--keep_going`, error digest in the run summary) for fast feedback,
    and `main.yml` for the full release build. Pushes to other branches do not
    trigger CI. Don't push in bursts — each push cancels the previous run of
    both workflows, and a cancelled run does not save the bazel cache.
+
+## Restructuring `exteraGram/` (module merges, directory moves)
+
+`build-system/merge-tools/plan_module_merge.py` checks a proposed grouping of
+the `exteraGram/` directories *before* anything is moved, and writes nothing.
+
+Merging two Swift modules is the operation that turns a valid dependency chain
+into a cycle: if `A → X → B` and A and B become one target, that target now
+depends on X and X depends on it. Bazel only reports that during analysis,
+which `--keep_going` does not soften, so it costs a whole CI round. The same
+merge also drops the module boundary, turning a legal same-name pair in two
+modules into an invalid redeclaration.
+
+```
+python3 build-system/merge-tools/plan_module_merge.py            # check LAYOUT
+python3 build-system/merge-tools/plan_module_merge.py --suggest  # fix a cycle
+```
+
+The layout lives in `LAYOUT` in that file. On a cycle, `--suggest` splits the
+offending groups until the contracted graph is acyclic and then coarsens the
+result back to the fewest modules that still work. It also reports which
+directories are `filegroup`s that compile into a *host* module through `egsrcs`
+and therefore cannot be folded into a merged `swift_library` at all, the
+`import` lines each group would make redundant, a leaf-first order to apply the
+groups in, and how many external BUILD references each old label needs an
+`alias()` for.
