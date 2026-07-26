@@ -704,6 +704,80 @@ public extension TelegramEngine {
             }
         }
         
+        // MARK: exteraGram
+        /// Fetches the complete page of a partial rich message and stores it on the
+        /// existing attribute's `fullInstantPage`, leaving the partial `instantPage`
+        /// in place, then returns the updated attribute.
+        ///
+        /// Yields `nil` — and writes nothing to the postbox — for a non-Cloud id, on
+        /// network failure, when the server sends no rich message back, and when the
+        /// message carries no `RichTextMessageAttribute` to update.
+        public func requestFullRichText(id: EngineMessage.Id) -> Signal<RichTextMessageAttribute?, NoError> {
+            let account = self.account
+            guard id.namespace == Namespaces.Message.Cloud else {
+                return .single(nil)
+            }
+            return account.postbox.transaction { transaction -> Api.InputPeer? in
+                return transaction.getPeer(id.peerId).flatMap(apiInputPeer)
+            }
+            |> mapToSignal { inputPeer -> Signal<RichTextMessageAttribute?, NoError> in
+                guard let inputPeer else {
+                    return .single(nil)
+                }
+                return account.network.request(Api.functions.messages.getRichMessage(peer: inputPeer, id: id.id))
+                |> map(Optional.init)
+                |> `catch` { _ -> Signal<Api.messages.Messages?, NoError> in
+                    return .single(nil)
+                }
+                |> mapToSignal { result -> Signal<RichTextMessageAttribute?, NoError> in
+                    guard let result else {
+                        return .single(nil)
+                    }
+                    let apiMessages: [Api.Message]
+                    switch result {
+                    case let .messages(messagesData):
+                        apiMessages = messagesData.messages
+                    case let .messagesSlice(messagesSliceData):
+                        apiMessages = messagesSliceData.messages
+                    case let .channelMessages(channelMessagesData):
+                        apiMessages = channelMessagesData.messages
+                    case .messagesNotModified:
+                        apiMessages = []
+                    }
+
+                    var fullInstantPage: InstantPage?
+                    for apiMessage in apiMessages {
+                        guard case let .message(messageData) = apiMessage, messageData.id == id.id else {
+                            continue
+                        }
+                        if let apiRichMessage = messageData.richMessage {
+                            fullInstantPage = RichTextMessageAttribute(apiRichMessage: apiRichMessage).instantPage
+                        }
+                        break
+                    }
+                    guard let fullInstantPage else {
+                        return .single(nil)
+                    }
+
+                    return account.postbox.transaction { transaction -> RichTextMessageAttribute? in
+                        var updatedAttribute: RichTextMessageAttribute?
+                        transaction.updateMessage(id, update: { currentMessage in
+                            guard let existing = currentMessage.attributes.first(where: { $0 is RichTextMessageAttribute }) as? RichTextMessageAttribute else {
+                                return .skip
+                            }
+                            let attribute = RichTextMessageAttribute(instantPage: existing.instantPage, fullInstantPage: fullInstantPage)
+                            updatedAttribute = attribute
+                            var attributes = currentMessage.attributes.filter { !($0 is RichTextMessageAttribute) }
+                            attributes.append(attribute)
+                            let storeForwardInfo = currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init)
+                            return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
+                        })
+                        return updatedAttribute
+                    }
+                }
+            }
+        }
+
         public func translateMessages(messageIds: [EngineMessage.Id], fromLang: String?, toLang: String, enableLocalIfPossible: Bool, tone: TranslationTone = .neutral) -> Signal<Never, TranslationError> {
             return _internal_translateMessages(account: self.account, messageIds: messageIds, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: enableLocalIfPossible, tone: tone)
         }
