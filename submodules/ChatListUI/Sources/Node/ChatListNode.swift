@@ -1872,6 +1872,17 @@ public final class ChatListNode: ListViewImpl {
                 let _ = self.context.engine.privacy.terminateAnotherSession(id: newSessionReview.id).startStandalone()
                 #endif
             }
+        }, performBotConnectionReviewAction: { [weak self] newBotConnectionReview, isPositive in
+            guard let self else {
+                return
+            }
+            
+            if isPositive {
+                let _ = self.context.engine.accountData.confirmBotConnectionReview(botId: newBotConnectionReview.botId).startStandalone()
+            } else {
+                let _ = removeNewBotConnectionReviews(postbox: self.context.account.postbox, botIds: [newBotConnectionReview.botId]).startStandalone()
+                let _ = self.context.engine.accountData.setAccountConnectedBot(bot: nil).startStandalone()
+            }
         }, openChatFolderUpdates: { [weak self] in
             guard let self else {
                 return

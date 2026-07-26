@@ -5416,6 +5416,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                         guard let self else {
                             return
                         }
+                        if !didJoin {
+                            return
+                        }
                         Queue.mainQueue().after(0.5) {
                             let _ = (strongSelf.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
                             |> deliverOnMainQueue).startStandalone(next: { [weak self] peer in

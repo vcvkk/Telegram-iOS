@@ -134,7 +134,7 @@ private enum ChatListRecentEntry: Comparable, Identifiable {
         peerSelected: @escaping (EnginePeer, Int64?, Bool, OpenPeerAction) -> Void,
         disabledPeerSelected: @escaping (EnginePeer, Int64?, ChatListDisabledPeerReason) -> Void,
         peerContextAction: ((EnginePeer, ChatListSearchContextActionSource, ASDisplayNode, ContextGesture?, CGPoint?) -> Void)?,
-        clearRecentlySearchedPeers: @escaping () -> Void,
+        clearRecentlySearchedPeers: @escaping (ASDisplayNode) -> Void,
         deletePeer: @escaping (EnginePeer.Id) -> Void,
         animationCache: AnimationCache,
         animationRenderer: MultiAnimationRenderer,
@@ -303,8 +303,8 @@ private enum ChatListRecentEntry: Comparable, Identifiable {
                 } else if case .globalPosts = key {
                     header = ChatListSearchItemHeader(type: .text(strings.ChatList_HeaderPublicPosts, 0), theme: theme, strings: strings, actionTitle: nil, action: nil)
                 } else {
-                    header = ChatListSearchItemHeader(type: .recentPeers, theme: theme, strings: strings, actionTitle: strings.WebSearch_RecentSectionClear, action: { _ in
-                        clearRecentlySearchedPeers()
+                    header = ChatListSearchItemHeader(type: .recentPeers, theme: theme, strings: strings, actionTitle: strings.WebSearch_RecentSectionClear, action: { sourceNode in
+                        clearRecentlySearchedPeers(sourceNode)
                     })
                 }
 
@@ -1350,7 +1350,7 @@ private func chatListSearchContainerPreparedRecentTransition(
     peerSelected: @escaping (EnginePeer, Int64?, Bool, OpenPeerAction) -> Void,
     disabledPeerSelected: @escaping (EnginePeer, Int64?, ChatListDisabledPeerReason) -> Void,
     peerContextAction: ((EnginePeer, ChatListSearchContextActionSource, ASDisplayNode, ContextGesture?, CGPoint?) -> Void)?,
-    clearRecentlySearchedPeers: @escaping () -> Void,
+    clearRecentlySearchedPeers: @escaping (ASDisplayNode) -> Void,
     deletePeer: @escaping (EnginePeer.Id) -> Void,
     animationCache: AnimationCache,
     animationRenderer: MultiAnimationRenderer,

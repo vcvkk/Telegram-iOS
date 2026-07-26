@@ -526,6 +526,9 @@ func chatContextMenuItems(context: AccountContext, peerId: EnginePeer.Id, promoI
                                                 chatListController.present(textAlertController(context: context, title: nil, text: presentationData.strings.Login_UnknownError, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), in: .window(.root))
                                             }
                                         }, completed: {
+                                            if !didJoin {
+                                                return
+                                            }
                                             let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
                                                      |> deliverOnMainQueue).startStandalone(next: { peer in
                                                 guard let peer = peer else {

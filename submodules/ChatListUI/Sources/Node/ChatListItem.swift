@@ -2508,18 +2508,8 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             var isEGBadgeInStatus = false
             var currentStatusIconParticleColor: UIColor?
             var currentSecretIconImage: UIImage?
-            var currentForwardedIcon: UIImage?
-            var currentStoryIcon: UIImage?
-            var currentGiftIcon: UIImage?
-            var currentLocationIcon: UIImage?
-            var currentPollIcon: UIImage?
-            
-            // MARK: exteraGram
-            var displayForwardedIcon = false
-            var displayStoryReplyIcon = false
-            var displayGiftIcon = false
-            var displayLocationIcon = false
-            var displayPollIcon = false
+            var currentMessageTypeIcon: UIImage?
+            var currentMessageTypeIconOffset: CGPoint = .zero
             
             var selectableControlSizeAndApply: (CGFloat, (CGSize, Bool) -> ItemListSelectableControlNode)?
             var reorderControlSizeAndApply: (CGFloat, (CGFloat, Bool, ContainedViewLayoutTransition) -> ItemListEditableReorderControlNode)?
@@ -3045,11 +3035,10 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         
                         if !ignoreForwardedIcon {
                             if case .savedMessagesChats = item.chatListLocation {
-                                displayForwardedIcon = false
                             } else if let forwardInfo = message.forwardInfo, !forwardInfo.flags.contains(.isImported) && !message.id.peerId.isVerificationCodes {
-                                displayForwardedIcon = true
+                                messageTypeIcon = .forward
                             } else if let _ = message.attributes.first(where: { $0 is ReplyStoryAttribute }) {
-                                displayStoryReplyIcon = true
+                                messageTypeIcon = .story
                             } else {
                                 for media in message.media {
                                     if let file = media as? TelegramMediaFile {
@@ -3065,14 +3054,16 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                                     } else if let _ = media as? TelegramMediaGame {
                                         messageTypeIcon = .game
                                     } else if let _ = media as? TelegramMediaMap {
-                                        displayLocationIcon = true
+                                        messageTypeIcon = .location
                                     } else if let action = media as? TelegramMediaAction {
                                         switch action.action {
+                                        case let .phoneCall(_, _, _, isVideo):
+                                            messageTypeIcon = .call(isVideo ? .video : .voice, message.flags.contains(.Incoming) ? .incoming : .outgoing)
                                         case .giftPremium, .giftStars, .starGift, .starGiftUnique:
-                                            displayGiftIcon = true
+                                            messageTypeIcon = .gift
                                         case let .giftCode(_, _, _, boostPeerId, _, _, _, _, _, _, _):
                                             if boostPeerId == nil {
-                                                displayGiftIcon = true
+                                                messageTypeIcon = .gift
                                             }
                                         default:
                                             break
@@ -3229,59 +3220,23 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     attributedText = textString
             }
             
-            if displayForwardedIcon {
-                currentForwardedIcon = PresentationResourcesChatList.forwardedIcon(item.presentationData.theme)
-            }
-            
-            if displayStoryReplyIcon {
-                currentStoryIcon = PresentationResourcesChatList.storyReplyIcon(item.presentationData.theme)
-            }
-            
-            if displayGiftIcon {
-                currentGiftIcon = PresentationResourcesChatList.giftIcon(item.presentationData.theme)
-            }
-            
-            if displayLocationIcon {
-                currentLocationIcon = PresentationResourcesChatList.locationIcon(item.presentationData.theme)
-            }
-            
-            if displayPollIcon {
-                currentPollIcon = PresentationResourcesChatList.pollIcon(item.presentationData.theme)
-            }
-            
-            if let currentForwardedIcon {
-                textLeftCutout += currentForwardedIcon.size.width
-                if !contentImageSpecs.isEmpty {
-                    textLeftCutout += forwardedIconSpacing
-                } else {
-                    textLeftCutout += contentImageTrailingSpace
-                }
-            }
-            
-            if let currentStoryIcon {
-                textLeftCutout += currentStoryIcon.size.width
-                if !contentImageSpecs.isEmpty {
-                    textLeftCutout += forwardedIconSpacing
-                } else {
-                    textLeftCutout += contentImageTrailingSpace
-                }
-            }
-            
-            if let currentGiftIcon {
-                textLeftCutout += currentGiftIcon.size.width
-                if !contentImageSpecs.isEmpty {
-                    textLeftCutout += forwardedIconSpacing
-                } else {
-                    textLeftCutout += contentImageTrailingSpace
-                }
-            }
-            
-            if let currentLocationIcon {
-                textLeftCutout += currentLocationIcon.size.width
-                if !contentImageSpecs.isEmpty {
-                    textLeftCutout += forwardedIconSpacing
-                } else {
-                    textLeftCutout += contentImageTrailingSpace
+            switch messageTypeIcon {
+            case let .call(type, direction):
+                switch type {
+                case .voice:
+                    switch direction {
+                    case .incoming:
+                        currentMessageTypeIcon = PresentationResourcesChatList.callIncomingIcon(item.presentationData.theme)
+                    case .outgoing:
+                        currentMessageTypeIcon = PresentationResourcesChatList.callOutgoingIcon(item.presentationData.theme)
+                    }
+                case .video:
+                    switch direction {
+                    case .incoming:
+                        currentMessageTypeIcon = PresentationResourcesChatList.callVideoIncomingIcon(item.presentationData.theme)
+                    case .outgoing:
+                        currentMessageTypeIcon = PresentationResourcesChatList.callVideoOutgoingIcon(item.presentationData.theme)
+                    }
                 }
             case .forward:
                 currentMessageTypeIcon = PresentationResourcesChatList.forwardedIcon(item.presentationData.theme)
@@ -3312,13 +3267,14 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             default:
                 break
             }
+            let messageTypeIconScale = min(1.0, item.presentationData.fontSize.itemListBaseFontSize / 17.0)
             
-            if let currentPollIcon {
-                textLeftCutout += currentPollIcon.size.width
+            if let currentMessageTypeIcon {
+                textLeftCutout += currentMessageTypeIcon.size.width * messageTypeIconScale
                 if !contentImageSpecs.isEmpty {
                     textLeftCutout += forwardedIconSpacing
                 } else {
-                    textLeftCutout += contentImageTrailingSpace
+                    textLeftCutout += contentImageTrailingSpace - 1.0
                 }
             }
             
@@ -5146,31 +5102,17 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     
                     var mediaPreviewOffset = textNodeFrame.origin.offsetBy(dx: 1.0, dy: 1.0 + floor((measureLayout.size.height - contentImageSize.height) / 2.0))
                     
-                    var messageTypeIcon: UIImage?
-                    var messageTypeIconOffset = mediaPreviewOffset
-                    if let currentForwardedIcon {
-                        messageTypeIcon = currentForwardedIcon
-                        messageTypeIconOffset.y += 3.0
-                    } else if let currentStoryIcon {
-                        messageTypeIcon = currentStoryIcon
-                    } else if let currentGiftIcon {
-                        messageTypeIcon = currentGiftIcon
-                        messageTypeIconOffset.y -= 2.0 - UIScreenPixel
-                    } else if let currentLocationIcon {
-                        messageTypeIcon = currentLocationIcon
-                        messageTypeIconOffset.y -= 2.0 - UIScreenPixel
-                    } else if let currentPollIcon {
-                        messageTypeIcon = currentPollIcon
-                        messageTypeIconOffset.y -= 2.0 - UIScreenPixel
-                    }
+                    let messageTypeIconImage = currentMessageTypeIcon
+                    let messageTypeIconOffset = CGPoint(x: mediaPreviewOffset.x + currentMessageTypeIconOffset.x, y: mediaPreviewOffset.y + currentMessageTypeIconOffset.y)
                     
-                    if let messageTypeIcon {
-                        strongSelf.forwardedIconNode.image = messageTypeIcon
+                    if let messageTypeIconImage {
+                        strongSelf.forwardedIconNode.image = messageTypeIconImage
                         if strongSelf.forwardedIconNode.supernode == nil {
                             strongSelf.mainContentContainerNode.addSubnode(strongSelf.forwardedIconNode)
                         }
-                        transition.updateFrame(node: strongSelf.forwardedIconNode, frame: CGRect(origin: messageTypeIconOffset, size: messageTypeIcon.size))
-                        mediaPreviewOffset.x += messageTypeIcon.size.width + forwardedIconSpacing
+                        let iconSize = CGSize(width: messageTypeIconImage.size.width * messageTypeIconScale, height: messageTypeIconImage.size.height * messageTypeIconScale)
+                        transition.updateFrame(node: strongSelf.forwardedIconNode, frame: CGRect(origin: messageTypeIconOffset, size: iconSize))
+                        mediaPreviewOffset.x += messageTypeIconImage.size.width * messageTypeIconScale + forwardedIconSpacing
                     } else if strongSelf.forwardedIconNode.supernode != nil {
                         strongSelf.forwardedIconNode.removeFromSupernode()
                     }
