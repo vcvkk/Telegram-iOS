@@ -88,6 +88,21 @@ FUNC_RE = re.compile(
     rf"\b(?:public\s+|private\s+|internal\s+|open\s+|static\s+|class\s+|final\s+|"
     rf"override\s+)*func\s+(?P<name>{IDENTIFIER})\s*(?:<[^>]*>)?\s*\("
 )
+ENUM_DECL_RE = re.compile(
+    rf"^(?:public\s+|internal\s+|final\s+|open\s+|private\s+|fileprivate\s+|"
+    rf"indirect\s+)*enum\s+(?P<name>{IDENTIFIER})",
+    re.M,
+)
+CASE_DECL_RE = re.compile(rf"^[ \t]*(?:indirect\s+)?case\s+(?P<name>{IDENTIFIER})\s*\(", re.M)
+SWITCH_RE = re.compile(rf"\bswitch\s+(?P<subject>self|{IDENTIFIER})\s*\{{")
+# `case let .website(index, _, _, website, peer, …):`
+ARM_RE = re.compile(rf"(?:^|\n)[ \t]*case\s+let\s+\.(?P<case>{IDENTIFIER})\s*\(")
+# FUNC_RE only knows identifiers, and the `==`/`<` an entry enum declares are
+# exactly where the switch-over-a-parameter shape lives.
+ANY_FUNC_RE = re.compile(
+    rf"\bfunc\s+(?:{IDENTIFIER}|[=<>!+\-*/%&|^~]+)\s*(?:<[^>]*>)?\s*\("
+)
+
 # `public let requestMessageUpdate: (EngineMessage.Id, Bool, ControlledTransition?) -> Void`
 CLOSURE_PROP_RE = re.compile(
     rf"\b(?:public\s+|private\s+|internal\s+)*(?:let|var)\s+(?P<name>{IDENTIFIER})\s*:\s*\(\(?"
@@ -485,6 +500,98 @@ def func_param_bindings(src, spans):
     return out
 
 
+def enum_case_payloads(src):
+    """enum name -> {case name: [payload type text]} for enums declared here."""
+    bounds = [(m.start(), m.group("name")) for m in ENUM_DECL_RE.finditer(src)]
+    if not bounds:
+        return {}
+    starts = [m.start() for m in TYPE_DECL_RE.finditer(src)] + [len(src)]
+    payloads = {}
+    for position, name in bounds:
+        end = next((s for s in starts if s > position), len(src))
+        cases = {}
+        for match in CASE_DECL_RE.finditer(src, position, end):
+            open_paren = match.end() - 1
+            close_paren = match_paren(src, open_paren)
+            if close_paren < 0:
+                continue
+            types = []
+            for chunk in split_args(src[open_paren + 1:close_paren]):
+                # `peer: EnginePeer?` — the label is not part of the type.
+                head, _, tail = chunk.partition(":")
+                types.append((tail if tail and re.fullmatch(rf"\s*{IDENTIFIER}\s*", head)
+                              else chunk).strip())
+            cases[match.group("name")] = types
+        if cases:
+            payloads[name] = cases
+    return payloads
+
+
+def switch_subject_type(src, position, name):
+    """Type of `switch <name>` from the enclosing function's parameter list."""
+    best = None
+    for match in ANY_FUNC_RE.finditer(src):
+        if match.start() > position:
+            break
+        open_paren = match.end() - 1
+        close_paren = match_paren(src, open_paren)
+        if close_paren < 0 or close_paren > position:
+            continue
+        for _, param, declared in parse_params(src[open_paren + 1:close_paren]):
+            if param == name and declared:
+                best = declared.strip().rstrip("?")
+    return best
+
+
+def enum_case_bindings(src, spans):
+    """Type the names a `switch self` arm binds, from the enum's own `case`.
+
+    `case let .website(_, _, _, _, _, website, peer, …)` is the only place the
+    entry enums of the ItemList controllers say what `peer` is, and it is where
+    the Engine boundary keeps breaking: the same file passed that binding to an
+    `EnginePeer?` parameter and to `arePeersEqual`, which takes Postbox's
+    `Peer?`. Without this the binding is opaque and both sites are invisible.
+
+    The subject is `self` inside the enum, or a parameter annotated with it —
+    the `==` and `<` implementations switch over `lhs`.
+    """
+    payloads = enum_case_payloads(src)
+    if not payloads:
+        return []
+    owners = enclosing_types(src)
+    extra = []
+    for switch in SWITCH_RE.finditer(src):
+        subject = switch.group("subject")
+        if subject == "self":
+            cases = payloads.get(enclosing_at(owners, switch.start()))
+        else:
+            # `static func ==(lhs: SomeEntry, rhs: SomeEntry)` then `switch lhs`
+            cases = payloads.get(switch_subject_type(src, switch.start(), subject))
+        if not cases:
+            continue
+        body_start = switch.end() - 1
+        body_end = scope_end(spans, body_start + 1, len(src))
+        arms = list(ARM_RE.finditer(src, body_start, body_end))
+        # Every arm must name a case of this enum, or the switch is not the
+        # one we think it is and nothing here may be trusted.
+        if not arms or any(a.group("case") not in cases for a in arms):
+            continue
+        for index, arm in enumerate(arms):
+            open_paren = arm.end() - 1
+            close_paren = match_paren(src, open_paren)
+            if close_paren < 0:
+                continue
+            names = [n.strip() for n in split_args(src[open_paren + 1:close_paren])]
+            types = cases[arm.group("case")]
+            if len(names) != len(types):
+                continue
+            end = arms[index + 1].start() if index + 1 < len(arms) else body_end
+            for name, declared in zip(names, types):
+                if name != "_" and declared and re.fullmatch(IDENTIFIER, name):
+                    extra.append((name, close_paren, "annotated", declared, end))
+    return extra
+
+
 def bindings(src, decls=None):
     """name -> sorted [(position, kind, payload, scope_end)] for one file."""
     spans = block_spans(src)
@@ -499,6 +606,8 @@ def bindings(src, decls=None):
                 match.start(), kind, payload,
                 scope_end(spans, match.start(), len(src)),
             ))
+    for name, position, kind, payload, end in enum_case_bindings(src, spans):
+        found[name].append((position, kind, payload, end))
     if decls is not None:
         for name, position, kind, payload, end in closure_param_bindings(src, decls, spans):
             found[name].append((position, kind, payload, end))

@@ -129,9 +129,19 @@ and strands files at the old version.
    compile errors: a `Peer`/`Message` handed across the boundary to a module
    that stayed on `EnginePeer`/`EngineMessage`, or the reverse. It resolves an
    argument's type only from explicit annotations — a function parameter, a
-   `let x: T`, a stored property, or the parameter list of the closure a
-   `asyncLayout()` returns — and stays quiet when it cannot, so a clean run is
-   not proof. It is the only checker here that reads expressions rather than
+   `let x: T`, a stored property, the parameter list of the closure an
+   `asyncLayout()` returns, or the payload of the enum case a `switch` arm
+   destructures — and stays quiet when it cannot, so a clean run is not proof.
+
+   That last source is worth knowing about: `case let .website(…, peer, …)` is
+   the only place an ItemList entry enum says what `peer` is, and changing the
+   payload type moves every arm's binding at once. Getting it wrong cost two
+   consecutive rounds in RecentSessionsController — first `Peer` where
+   `ItemListWebsiteItem` wanted `EnginePeer`, then `EnginePeer` where
+   `arePeersEqual` and the arguments closure wanted `Peer`. The subject may be
+   `self` or a parameter annotated with the enum, since `==` and `<` switch
+   over `lhs`; every arm must name a case of that enum or the whole switch is
+   skipped. It is the only checker here that reads expressions rather than
    declarations, so re-validate it against a known-bad file after changing it:
    it silently found nothing at all through three separate defects of its own.
 
