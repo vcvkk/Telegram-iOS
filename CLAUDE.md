@@ -59,9 +59,37 @@ and strands files at the old version.
    python3 build-system/merge-tools/check_duplicate_types.py # no redeclarations
    python3 build-system/merge-tools/check_build_deps.py      # no "no such module"
    python3 build-system/merge-tools/check_engine_adapters.py # Peer/Message adapters
+   python3 build-system/merge-tools/check_enum_cases.py      # enum cases vs their uses
+   python3 build-system/merge-tools/check_init_args.py       # init call sites vs declarations
    python3 build-system/merge-tools/check_api_drift.py --upstream /tmp/upstream/release-<NEW>
    python3 build-system/merge-tools/check_syntax_debt.py --upstream /tmp/upstream/release-<NEW>
    ```
+   `check_enum_cases.py` and `check_init_args.py` both cover the same failure:
+   a merge takes a declaration hunk and its use hunks independently and lands
+   one without the other. `check_enum_cases.py` cross-checks an enum's `case`
+   list against its `switch self` arms and against `entries.append(.x(…))` on
+   arrays typed as it — the 12.9.2 bump lost `DebugControllerEntry.debugRichText`
+   exactly that way — and also reports a `switch self` with no `default:` that
+   misses a case, which is the same accident in reverse. `check_init_args.py`
+   compares initializer call sites against the initializers they resolve to and
+   reports a required argument that is never passed (`NavigationBarTheme` grew
+   `accentDisabledButtonColor`; one of twelve call sites did not) or a single
+   argument label the initializer does not declare (which is how the fork's
+   `isEGPro` and `immediateExternalShareOverridingEGBehaviour` renames were
+   found reverted on the declaration side only).
+
+   Both resolve strictly lexically and go quiet the moment they cannot: the
+   enum checker binds `switch self` to the innermost enclosing type rather than
+   to a same-named type in another module (`Content`, `Category`, `Message` and
+   `ChannelParticipant` each name several unrelated types here), and the
+   initializer checker skips any type with an `override init`, a lone
+   `convenience init`, or no initializer in its own body, because the ones that
+   would actually resolve are then invisible. A clean run is not proof.
+
+   Both filter to directories reachable from `Telegram/` through BUILD `deps`
+   (`buildgraph.py`; `--all` disables it). `submodules/LegacyDataImport` and
+   `exteraGram/Playground` are in the tree but in nothing's dependency graph,
+   and have been failing both checks for releases without CI ever noticing.
    `check_syntax_debt.py` fails on leftover conflict markers — eight orphaned
    `>>>>>>> theirs` lines sat committed in `TelegramUI/Sources` for a whole
    bump, invisible because that module only compiles once everything below it
