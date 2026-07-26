@@ -112,12 +112,20 @@ jobs:
           path: /tmp/build.log
           retention-days: 7
 
+      # The limit is in *uncompressed* megabytes on disk; GitHub's 10 GB budget
+      # counts the compressed artifact, and this cache compresses ~5:1 (7961 MB
+      # on disk saved as 1587 MB). 7000 was well under what the budget allows,
+      # and under what a debug build needs: the working set is ~9 GB, so every
+      # run evicted ~1 GB that the next run rebuilt — the disk-cache hit rate
+      # fell from 82% (41 actions executed) to 57% (1678 executed) and a 17-line
+      # commit took 21 minutes. 14000 MB is ~3 GB saved, which leaves room for
+      # main.yml's own ~2.1 GB entry.
       - name: Trim Bazel cache
         if: always()
         run: |
           CACHE_DIR="$HOME/telegram-bazel-cache"
           [ -d "$CACHE_DIR" ] || exit 0
-          LIMIT_MB=7000
+          LIMIT_MB=14000
           SIZE_MB=$(du -sm "$CACHE_DIR" | cut -f1)
           echo "Bazel disk cache: ${SIZE_MB} MB (limit ${LIMIT_MB} MB)"
           if [ "$SIZE_MB" -gt "$LIMIT_MB" ]; then

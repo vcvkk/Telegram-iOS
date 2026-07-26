@@ -27,11 +27,18 @@ order — so a call that actually resolves to an inherited or overloaded
 initializer looks unfamiliar and is passed over rather than guessed at. A clean
 run is therefore not proof.
 
+The same walk is applied to top-level functions, which drift the same way —
+`cachedWallpaper` moved from `(account:slug:settings:)` to
+`(engine:network:slug:settings:)` upstream and six call sites in
+ThemeSettingsController stayed behind, costing another CI round. A function is
+only considered when the tree declares that name exactly once, at file scope,
+non-generic and without a `where` clause.
+
 Two findings:
 
   missing   a parameter with no default value that the call never supplies;
-  unknown   a single argument label the initializer does not declare (an
-            upstream rename that reached the declaration but not the caller).
+  unknown   a single argument label the callee does not declare (an upstream
+            rename that reached the declaration but not the caller).
 
 Usage:
     check_init_args.py                     # whole repo, exit 1 on findings
@@ -53,9 +60,24 @@ TYPE_DECL_RE = re.compile(
     r"\b(?P<kind>struct|class|actor|enum|protocol|extension)\s+"
     r"(?P<name>[A-Za-z_][\w.]*)"
 )
+# Conformances that synthesise an initializer which is nowhere in the source:
+# `enum AutomaticDownloadDataUsage: Int` declares only `init(preset:)` and is
+# still constructed as `AutomaticDownloadDataUsage(rawValue:)`, and every
+# Decodable type answers to `init(from:)`.
+SYNTHESISED_INIT_RE = re.compile(
+    r":\s*[^{\n]*\b(?:Int|Int8|Int16|Int32|Int64|UInt|UInt8|UInt16|UInt32|UInt64|"
+    r"String|Character|Double|Float|OptionSet|RawRepresentable|"
+    r"Codable|Decodable)\b"
+)
 NON_TYPE_NAMES = {"func", "var", "let", "init", "subscript", "deinit", "case"}
 INIT_RE = re.compile(r"(?<![\w.])init\s*[?!]?\s*(?P<generic><[^\n{(]*>)?\s*\(")
 CALL_RE = re.compile(r"(?<![\w.$])(?P<name>[A-Z][A-Za-z0-9_]*)\s*\(")
+FUNC_CALL_RE = re.compile(r"(?<![\w.$])(?P<name>[a-z_][A-Za-z0-9_]*)\s*\(")
+FUNC_DECL_RE = re.compile(r"^(?P<access>public\s+|internal\s+|private\s+|fileprivate\s+)?func\s+"
+                          r"(?P<name>[a-z_][A-Za-z0-9_]*)\s*(?P<generic><[^\n{(]*>)?\s*\(", re.M)
+# Statement keywords that take a parenthesised expression.
+KEYWORD_CALLS = {"if", "for", "while", "switch", "guard", "return", "catch", "repeat",
+                 "in", "case", "throw", "try", "await", "let", "var", "self", "super"}
 
 
 def read(path):
@@ -252,16 +274,54 @@ class TypeInfo:
         self.inits = []             # [(params, path, line, in_own_body)]
         self.unparseable_init = False
         self.inherits_initializers = False
+        self.file_private = False
+
+
+class FuncInfo:
+    """A top-level `func` name and every declaration of it in the tree."""
+
+    def __init__(self):
+        self.declarations = []      # [(params, path, line)]
+        self.unparseable = False
+
+
+def record_top_level_funcs(src, depths, path, funcs):
+    """Functions declared at file scope — depth 0, so not a method."""
+    for match in FUNC_DECL_RE.finditer(src):
+        if depths[match.start()] != 0:
+            continue
+        info = funcs.setdefault(match.group("name"), FuncInfo())
+        if match.group("generic"):
+            info.unparseable = True
+            continue
+        open_paren = match.end() - 1
+        close_paren = match_paren(src, open_paren)
+        if close_paren < 0:
+            info.unparseable = True
+            continue
+        # `where` clauses come with generics the labels alone cannot model.
+        if re.match(r"[^\n{]*\bwhere\b", src[close_paren + 1:close_paren + 200].split("{")[0]):
+            info.unparseable = True
+            continue
+        params = parse_parameters(src[open_paren + 1:close_paren])
+        if params is None:
+            info.unparseable = True
+            continue
+        access = (match.group("access") or "").strip()
+        info.declarations.append((params, path, line_of(src, match.start()),
+                                  access in ("private", "fileprivate")))
 
 
 def collect(scope):
     """Type declarations and their initializers, plus every file's source."""
     types = {}
+    funcs = {}
     sources = {}
     for path in iter_swift_files(scope):
         src = strip_noise(read(path))
         sources[path] = src
         depths = brace_depths(src)
+        record_top_level_funcs(src, depths, path, funcs)
         for match in TYPE_DECL_RE.finditer(src):
             name = match.group("name").split(".")[0]
             kind = match.group("kind")
@@ -274,6 +334,10 @@ def collect(scope):
             if brace < 0 or ";" in src[match.end():brace]:
                 continue
             end = match_brace(src, brace)
+            inheritance = src[match.end():brace]
+            line_start = src.rfind("\n", 0, match.start()) + 1
+            file_private = bool(re.search(r"\b(?:private|fileprivate)\b",
+                                          src[line_start:match.start()]))
             info = types.get(name)
             if info is None:
                 info = types[name] = TypeInfo(name, kind, path)
@@ -283,9 +347,29 @@ def collect(scope):
                 info.declarations += 1
                 info.kind = kind
                 info.path = path
+                info.file_private = file_private
+            if SYNTHESISED_INIT_RE.search(inheritance):
+                info.inherits_initializers = True
             record_inits(src, depths, brace + 1, end, info, path,
                          in_own_body=(kind != "extension"))
-    return types, sources
+    return types, funcs, sources
+
+
+def function_candidates(funcs):
+    """Free functions whose name resolves to exactly one visible declaration."""
+    result = {}
+    for name, info in funcs.items():
+        if info.unparseable or len(info.declarations) != 1:
+            continue
+        params, path, line, file_private = info.declarations[0]
+        if not params:
+            continue
+        # A file-private function is invisible elsewhere, so a same-named call
+        # in another file resolves to something we are not looking at —
+        # `extractCGImage(from:)` is a static method in NotificationService.
+        result[name] = [(params, os.path.relpath(path, REPO_ROOT), line,
+                         path if file_private else None)]
+    return result
 
 
 def record_inits(src, depths, start, end, info, path, in_own_body):
@@ -352,8 +436,11 @@ def candidates(types):
         # inherited designated initializers.
         if not any(own for _, _, _, own in info.inits):
             continue
+        # `private final class Child` in NavigationContainer.swift is not the
+        # `Child` that ComponentFlow's combined components construct.
+        scope = info.path if info.file_private else None
         overloads = [
-            (params, os.path.relpath(path, REPO_ROOT), line)
+            (params, os.path.relpath(path, REPO_ROOT), line, scope)
             for params, path, line, _ in info.inits if params
         ]
         if overloads:
@@ -361,14 +448,41 @@ def candidates(types):
     return result
 
 
-def check_file(path, src, checkable, findings):
-    rel = os.path.relpath(path, REPO_ROOT)
-    for match in CALL_RE.finditer(src):
-        overloads = checkable.get(match.group("name"))
+def report(findings, rel, line, name, outcomes, kind):
+    """Report only when exactly one declaration resembles the call.
+
+    Two candidates mean overload resolution, which this checker does not
+    attempt; none means the call does not resemble anything we can see. A
+    parameter that upstream *replaced* shows up as an unknown label and a
+    missing one at the same time — `cachedWallpaper(account:)` became
+    `cachedWallpaper(engine:network:)` — so both are reported together.
+    """
+    if len(outcomes) != 1:
+        return
+    missing, unknown, decl_rel, decl_line = outcomes[0]
+    parts = []
+    if unknown:
+        parts.append("passes " + ", ".join(f"'{u}:'" for u in unknown)
+                     + " which it does not declare")
+    if missing:
+        parts.append("never supplies required "
+                     + ", ".join(repr(m) for m in missing))
+    if not parts:
+        return
+    findings.append((
+        rel, line,
+        f"{name}(…) {' and '.join(parts)} [{kind} at {decl_rel}:{decl_line}]",
+    ))
+
+
+def walk_calls(path, src, regex, table, rel, findings, kind):
+    for match in regex.finditer(src):
+        name = match.group("name")
+        overloads = table.get(name)
         if overloads is None:
             continue
         before = src[:match.start()].rstrip()
-        if re.search(r"\b(?:case|func|class|struct|enum|actor|protocol|extension)$", before):
+        if re.search(r"\b(?:case|func|class|struct|enum|actor|protocol|extension|init)$", before):
             continue
         open_paren = match.end() - 1
         close_paren = match_paren(src, open_paren)
@@ -382,38 +496,35 @@ def check_file(path, src, checkable, findings):
             continue
 
         outcomes = []
-        for params, decl_rel, decl_line in overloads:
+        for params, decl_rel, decl_line, only_in_file in overloads:
+            if only_in_file is not None and only_in_file != path:
+                continue
             outcome = match_labels(params, supplied)
             if outcome is None:
                 continue
             missing, unknown = outcome
             if not missing and not unknown:
-                outcomes = None  # one overload takes this call as written
+                outcomes = None  # one candidate takes this call as written
                 break
             outcomes.append((missing, unknown, decl_rel, decl_line))
         if outcomes is None:
             continue
+        report(findings, rel, line_of(src, match.start()), name, outcomes, kind)
 
-        # Report only when a single initializer is a near miss. Two candidates
-        # mean overload resolution, which this checker does not attempt.
-        near = [o for o in outcomes if o[0] and not o[1]]
-        renamed = [o for o in outcomes if not o[0] and len(o[1]) == 1]
-        line = line_of(src, match.start())
-        name = match.group("name")
-        if len(near) == 1 and not renamed:
-            missing, _, decl_rel, decl_line = near[0]
-            findings.append((
-                rel, line,
-                f"{name}(…) is missing required argument(s) "
-                f"{', '.join(repr(m) for m in missing)} ({decl_rel}:{decl_line})",
-            ))
-        elif len(renamed) == 1 and not near:
-            _, unknown, decl_rel, decl_line = renamed[0]
-            findings.append((
-                rel, line,
-                f"{name}(…) passes '{unknown[0]}:', which its initializer does "
-                f"not declare ({decl_rel}:{decl_line})",
-            ))
+
+def check_file(path, src, checkable, callable_funcs, findings):
+    rel = os.path.relpath(path, REPO_ROOT)
+    if re.search(r"^import SwiftUI\b", src, re.M):
+        # SwiftUI brings its own VStack, LongPressGesture, Text and friends,
+        # which shadow the tree's same-named types.
+        return
+    walk_calls(path, src, CALL_RE, checkable, rel, findings, "initializer")
+    # A `func` of the same name anywhere in this file may be the method an
+    # unqualified call actually resolves to — `lookupCountryIdByNumber` is both
+    # a free function and a static method on a controller.
+    local = {m.group(1) for m in re.finditer(r"\bfunc\s+([a-z_][A-Za-z0-9_]*)", src)}
+    visible = {n: v for n, v in callable_funcs.items() if n not in local}
+    walk_calls(path, src, FUNC_CALL_RE, visible, rel, findings, "function")
 
 
 def main():
@@ -421,8 +532,9 @@ def main():
     include_unbuilt = "--all" in sys.argv
     # Declarations always come from the whole tree: a call site in one module is
     # checked against a type declared in another.
-    types, sources = collect(SCAN_ROOTS)
+    types, funcs, sources = collect(SCAN_ROOTS)
     checkable = candidates(types)
+    callable_funcs = function_candidates(funcs)
 
     selected = [
         path for path in sources
@@ -440,14 +552,15 @@ def main():
 
     findings = []
     for path in sorted(selected):
-        check_file(path, sources[path], checkable, findings)
+        check_file(path, sources[path], checkable, callable_funcs, findings)
 
     if not findings:
-        print(f"OK: initializer call sites agree with their declarations "
-              f"({len(checkable)} types, {len(selected)} files checked).")
+        print(f"OK: call sites agree with their declarations "
+              f"({len(checkable)} types, {len(callable_funcs)} functions, "
+              f"{len(selected)} files checked).")
         return 0
 
-    print(f"FAIL: {len(findings)} initializer call site(s):\n")
+    print(f"FAIL: {len(findings)} call site(s):\n")
     current = None
     for rel, line, message in sorted(findings):
         if rel != current:

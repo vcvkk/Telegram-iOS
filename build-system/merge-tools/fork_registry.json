@@ -143,6 +143,12 @@
       "path": "submodules/ShareController/Sources/ShareController.swift",
       "pattern": "immediateExternalShareOverridingEGBehaviour",
       "note": "Same rename, same merge: the declaration came back as ...SGBehaviour while ChatControllerOpenLinkContextMenu passes ...EGBehaviour."
+    },
+    {
+      "name": "PeersNearby: group location setup on PeerInfoInteraction",
+      "path": "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoInteraction.swift",
+      "pattern": "editingOpenSetupLocation",
+      "note": "Upstream has no such member; PeerInfoProfileItems and PeerInfoScreen both use it and the 12.9.2 merge dropped it from the interaction."
     }
   ],
   "hook_markers": [

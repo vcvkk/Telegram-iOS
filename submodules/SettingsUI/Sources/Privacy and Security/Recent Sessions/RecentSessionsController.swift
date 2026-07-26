@@ -117,7 +117,7 @@ private enum RecentSessionsEntry: ItemListNodeEntry {
     case otherSessionsHeader(SortIndex, String)
     case addDevice(SortIndex, String)
     case session(index: Int32, sortIndex: SortIndex, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, session: RecentAccountSession, enabled: Bool, editing: Bool, revealed: Bool)
-    case website(index: Int32, sortIndex: SortIndex, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, website: WebAuthorization, peer: Peer?, enabled: Bool, editing: Bool, revealed: Bool)
+    case website(index: Int32, sortIndex: SortIndex, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, website: WebAuthorization, peer: EnginePeer?, enabled: Bool, editing: Bool, revealed: Bool)
     case devicesInfo(SortIndex, String)
     case ttlHeader(SortIndex, String)
     case ttlTimeout(SortIndex, String, String)
@@ -543,7 +543,7 @@ private func recentSessionsControllerEntries(presentationData: PresentationData,
     return entries
 }
 
-private func recentSessionsControllerEntries(presentationData: PresentationData, state: RecentSessionsControllerState, websites: [WebAuthorization]?, peers: [PeerId : Peer]?) -> [RecentSessionsEntry] {
+private func recentSessionsControllerEntries(presentationData: PresentationData, state: RecentSessionsControllerState, websites: [WebAuthorization]?, peers: [EnginePeer.Id : EnginePeer]?) -> [RecentSessionsEntry] {
     var entries: [RecentSessionsEntry] = []
     
     if let websites = websites, let peers = peers {

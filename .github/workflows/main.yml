@@ -1,15 +1,13 @@
 name: Build exteraGram
 
+# Not on `push`: during a version bump every master commit is a compile fix, and
+# a ~30-48 min release build only repeats the diagnostics validate.yml already
+# produced in ~6 — while its own cache entry competes for the repo's 10 GB
+# budget. Tags and manual dispatch are what actually need a release build.
 on:
   push:
-    branches:
-      - master
-    # Changes that cannot affect the built app should not spend a ~48 min
-    # release build (merge tooling, docs, the validate workflow itself).
-    paths-ignore:
-      - 'build-system/merge-tools/**'
-      - '.github/workflows/validate.yml'
-      - '**/*.md'
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       configuration:

@@ -462,6 +462,9 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             openReport: { [weak self] type in
                 self?.openReport(type: type, contextController: nil, backAction: nil)
             },
+            openDeleteReaction: { [weak self] messageId in
+                self?.openDeleteReaction(messageId: messageId)
+            },
             openShareBot: { [weak self] in
                 self?.openShareBot()
             },
@@ -713,6 +716,11 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     return
                 }
                 self.displayAutoTranslateLocked()
+            }, editingOpenBusinessChatBots: { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.editingOpenBusinessChatBots()
             },
             getController: { [weak self] in
                 return self?.controller
@@ -4372,6 +4380,17 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         self.controller?.push(controller)
     }
     
+    private func editingOpenBusinessChatBots() {
+        let _ = (self.context.sharedContext.makeChatbotSetupScreenInitialData(context: self.context)
+        |> take(1)
+        |> deliverOnMainQueue).start(next: { [weak self] initialData in
+            guard let self else {
+                return
+            }
+            self.controller?.push(self.context.sharedContext.makeChatbotSetupScreen(context: self.context, initialData: initialData))
+        })
+    }
+    
     private func editingOpenSetupLocation() {
         guard let data = self.data, let peer = data.peer else {
             return
@@ -5412,7 +5431,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     return
                 }
                 strongSelf.updateAvatarDisposable.set((strongSelf.context.engine.contacts.updateContactPhoto(peerId: strongSelf.peerId, resource: nil, videoResource: nil, videoStartTimestamp: nil, markup: nil, mode: .custom, mapResourceToAvatarSizes: { resource, representations in
-                    mapResourceToAvatarSizes(postbox: strongSelf.context.account.postbox, resource: resource._asResource(), representations: representations)
+                    mapResourceToAvatarSizes(engine: strongSelf.context.engine, resource: resource, representations: representations)
                 })
                 |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
                     guard let strongSelf = self else {

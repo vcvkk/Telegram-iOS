@@ -769,6 +769,8 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
     
     private let initTimestamp: Double
     
+    var pinToTopStableId: EngineMessage.StableId?
+    
     public init(
         context: AccountContext,
         updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>),
@@ -2163,6 +2165,29 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                     includeEmbeddedSavedChatInfo = true
                 }
                                 
+                var pinToTopStableId: EngineMessage.StableId?
+                var scrollToPinToTopStableId = false
+                if let strongSelf = self {
+                    for i in (0 ..< view.entries.count).reversed() {
+                        let message = view.entries[i].message
+                        if message.attributes.contains(where: { $0 is TypingDraftMessageAttribute }) {
+                            for j in (0 ..< i).reversed() {
+                                let otherMessage = view.entries[j].message
+                                if !otherMessage.effectivelyIncoming(context.account.peerId) && otherMessage.id.namespace == Namespaces.Message.Cloud {
+                                    if strongSelf.pinToTopStableId != otherMessage.stableId {
+                                        strongSelf.pinToTopStableId = otherMessage.stableId
+                                        scrollToPinToTopStableId = true
+                                    }
+                                }
+                                break
+                            }
+                            break
+                        }
+                    }
+                    
+                    pinToTopStableId = strongSelf.pinToTopStableId
+                }
+                                
                 let previousChatHistoryEntriesForViewState = chatHistoryEntriesForViewState.with({ $0 })
                 let (filteredEntries, updatedChatHistoryEntriesForViewState) = chatHistoryEntriesForView(
                     currentState: previousChatHistoryEntriesForViewState,
@@ -2190,7 +2215,8 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                     cachedData: data.cachedData,
                     adMessage: allAdMessages.fixed,
                     dynamicAdMessages: allAdMessages.opportunistic,
-                    isMusicPlaylist:  isMusicPlaylist
+                    isMusicPlaylist:  isMusicPlaylist,
+                    pinToTopStableId: pinToTopStableId
                 )
                 let lastHeaderId = filteredEntries.last.flatMap { listMessageDateHeaderId(timestamp: $0.index.timestamp) } ?? 0
                 let processedView = ChatHistoryView(originalView: view, filteredEntries: filteredEntries, associatedData: associatedData, lastHeaderId: lastHeaderId, id: id, locationInput: update.2, ignoreMessagesInTimestampRange: update.3, ignoreMessageIds: update.4)
@@ -2412,6 +2438,17 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                 }
                 if let keyboardButtonsMessageValue = keyboardButtonsMessage, keyboardButtonsMessageValue.isRestricted(platform: "ios", contentSettings: context.currentContentSettings.with({ $0 })) {
                     keyboardButtonsMessage = nil
+                }
+                
+                if scrollToPinToTopStableId, let strongSelf = self, let pinToTopStableId = strongSelf.pinToTopStableId {
+                    for entry in processedView.filteredEntries.reversed() {
+                        if case let .MessageEntry(message, _, _, _, _, _) = entry {
+                            if message.stableId == pinToTopStableId {
+                                updatedScrollPosition = .index(subject: MessageHistoryScrollToSubject(index: .message(message.index), quote: nil), position: .top(0.0), directionHint: .Up, animated: true, highlight: false, displayLink: false, setupReply: false)
+                                break
+                            }
+                        }
+                    }
                 }
                 
                 let rawTransition = preparedChatHistoryViewTransition(from: previous, to: processedView, reason: reason, reverse: reverse, chatLocation: chatLocation, source: source, controllerInteraction: controllerInteraction, scrollPosition: updatedScrollPosition, scrollAnimationCurve: scrollAnimationCurve, initialData: initialData?.initialData, keyboardButtonsMessage: keyboardButtonsMessage, cachedData: initialData?.cachedData, cachedDataMessages: initialData?.cachedDataMessages, readStateData: initialData?.readStateData, flashIndicators: flashIndicators, updatedMessageSelection: previousSelectedMessages != selectedMessages, messageTransitionNode: messageTransitionNode(), allUpdated: !isSavedMusic || forceUpdateAll)

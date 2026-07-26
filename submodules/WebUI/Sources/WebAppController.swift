@@ -4292,7 +4292,8 @@ public func standaloneWebAppController(
     didDismiss: @escaping () -> Void = {},
     getNavigationController: @escaping () -> NavigationController? = { return nil },
     getSourceRect: (() -> CGRect?)? = nil,
-    verifyAgeCompletion: ((Int) -> Void)? = nil
+    verifyAgeCompletion: ((Int) -> Void)? = nil,
+    onControllerCreated: @escaping (WebAppController) -> Void = { _ in }
 ) -> ViewController {
     let controller = AttachmentController(
         context: context,
@@ -4313,6 +4314,7 @@ public func standaloneWebAppController(
         webAppController.getNavigationController = getNavigationController
         webAppController.requestSwitchInline = requestSwitchInline
         webAppController.verifyAgeCompletion = verifyAgeCompletion
+        onControllerCreated(webAppController)
         present(webAppController, webAppController.mediaPickerContext)
         return true
     }

@@ -83,8 +83,24 @@ and strands files at the old version.
    to a same-named type in another module (`Content`, `Category`, `Message` and
    `ChannelParticipant` each name several unrelated types here), and the
    initializer checker skips any type with an `override init`, a lone
-   `convenience init`, or no initializer in its own body, because the ones that
-   would actually resolve are then invisible. A clean run is not proof.
+   `convenience init`, no initializer in its own body, or a conformance that
+   synthesises one (`: Int`, `: Codable`), because the initializer that would
+   actually resolve is then invisible. It also skips files that `import
+   SwiftUI`, whose `VStack`/`LongPressGesture`/`Text` shadow the tree's own.
+   A clean run is not proof.
+
+   `check_init_args.py` applies the same walk to top-level functions, which
+   drift identically — `cachedWallpaper` moved from `(account:slug:settings:)`
+   to `(engine:network:slug:settings:)` and six call sites in
+   ThemeSettingsController stayed behind, which cost a CI round on its own. A
+   function is only considered when the tree declares that name exactly once at
+   file scope, non-generic; a `private`/`fileprivate` declaration is matched
+   only against calls in its own file, and a name that the calling file also
+   declares as a method is skipped, since an unqualified call resolves there
+   first. A name declared nowhere in the tree (upstream deleted
+   `telegramWallpapers` and `telegramThemes` in favour of
+   `context.engine.themes`) is invisible to this checker — there is no way to
+   tell it apart from a system-framework function.
 
    Both filter to directories reachable from `Telegram/` through BUILD `deps`
    (`buildgraph.py`; `--all` disables it). `submodules/LegacyDataImport` and
@@ -122,11 +138,29 @@ and strands files at the old version.
    Add an entry to `fork_registry.json` whenever a bump turns out to have
    dropped something.
 
-6. **CI.** Both workflows run on `master` only: `validate.yml` (debug, compile
-   only, `--keep_going`, error digest in the run summary) for fast feedback,
-   and `main.yml` for the full release build. Pushes to other branches do not
-   trigger CI. Don't push in bursts — each push cancels the previous run of
-   both workflows, and a cancelled run does not save the bazel cache.
+6. **CI.** `validate.yml` (debug, compile only, `--keep_going`, error digest in
+   the run summary) runs on pushes to `master`; `main.yml` (full release build)
+   runs on `v*` tags and manual dispatch only — during a bump it just repeats
+   validate's diagnostics 30 minutes later. Pushes to other branches do not
+   trigger CI. Don't push in bursts — each push cancels the previous run, and a
+   cancelled run does not save the bazel cache.
+
+   **The bazel disk cache is the whole build time.** A validate run is ~6
+   minutes when the cache holds (82% disk-cache hits, ~40 actions executed) and
+   ~21 when it does not (57%, ~1700 executed) — the diff size barely matters; a
+   17-line commit took 21 minutes. Read the `processes:` line in the digest
+   before blaming anything else, and don't compare against the 2-3 minute runs
+   in the history: those were cancelled, or died during analysis with a 46 s
+   compile step.
+
+   The `Trim Bazel cache` step's `LIMIT_MB` is in *uncompressed* megabytes,
+   while GitHub's 10 GB per-repo budget counts the compressed artifact, and this
+   cache compresses ~5:1 (7961 MB on disk → 1587 MB stored; main.yml's opt cache
+   → 2120 MB). A debug working set is ~9 GB, so the old 7000 cap evicted ~1 GB
+   per run that the next run rebuilt, and the hit rate never recovered once a
+   commit low in the graph pushed it over. It is 14000 now. If build times creep
+   back up, compare `Bazel disk cache: N MB` against the cap before anything
+   else — `Freed` growing run over run is the thrash signature.
 
 ## Restructuring `exteraGram/` (module merges, directory moves)
 

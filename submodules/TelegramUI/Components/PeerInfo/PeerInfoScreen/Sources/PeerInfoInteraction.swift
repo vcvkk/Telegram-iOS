@@ -44,6 +44,8 @@ final class PeerInfoInteraction {
     let editingOpenAutoremoveMesages: () -> Void
     let openPermissions: () -> Void
     let openLocation: () -> Void
+    // MARK: exteraGram
+    let editingOpenSetupLocation: () -> Void
     let openPeerInfo: (EnginePeer, Bool) -> Void
     let performMemberAction: (PeerInfoMember, PeerInfoMemberAction) -> Void
     let openPeerInfoContextMenu: (PeerInfoContextSubject, ASDisplayNode, CGRect?) -> Void
@@ -125,6 +127,8 @@ final class PeerInfoInteraction {
         editingOpenAutoremoveMesages: @escaping () -> Void,
         openPermissions: @escaping () -> Void,
         openLocation: @escaping () -> Void,
+        // MARK: exteraGram
+        editingOpenSetupLocation: @escaping () -> Void,
         openPeerInfo: @escaping (EnginePeer, Bool) -> Void,
         performMemberAction: @escaping (PeerInfoMember, PeerInfoMemberAction) -> Void,
         openPeerInfoContextMenu: @escaping (PeerInfoContextSubject, ASDisplayNode, CGRect?) -> Void,
@@ -205,6 +209,7 @@ final class PeerInfoInteraction {
         self.editingOpenAutoremoveMesages = editingOpenAutoremoveMesages
         self.openPermissions = openPermissions
         self.openLocation = openLocation
+        self.editingOpenSetupLocation = editingOpenSetupLocation
         self.openPeerInfo = openPeerInfo
         self.performMemberAction = performMemberAction
         self.openPeerInfoContextMenu = openPeerInfoContextMenu

@@ -507,7 +507,7 @@ private final class ThemeSettingsControllerImpl: ItemListController, ThemeSettin
 
 public func themeSettingsController(context: AccountContext, focusOnItemTag: ThemeSettingsEntryTag? = nil) -> ViewController {
     #if DEBUG
-    BuiltinWallpaperData.generate(account: context.account)
+    BuiltinWallpaperData.generate(network: context.account.network)
     #endif
 
     var pushControllerImpl: ((ViewController) -> Void)?
@@ -521,7 +521,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
     var selectAccentColorImpl: ((PresentationThemeAccentColor?) -> Void)?
     var openAccentColorPickerImpl: ((PresentationThemeReference, Bool) -> Void)?
     
-    let _ = telegramWallpapers(postbox: context.account.postbox, network: context.account.network).start()
+    let _ = context.engine.themes.wallpapers().start()
     
     let currentAppIcon: PresentationAppIcon?
     var appIcons = context.sharedContext.applicationBindings.getAvailableAlternateIcons()
@@ -541,7 +541,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
     currentAppIconName.set(currentAppIcon?.name ?? "Blue")
     
     let cloudThemes = Promise<[TelegramTheme]>()
-    let updatedCloudThemes = telegramThemes(postbox: context.account.postbox, network: context.account.network, accountManager: context.sharedContext.accountManager)
+    let updatedCloudThemes = context.engine.themes.themes(accountManager: context.sharedContext.accountManager)
     cloudThemes.set(updatedCloudThemes)
     
     let removedThemeIndexesPromise = Promise<Set<Int64>>(Set())
@@ -719,7 +719,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
         }
         |> mapToSignal { accentColor, wallpaper -> Signal<(PresentationThemeAccentColor?, TelegramWallpaper), NoError> in
             if case let .file(file) = wallpaper, file.id == 0 {
-                return cachedWallpaper(account: context.account, slug: file.slug, settings: file.settings)
+                return cachedWallpaper(engine: context.engine, network: context.account.network, slug: file.slug, settings: file.settings)
                 |> map { cachedWallpaper in
                     if let wallpaper = cachedWallpaper?.wallpaper, case .file = wallpaper {
                         return (accentColor, wallpaper)
@@ -773,7 +773,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
                         
                         let resolvedWallpaper: Signal<TelegramWallpaper, NoError>
                         if case let .file(file) = theme.chat.defaultWallpaper, file.id == 0 {
-                            resolvedWallpaper = cachedWallpaper(account: context.account, slug: file.slug, settings: file.settings)
+                            resolvedWallpaper = cachedWallpaper(engine: context.engine, network: context.account.network, slug: file.slug, settings: file.settings)
                             |> map { cachedWallpaper -> TelegramWallpaper in
                                 return cachedWallpaper?.wallpaper ?? theme.chat.defaultWallpaper
                             }
@@ -940,7 +940,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
             
             let wallpaperSignal: Signal<TelegramWallpaper, NoError>
             if case let .file(file) = effectiveWallpaper, file.id == 0 {
-                wallpaperSignal = cachedWallpaper(account: context.account, slug: file.slug, settings: file.settings)
+                wallpaperSignal = cachedWallpaper(engine: context.engine, network: context.account.network, slug: file.slug, settings: file.settings)
                 |> map { cachedWallpaper in
                     return cachedWallpaper?.wallpaper ?? effectiveWallpaper
                 }
@@ -1020,7 +1020,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
                             
                             let resolvedWallpaper: Signal<TelegramWallpaper, NoError>
                             if case let .file(file) = theme.chat.defaultWallpaper, file.id == 0 {
-                                resolvedWallpaper = cachedWallpaper(account: context.account, slug: file.slug, settings: file.settings)
+                                resolvedWallpaper = cachedWallpaper(engine: context.engine, network: context.account.network, slug: file.slug, settings: file.settings)
                                 |> map { cachedWallpaper -> TelegramWallpaper in
                                     return cachedWallpaper?.wallpaper ?? theme.chat.defaultWallpaper
                                 }
@@ -1312,7 +1312,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
         
         let resolvedWallpaper: Signal<TelegramWallpaper?, NoError>
         if case let .file(file) = presentationTheme.chat.defaultWallpaper, file.id == 0 {
-            resolvedWallpaper = cachedWallpaper(account: context.account, slug: file.slug, settings: file.settings)
+            resolvedWallpaper = cachedWallpaper(engine: context.engine, network: context.account.network, slug: file.slug, settings: file.settings)
             |> map { wallpaper -> TelegramWallpaper? in
                 return wallpaper?.wallpaper
             }
@@ -1389,7 +1389,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
     selectAccentColorImpl = { accentColor in
         var wallpaperSignal: Signal<TelegramWallpaper?, NoError> = .single(nil)
         if let colorWallpaper = accentColor?.wallpaper, case let .file(file) = colorWallpaper {
-            wallpaperSignal = cachedWallpaper(account: context.account, slug: file.slug, settings: colorWallpaper.settings)
+            wallpaperSignal = cachedWallpaper(engine: context.engine, network: context.account.network, slug: file.slug, settings: colorWallpaper.settings)
             |> mapToSignal { cachedWallpaper in
                 if let wallpaper = cachedWallpaper?.wallpaper, case let .file(file) = wallpaper {
                     let _ = fetchedMediaResource(mediaBox: context.account.postbox.mediaBox, userLocation: .other, userContentType: .other, reference: .wallpaper(wallpaper: .slug(file.slug), resource: file.file.resource)).start()

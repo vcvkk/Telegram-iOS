@@ -171,6 +171,10 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
     public var tag: ItemListItemTag? {
         return self.item?.tag
     }
+
+    public var contextSourceView: UIView {
+        return self.textNode?.view ?? self.switchNode.view
+    }
     
     public init(type: ItemListSwitchItemNodeType) {
         self.backgroundNode = ASDisplayNode()
@@ -250,6 +254,20 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
                 self.highlightNode.removeFromSupernode()
             })
         })
+    }
+    
+    public func updateHasContextMenu(hasContextMenu: Bool) {
+        let transition: ContainedViewLayoutTransition
+        if hasContextMenu {
+            transition = .immediate
+        } else {
+            transition = .animated(duration: 0.3, curve: .easeInOut)
+        }
+        if let textNode = self.textNode {
+            transition.updateAlpha(node: textNode, alpha: hasContextMenu ? 0.5 : 1.0)
+        } else {
+            transition.updateAlpha(node: self.switchNode, alpha: hasContextMenu ? 0.5 : 1.0)
+        }
     }
     
     func asyncLayout() -> (_ item: ItemListSwitchItem, _ params: ListViewItemLayoutParams, _ insets: ItemListNeighbors) -> (ListViewItemNodeLayout, (Bool) -> Void) {
