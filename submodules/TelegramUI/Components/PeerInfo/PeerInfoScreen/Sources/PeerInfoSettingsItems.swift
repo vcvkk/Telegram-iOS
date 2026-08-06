@@ -143,8 +143,7 @@ func settingsItems(showProfileId: Bool, data: PeerInfoScreenData?, context: Acco
             for (peerAccountContext, peer, badgeCount) in settings.accountsAndPeers {
                 let mappedContext = ItemListPeerItem.Context.custom(ItemListPeerItem.Context.Custom(
                     accountPeerId: peerAccountContext.account.peerId,
-                    postbox: peerAccountContext.account.postbox,
-                    network: peerAccountContext.account.network,
+                    engine: peerAccountContext.engine,
                     animationCache: context.animationCache,
                     animationRenderer: context.animationRenderer,
                     isPremiumDisabled: false,
@@ -152,7 +151,7 @@ func settingsItems(showProfileId: Bool, data: PeerInfoScreenData?, context: Acco
                         return context.engine.stickers.resolveInlineStickers(fileIds: fileIds)
                     }
                 ))
-                let member: PeerInfoMember = .account(peer: RenderedPeer(peer: peer._asPeer()))
+                let member: PeerInfoMember = .account(peer: EngineRenderedPeer(peer: peer))
                 items[.accounts]!.append(PeerInfoScreenMemberItem(id: member.id, context: mappedContext, enclosingPeer: nil, member: member, badge: badgeCount > 0 ? "\(compactNumericCountString(Int(badgeCount), decimalSeparator: presentationData.dateTimeFormat.decimalSeparator))" : nil, isAccount: true, action: { action in
                     switch action {
                     case .open:

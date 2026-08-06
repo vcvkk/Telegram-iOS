@@ -2361,7 +2361,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Report"), color: theme.actionSheet.primaryTextColor)
                     }, action: { [weak self] c, f in                        
                         if let strongSelf = self, let parent = strongSelf.controller {
-                            presentPeerReportOptions(context: context, parent: parent, contextController: c, subject: .profilePhoto(peer.id, 0), completion: { _, _ in })
+                            presentPeerReportOptions(context: context, parent: parent, contextController: c, subject: .profilePhoto(peer.id, 0, sourceMessageId: nil), completion: { _, _ in })
                         }
                     }))
                 ]
@@ -2995,7 +2995,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             self.controller?.push(controller)
             
             openUrlImpl = { [weak self, weak controller] url, concealed, forceUpdate, commit in
-                let _ = openUserGeneratedUrl(context: context, peerId: peerId, url: url, concealed: concealed, present: { [weak self] c in
+                let _ = context.sharedContext.openUserGeneratedUrl(context: context, peerId: peerId, url: url, webpage: nil, concealed: concealed, forceConcealed: false, skipUrlAuth: false, skipConcealedAlert: false, forceDark: false, present: { [weak self] c in
                     self?.controller?.present(c, in: .window(.root))
                 }, openResolved: { result in
                     var navigationController: NavigationController?
@@ -3021,7 +3021,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     }, dismissInput: {
                         context.sharedContext.mainWindow?.viewController?.view.endEditing(false)
                     }, contentContext: nil, progress: nil, completion: nil)
-                })
+                }, progress: nil, alertDisplayUpdated: nil, concealedAlertOption: nil)
             }
             presentImpl = { [weak controller] c, a in
                 controller?.present(c, in: .window(.root), with: a)
@@ -3674,7 +3674,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         default:
             contextController?.dismiss()
             
-            self.context.sharedContext.makeContentReportScreen(context: self.context, subject: .peer(self.peerId), forceDark: false, present: { [weak self] controller in
+            self.context.sharedContext.makeContentReportScreen(context: self.context, subject: .peer(self.peerId, sourceMessageId: nil), forceDark: false, present: { [weak self] controller in
                 self?.controller?.push(controller)
             }, completion: {
             }, requestSelectMessages: { [weak self] title, option, message in
