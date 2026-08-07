@@ -547,7 +547,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         self.peer = peer
         self.threadData = threadData
         self.isSearching = isSearching
-        self.avatarListNode.listContainerNode.peer = peer.flatMap(EnginePeer.init)
+        self.avatarListNode.listContainerNode.peer = peer
         
         let isFirstTime = self.validLayout == nil
         self.validLayout = (width, statusBarHeight, deviceMetrics)
@@ -594,7 +594,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
             hasBackground = true
         } else if let peer {
-            backgroundCoverSubject = .peer(EnginePeer(peer))
+            backgroundCoverSubject = .peer(peer)
             if peer.effectiveProfileColor != nil {
                 hasBackground = true
             }
@@ -645,7 +645,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         }
         
         var isForum = false
-        if let channel = peer._asPeer() as? TelegramChannel, channel.isForumOrMonoForum {
+        if let channel = peer?._asPeer() as? TelegramChannel, channel.isForumOrMonoForum {
             isForum = true
         }
         
@@ -1297,7 +1297,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             } else if let threadData = threadData {
                 title = threadData.info.title
             } else {
-                title = EnginePeer(peer).displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
+                title = peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
             }
             title = title.replacingOccurrences(of: "\u{1160}", with: "").replacingOccurrences(of: "\u{3164}", with: "")
             if title.replacingOccurrences(of: "\u{fe0e}", with: "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -2096,7 +2096,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             self.avatarListNode.containerNode.view.mask = nil
         }
         
-        self.avatarListNode.listContainerNode.update(size: expandedAvatarListSize, peer: peer.flatMap(EnginePeer.init), isExpanded: self.isAvatarExpanded, transition: transition)
+        self.avatarListNode.listContainerNode.update(size: expandedAvatarListSize, peer: peer, isExpanded: self.isAvatarExpanded, transition: transition)
         if self.avatarListNode.listContainerNode.isCollapsing && !self.ignoreCollapse {
             self.avatarListNode.avatarContainerNode.canAttachVideo = false
         }
@@ -2186,7 +2186,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                         }
                         self.controller?.push(ProfileLevelInfoScreen(
                             context: self.context,
-                            peer: EnginePeer(peer),
+                            peer: peer,
                             starRating: currentStarRating,
                             pendingStarRating: self.currentPendingStarRating,
                             customTheme: self.presentationData?.theme
@@ -2487,7 +2487,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 buttonText = presentationData.strings.PeerInfo_ButtonVideoCall
                 buttonIcon = .videoCall
             case .voiceChat:
-                if let channel = peer._asPeer() as? TelegramChannel, case .broadcast = channel.info {
+                if let channel = peer?._asPeer() as? TelegramChannel, case .broadcast = channel.info {
                     buttonText = presentationData.strings.PeerInfo_ButtonLiveStream
                 } else {
                     buttonText = presentationData.strings.PeerInfo_ButtonVoiceChat

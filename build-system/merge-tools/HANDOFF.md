@@ -212,7 +212,15 @@ declaration lagged while everything around it moved on.
    contextual base", "'nil' requires a contextual type", "type of expression is
    ambiguous" are almost never the bug. Find the one real argument mismatch in
    the same file; 38 diagnostics in PeerInfoUI collapsed to 7 real causes.
-7. **`--keep_going` only reports what it can reach.** A module below the failure
+7. **A fork signal in a `combineLatest` whose closure header the merge
+   replaced.** The fork prepends its own signal (`regDate`) to a
+   `combineLatest`; 12.9.2 rewrote the `mapToSignal { ... }` header, which has
+   no parameter for it. Nothing is missing and nothing is extra — every binding
+   just shifts by one, so the compiler reports it as `availablePanes` being a
+   `PeerView`. Count the signals against the closure parameters; do not read the
+   error at face value.
+
+8. **`--keep_going` only reports what it can reach.** A module below the failure
    is never compiled, so its errors are invisible. When you fix module X, sweep
    the *same pattern* across the tree before pushing — that is how 29 more
    `iconColor` sites and 6 more `openPeersNearby` sites were found from 2 and 1

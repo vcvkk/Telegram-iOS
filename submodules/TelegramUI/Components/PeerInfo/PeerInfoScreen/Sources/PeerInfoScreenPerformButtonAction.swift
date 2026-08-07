@@ -838,7 +838,7 @@ extension PeerInfoScreenNode {
                                 let action = {
                                     let _ = self.context.engine.peers.toggleMessageCopyProtection(peerId: user.id, enabled: false).start()
                                     
-                                    self.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: self.context, chatLocation: .peer(EnginePeer(peer)), keepStack: .default, scrollToEndIfExists: true, completion: { _ in }))
+                                    self.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: self.context, chatLocation: .peer(peer), keepStack: .default, scrollToEndIfExists: true, completion: { _ in }))
                                 }
                                 
                                 let currentTime = Int32(CFAbsoluteTimeGetCurrent() + kCFAbsoluteTimeIntervalSince1970)

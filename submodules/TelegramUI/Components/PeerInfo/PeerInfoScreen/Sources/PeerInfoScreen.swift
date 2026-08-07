@@ -1127,7 +1127,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             var foundGalleryMessage: Message?
             if let searchContentNode = strongSelf.searchDisplayController?.contentNode as? ChatHistorySearchContainerNode {
                 if let galleryMessage = searchContentNode.messageForGallery(message.id) {
-                    strongSelf.context.engine.messages.ensureMessagesAreLocallyAvailable(messages: [EngineMessage(galleryMessage)])
+                    strongSelf.context.engine.messages.ensureMessagesAreLocallyAvailable(messages: [galleryMessage])
                     foundGalleryMessage = galleryMessage
                 }
             }
@@ -1356,7 +1356,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 items = [
                     .action(ContextMenuActionItem(text: presentationData.strings.Conversation_LinkDialogOpen, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/ImageEnlarge"), color: theme.actionSheet.primaryTextColor) }, action: { _, f in
                         f(.dismissWithoutContent)
-                        self?.chatInterfaceInteraction.openPeer(EnginePeer(peer), .default, nil, .default)
+                        self?.chatInterfaceInteraction.openPeer(peer, .default, nil, .default)
                     }))
                 ]
             }
@@ -1915,7 +1915,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                         } else {
                             strongSelf.headerNode.navigationButtonContainer.performAction?(.cancel, nil, nil)
                         }
-                    } else if let group = data.peer?._asPeer() as? TelegramGroup, canEditPeerInfo(context: strongSelf.context, peer: group, chatLocation: chatLocation, threadData: data.threadData) {
+                    } else if let group = data.peer?._asPeer() as? TelegramGroup, canEditPeerInfo(context: strongSelf.context, peer: EnginePeer(group), chatLocation: chatLocation, threadData: data.threadData) {
                         let title = strongSelf.headerNode.editingContentNode.editingTextForKey(.title) ?? ""
                         let description = strongSelf.headerNode.editingContentNode.editingTextForKey(.description) ?? ""
                         
