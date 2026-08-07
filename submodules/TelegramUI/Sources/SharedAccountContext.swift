@@ -2400,7 +2400,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     }
     
     public func makeChatRecentActionsController(context: AccountContext, peer: Peer, adminPeerId: PeerId?, starsState: StarsRevenueStats?) -> ViewController {
-        return ChatRecentActionsController(context: context, peer: peer, adminPeerId: adminPeerId, starsState: starsState)
+        return ChatRecentActionsController(context: context, peer: EnginePeer(peer), adminPeerId: adminPeerId, starsState: starsState)
     }
     
     public func presentContactsWarningSuppression(context: AccountContext, present: (ViewController, Any?) -> Void) {
@@ -2856,7 +2856,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     }
     
     public func makeChatQrCodeScreen(context: AccountContext, peer: Peer, threadId: Int64?, temporary: Bool) -> ViewController {
-        return ChatQrCodeScreenImpl(context: context, subject: .peer(peer: peer, threadId: threadId, temporary: temporary))
+        return ChatQrCodeScreenImpl(context: context, subject: .peer(peer: EnginePeer(peer), threadId: threadId, temporary: temporary))
     }
     
     public func makePrivacyAndSecurityController(context: AccountContext) -> ViewController {
@@ -3427,7 +3427,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         )).startStandalone(next: { [weak controller] result, options in
             if let (peers, _, _, _, _, _) = result, let contactPeer = peers.first, case let .peer(peer, _, _) = contactPeer, let starsContext = context.starsContext {
                 if case .starGiftTransfer = source {
-                    presentTransferAlertImpl?(EnginePeer(peer))
+                    presentTransferAlertImpl?(peer)
                 } else {
                     let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.DisallowedGifts(id: peer.id))
                     |> deliverOnMainQueue).start(next: { disallowedGifts in

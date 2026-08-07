@@ -3592,22 +3592,22 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         self.chatHistoryLocationValue = ChatHistoryLocationInput(content: .Scroll(subject: MessageHistoryScrollToSubject(index: .message(toIndex), quote: quote.flatMap { quote in MessageHistoryScrollToSubject.Quote(string: quote.string, offset: quote.offset) }, subject: subject, setupReply: setupReply), anchorIndex: .message(toIndex), sourceIndex: .message(fromIndex), scrollPosition: scrollPosition, animated: animated, highlight: highlight, setupReply: setupReply), id: self.takeNextHistoryLocationId())
     }
     
-    public func anchorMessageInCurrentHistoryView() -> Message? {
+    public func anchorMessageInCurrentHistoryView() -> EngineMessage? {
         if let historyView = self.historyView {
             if let visibleRange = self.listView.displayedItemRange.visibleRange {
                 var index = 0
                 for entry in historyView.filteredEntries.reversed() {
                     if index >= visibleRange.firstIndex && index <= visibleRange.lastIndex {
                         if case let .MessageEntry(message, _, _, _, _, _) = entry {
-                            return message
+                            return EngineMessage(message)
                         }
                     }
                     index += 1
                 }
             }
-            
+
             for case let .MessageEntry(message, _, _, _, _, _) in historyView.filteredEntries {
-                return message
+                return EngineMessage(message)
             }
         }
         return nil
@@ -3633,24 +3633,24 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         }
     }
     
-    public func latestMessageInCurrentHistoryView() -> Message? {
+    public func latestMessageInCurrentHistoryView() -> EngineMessage? {
         if let historyView = self.historyView {
             if historyView.originalView.laterId == nil, let firstEntry = historyView.filteredEntries.last {
                 if case let .MessageEntry(message, _, _, _, _, _) = firstEntry {
-                    return message
+                    return EngineMessage(message)
                 }
             }
         }
         return nil
     }
     
-    public func firstMessageForEditInCurrentHistoryView() -> Message? {
+    public func firstMessageForEditInCurrentHistoryView() -> EngineMessage? {
         if let historyView = self.historyView {
             if historyView.originalView.laterId == nil {
                 for entry in historyView.filteredEntries.reversed()  {
                     if case let .MessageEntry(message, _, _, _, _, _) = entry {
                         if canEditMessage(context: context, limitsConfiguration: context.currentLimitsConfiguration.with { EngineConfiguration.Limits($0) }, message: message) {
-                            return message
+                            return EngineMessage(message)
                         }
                     }
                 }
@@ -3659,45 +3659,45 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         return nil
     }
     
-    public func messageInCurrentHistoryView(after messageId: MessageId) -> Message? {
+    public func messageInCurrentHistoryView(after messageId: EngineMessage.Id) -> EngineMessage? {
         if let historyView = self.historyView {
             if let index = historyView.filteredEntries.firstIndex(where: { $0.firstIndex.id == messageId }), index < historyView.filteredEntries.count - 1 {
                 let nextEntry = historyView.filteredEntries[index + 1]
                 if case let .MessageEntry(message, _, _, _, _, _) = nextEntry {
-                    return message
+                    return EngineMessage(message)
                 } else if case let .MessageGroupEntry(_, messages, _) = nextEntry, let firstMessage = messages.first {
-                    return firstMessage.0
+                    return EngineMessage(firstMessage.0)
                 }
             }
         }
         return nil
     }
     
-    public func messageInCurrentHistoryView(before messageId: MessageId) -> Message? {
+    public func messageInCurrentHistoryView(before messageId: EngineMessage.Id) -> EngineMessage? {
         if let historyView = self.historyView {
             if let index = historyView.filteredEntries.firstIndex(where: { $0.firstIndex.id == messageId }), index > 0 {
                 let nextEntry = historyView.filteredEntries[index - 1]
                 if case let .MessageEntry(message, _, _, _, _, _) = nextEntry {
-                    return message
+                    return EngineMessage(message)
                 } else if case let .MessageGroupEntry(_, messages, _) = nextEntry, let firstMessage = messages.first {
-                    return firstMessage.0
+                    return EngineMessage(firstMessage.0)
                 }
             }
         }
         return nil
     }
     
-    public func messageInCurrentHistoryView(_ id: MessageId) -> Message? {
+    public func messageInCurrentHistoryView(_ id: EngineMessage.Id) -> EngineMessage? {
         if let historyView = self.historyView {
             for entry in historyView.filteredEntries {
                 if case let .MessageEntry(message, _, _, _, _, _) = entry {
                     if message.id == id {
-                        return message
+                        return EngineMessage(message)
                     }
                 } else if case let .MessageGroupEntry(_, messages, _) = entry {
                     for (message, _, _, _, _) in messages {
                         if message.id == id {
-                            return message
+                            return EngineMessage(message)
                         }
                     }
                 }
@@ -4651,7 +4651,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         }
     }
     
-    func lastVisbleMesssage() -> Message? {
+    func lastVisbleMesssage() -> EngineMessage? {
         var currentMessage: Message?
         if let historyView = self.historyView {
             if let visibleRange = self.listView.displayedItemRange.visibleRange {
@@ -4670,7 +4670,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                 }
             }
         }
-        return currentMessage
+        return currentMessage.flatMap(EngineMessage.init)
     }
     
     func immediateScrollState() -> ChatInterfaceHistoryScrollState? {
@@ -4763,7 +4763,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         }
     }
     
-    func requestMessageUpdate(_ id: MessageId, andScrollToItem scroll: Bool = false) {
+    func requestMessageUpdate(_ id: MessageId, andScrollToItem scroll: Bool = false, customTransition: ControlledTransition? = nil) {
         if let historyView = self.historyView {
             var messageItem: ChatMessageItem?
             self.forEachItemNode({ itemNode in

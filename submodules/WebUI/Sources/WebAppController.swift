@@ -485,6 +485,10 @@ public final class WebAppController: ViewController, AttachmentContainable {
             super.didLoad()
             
             self.setupWebView()
+            if let pendingExternalUrl = self.controller?.pendingExternalUrl {
+                self.controller?.pendingExternalUrl = nil
+                self.loadExternal(url: pendingExternalUrl)
+            }
             
             guard let webView = self.webView else {
                 return
@@ -532,6 +536,13 @@ public final class WebAppController: ViewController, AttachmentContainable {
             }
             #endif*/
             self.webView?.load(URLRequest(url: url))
+        }
+        
+        fileprivate func loadExternal(url: String) {
+            guard let parsedUrl = URL(string: url) else {
+                return
+            }
+            self.load(url: parsedUrl)
         }
         
         func setupWebView() {
@@ -3569,6 +3580,7 @@ public final class WebAppController: ViewController, AttachmentContainable {
     
     private var viewWillDisappearCalled = false
     private var hasSettings = false
+    fileprivate var pendingExternalUrl: String?
     
     public var openUrl: (String, Bool, Bool, @escaping () -> Void) -> Void = { _, _, _, _ in }
     public var getNavigationController: () -> NavigationController? = { return nil }
@@ -4120,6 +4132,14 @@ public final class WebAppController: ViewController, AttachmentContainable {
         self.updateTabBarAlpha(1.0, .immediate)
     }
     
+    public func loadExternal(url: String) {
+        if self.isNodeLoaded {
+            self.controllerNode.loadExternal(url: url)
+        } else {
+            self.pendingExternalUrl = url
+        }
+    }
+
     public func refresh() {
         self.controllerNode.setupWebView()
     }

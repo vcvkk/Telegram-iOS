@@ -30,23 +30,6 @@ func chatInputFormulaRenderResult(context: RichTextFormulaRenderContext) -> Rich
     )
 }
 
-func chatInputFormulaRenderResult(context: RichTextFormulaRenderContext) -> RichTextFormulaRenderResult? {
-    guard let attachment = instantPageMathAttachment(
-        latex: context.latex,
-        fontSize: context.fontSize,
-        textColor: context.textColor,
-        mode: .inline
-    ) else {
-        return nil
-    }
-    return RichTextFormulaRenderResult(
-        image: attachment.rendered.image,
-        size: attachment.rendered.size,
-        ascent: attachment.rendered.ascent,
-        descent: attachment.rendered.descent
-    )
-}
-
 func inputPanelForChatPresentationIntefaceState(_ chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, currentPanel: ChatInputPanelNode?, currentSecondaryPanel: ChatInputPanelNode?, textInputPanelNode: ChatTextInputPanelNode?, chatControllerInteraction: ChatControllerInteraction?, interfaceInteraction: ChatPanelInterfaceInteraction?, forceHideChannelButton: Bool = false) -> (primary: ChatInputPanelNode?, secondary: ChatInputPanelNode?) {
     if let renderedPeer = chatPresentationInterfaceState.renderedPeer, renderedPeer.peer?.restrictionText(platform: "ios", contentSettings: context.currentContentSettings.with { $0 }) != nil {
         return (nil, nil)

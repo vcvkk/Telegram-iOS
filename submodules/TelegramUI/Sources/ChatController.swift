@@ -478,6 +478,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     
     var willAppear = false
     var didAppear = false
+    var enableAnimations = false
     var scheduledActivateInput: ChatControllerActivateInput?
     
     var raiseToListen: RaiseToListenManager?
@@ -502,6 +503,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     weak var emojiPackTooltipController: TooltipScreen?
     weak var birthdayTooltipController: TooltipScreen?
     weak var scheduledVideoProcessingTooltipController: TooltipScreen?
+    weak var guestChatMessageTooltipController: TooltipScreen?
     
     weak var slowmodeTooltipController: ChatSlowmodeHintController?
     
@@ -7886,7 +7888,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             }
                             strongSelf.peekTimerDisposable.set(
                                 (strongSelf.context.engine.peers.joinChatInteractively(with: peekData.linkData)
-                                |> deliverOnMainQueue).startStrict(next: { peerId in
+                                |> deliverOnMainQueue).startStrict(next: { [weak self] result in
                                     guard let strongSelf = self else {
                                         return
                                     }
@@ -9739,11 +9741,11 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             guard let self else {
                 return
             }
-            let disposable = openUserGeneratedUrl(context: self.context, peerId: self.contentData?.state.peerView?.peerId, url: url, concealed: concealed, skipUrlAuth: skipUrlAuth, skipConcealedAlert: skipConcealedAlert, present: { [weak self] c in
+            let disposable = self.context.sharedContext.openUserGeneratedUrl(context: self.context, peerId: self.contentData?.state.peerView?.peerId, url: url, webpage: nil, concealed: concealed, forceConcealed: false, skipUrlAuth: skipUrlAuth, skipConcealedAlert: skipConcealedAlert, forceDark: false, present: { [weak self] c in
                 self?.present(c, in: .window(.root))
             }, openResolved: { [weak self] resolved in
                 self?.openResolved(result: resolved, sourceMessageId: message?.id, progress: progress, forceExternal: forceExternal, concealed: concealed, commit: commit)
-            }, progress: progress)
+            }, progress: progress, alertDisplayUpdated: nil, concealedAlertOption: nil)
             self.navigationActionDisposable.set(disposable)
         }, performAction: true)
     }
@@ -10244,11 +10246,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         })
     }
     
-    public func getTransitionInfo(messageId: MessageId, media: Media) -> ((UIView) -> Void, ASDisplayNode, () -> (UIView?, UIView?))? {
+    public func getTransitionInfo(messageId: EngineMessage.Id, media: EngineMedia) -> ((UIView) -> Void, ASDisplayNode, () -> (UIView?, UIView?))? {
         var selectedNode: (ASDisplayNode, CGRect, () -> (UIView?, UIView?))?
+        let rawMedia = media._asMedia()
         self.chatDisplayNode.historyNode.forEachItemNode { itemNode in
             if let itemNode = itemNode as? ChatMessageItemView {
-                if let result = itemNode.transitionNode(id: messageId, media: media, adjustRect: false) {
+                if let result = itemNode.transitionNode(id: messageId, media: rawMedia, adjustRect: false) {
                     selectedNode = result
                 }
             }
@@ -10478,7 +10481,13 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         )
     }
     
-    func presentScheduleTimePicker(style: ChatScheduleTimeControllerStyle = .default, selectedTime: Int32? = nil, selectedRepeatPeriod: Int32? = nil, dismissByTapOutside: Bool = true, completion: @escaping (Int32, Int32?) -> Void) {
+    func presentScheduleTimePicker(style: ChatScheduleTimeControllerStyle = .default, selectedTime: Int32? = nil, selectedRepeatPeriod: Int32? = nil, dismissByTapOutside: Bool = true, presentInOverlay: Bool = false, completion: @escaping (Int32, Int32?) -> Void) {
+        self.presentScheduleTimePicker(style: style, selectedTime: selectedTime, selectedRepeatPeriod: selectedRepeatPeriod, dismissByTapOutside: dismissByTapOutside, presentInOverlay: presentInOverlay, completion: { result in
+            completion(result.time, result.repeatPeriod)
+        })
+    }
+    
+    func presentScheduleTimePicker(style: ChatScheduleTimeControllerStyle = .default, selectedTime: Int32? = nil, selectedRepeatPeriod: Int32? = nil, dismissByTapOutside: Bool = true, presentInOverlay: Bool = false, completion: @escaping (ChatScheduleTimeScreen.Result) -> Void) {
         guard let peerId = self.chatLocation.peerId else {
             return
         }
@@ -10500,7 +10509,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             if peerId == strongSelf.context.account.peerId {
                 mode = .reminders
             } else {
-                mode = .scheduledMessages(sendWhenOnlineAvailable: sendWhenOnlineAvailable)
+                mode = .scheduledMessages(peerId: peer.id, sendWhenOnlineAvailable: sendWhenOnlineAvailable)
             }
             
             let controller = ChatScheduleTimeScreen(
@@ -10509,13 +10518,18 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 currentTime: selectedTime,
                 currentRepeatPeriod: selectedRepeatPeriod,
                 minimalTime: strongSelf.presentationInterfaceState.slowmodeState?.timeout,
+                silentPosting: strongSelf.presentationInterfaceState.interfaceState.silentPosting,
                 isDark: style == .media,
                 completion: { result in
-                    completion(result.time, result.repeatPeriod)
+                    completion(result)
                 }
             )
             strongSelf.chatDisplayNode.dismissInput()
-            strongSelf.push(controller)
+            if presentInOverlay || strongSelf.videoRecorderValue != nil {
+                strongSelf.present(controller, in: .window(.root))
+            } else {
+                strongSelf.push(controller)
+            }
         })
     }
     

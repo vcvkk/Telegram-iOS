@@ -512,12 +512,6 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         self.window = window
         self.nativeWindow = window
-        // MARK: exteraGram
-        if sgHardReset(present: self.mainWindow?.presentNative, beforePresent: { self.window?.makeKeyAndVisible() }) {
-            return true
-        }
-        //
-        
         hostView.containerView.layer.addSublayer(MetalEngine.shared.rootLayer)
         EGStartupDiagnostics.shared.milestone("metalEngine")
 

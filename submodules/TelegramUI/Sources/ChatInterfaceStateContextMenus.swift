@@ -2163,6 +2163,8 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }, action: noAction)))
         }
 
+        // MARK: exteraGram
+        var egActionsIndex: Int? = nil
         if !isPinnedMessages, !isReplyThreadHead, data.canSelect {
             egActionsIndex = actions.count
             var didAddSeparator = false

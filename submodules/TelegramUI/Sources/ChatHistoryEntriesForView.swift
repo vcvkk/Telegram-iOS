@@ -241,11 +241,11 @@ func chatHistoryEntriesForView(
         }
         
         if presentationData.largeEmoji, message.media.isEmpty {
-            if messageIsEligibleForLargeCustomEmoji(EngineMessage(message)) {
+            if messageIsEligibleForLargeCustomEmoji(message) {
                 contentTypeHint = .animatedEmoji
             } else if stickersEnabled && message.text.count == 1, let _ = associatedData.animatedEmojiStickers[message.text.basicEmoji.0], (message.textEntitiesAttribute?.entities.isEmpty ?? true) {
                 contentTypeHint = .animatedEmoji
-            } else if messageIsEligibleForLargeEmoji(EngineMessage(message)) {
+            } else if messageIsEligibleForLargeEmoji(message) {
                 contentTypeHint = .animatedEmoji
             }
         }
@@ -489,11 +489,11 @@ func chatHistoryEntriesForView(
                     
                     var contentTypeHint: ChatMessageEntryContentType = .generic
                     if presentationData.largeEmoji, topMessage.media.isEmpty {
-                        if messageIsEligibleForLargeCustomEmoji(EngineMessage(topMessage)) {
+                        if messageIsEligibleForLargeCustomEmoji(topMessage) {
                             contentTypeHint = .animatedEmoji
                         } else if stickersEnabled && topMessage.text.count == 1, let _ = associatedData.animatedEmojiStickers[topMessage.text.basicEmoji.0] {
                             contentTypeHint = .animatedEmoji
-                        } else if messageIsEligibleForLargeEmoji(EngineMessage(topMessage)) {
+                        } else if messageIsEligibleForLargeEmoji(topMessage) {
                             contentTypeHint = .animatedEmoji
                         }
                     }
