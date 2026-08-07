@@ -128,7 +128,7 @@ func chatMessageDisplaySendMessageOptions(selfController: ChatControllerImpl, no
             // The fork carries its own picker in TranslateUI; `translateOutgoingMessage`
             // makes it report the selection immediately and dismiss itself, so only the
             // target language matters here.
-            let controller = languageSelectionController(translateOutgoingMessage: true, context: selfController.context, fromLanguage: "", toLanguage: outgoingMessageTranslateToLang, completion: { [weak selfController] _, toLang in
+            let controller = languageSelectionController(translateOutgoingMessage: true, context: selfController.context, fromLanguage: "", toLanguage: outgoingMessageTranslateToLang ?? "", completion: { [weak selfController] _, toLang in
                 guard let selfController, let peerId = selfController.chatLocation.peerId else {
                     return
                 }

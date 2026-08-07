@@ -5038,7 +5038,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                     if let editMessageState = effectivePresentationInterfaceState.editMessageState, let mediaReferenceValue = editMessageState.mediaReference {
                         mediaReference = mediaReferenceValue
                     } else {
-                        if let message = self.historyNode.messageInCurrentHistoryView(editingOriginalMessageId) {
+                        if let message = self.historyNode.messageInCurrentHistoryView(editingOriginalMessageId)?._asMessage() {
                             for media in message.media {
                                 if media is TelegramMediaFile || media is TelegramMediaImage {
                                     mediaReference = .message(message: MessageReference(message), media: media)

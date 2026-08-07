@@ -882,7 +882,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         }
         
         let controllerInteraction = ChatControllerInteraction(openMessage: { [weak self] message, params in
-            guard let self, self.isNodeLoaded, let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id) else {
+            guard let self, self.isNodeLoaded, let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id)?._asMessage() else {
                 return false
             }
             
@@ -3270,7 +3270,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             postAsReply = true
                     }
                     
-                    if let messageId = messageId, let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId) {
+                    if let messageId = messageId, let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId)?._asMessage() {
                         if let author = message.author as? TelegramUser, author.botInfo != nil {
                         } else {
                             postAsReply = false
@@ -3299,7 +3299,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 strongSelf.sendMessages([.message(text: command, attributes: attributes, inlineStickers: [:], mediaReference: nil, threadId: strongSelf.chatLocation.threadId, replyToMessageId: replyToMessageId, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])])
             }
         }, openInstantPage: { [weak self] message, associatedData in
-            if let strongSelf = self, strongSelf.isNodeLoaded, let navigationController = strongSelf.effectiveNavigationController, let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id) {
+            if let strongSelf = self, strongSelf.isNodeLoaded, let navigationController = strongSelf.effectiveNavigationController, let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id)?._asMessage() {
                 let _ = strongSelf.presentVoiceMessageDiscardAlert(action: {
                     strongSelf.chatDisplayNode.dismissInput()
                     if let controller = strongSelf.context.sharedContext.makeInstantPageController(context: strongSelf.context, message: message, sourcePeerType: associatedData?.automaticDownloadPeerType) {
@@ -3311,7 +3311,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 })
             }
         }, openWallpaper: { [weak self] message in
-            if let strongSelf = self, strongSelf.isNodeLoaded, let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id) {
+            if let strongSelf = self, strongSelf.isNodeLoaded, let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id)?._asMessage() {
                 let _ = strongSelf.presentVoiceMessageDiscardAlert(action: {
                     strongSelf.chatDisplayNode.dismissInput()
                     strongSelf.context.sharedContext.openChatWallpaper(context: strongSelf.context, message: message, present: { [weak self] c, a in
@@ -3320,7 +3320,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 })
             }
         }, openTheme: { [weak self] message in
-            if let strongSelf = self, strongSelf.isNodeLoaded, let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id) {
+            if let strongSelf = self, strongSelf.isNodeLoaded, let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id)?._asMessage() {
                 let _ = strongSelf.presentVoiceMessageDiscardAlert(action: {
                     strongSelf.chatDisplayNode.dismissInput()
                     openChatTheme(context: strongSelf.context, message: message, pushController: { [weak self] c in
@@ -3841,7 +3841,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 return
             }
             
-            if let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(id), controllerInteraction.pollActionState.pollMessageIdsInProgress[id] == nil {
+            if let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(id)?._asMessage(), controllerInteraction.pollActionState.pollMessageIdsInProgress[id] == nil {
                 controllerInteraction.pollActionState.pollMessageIdsInProgress[id] = opaqueIdentifiers
                 strongSelf.chatDisplayNode.historyNode.requestMessageUpdate(id)
                 let disposables: DisposableDict<MessageId>
@@ -3870,7 +3870,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     guard let strongSelf = self, let resultPoll = resultPoll else {
                         return
                     }
-                    guard let _ = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(id) else {
+                    guard let _ = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(id)?._asMessage() else {
                         return
                     }
                     
@@ -4088,7 +4088,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     if let forwardInfo = message.forwardInfo, let sourceMessageId = forwardInfo.sourceMessageId, case let .replyThread(threadMessage) = strongSelf.chatLocation, threadMessage.isChannelPost {
                         messageId = sourceMessageId
                     }
-                    if let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId) {
+                    if let message = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId)?._asMessage() {
                         let _ = strongSelf.controllerInteraction?.openMessage(message, OpenMessageParams(mode: .timecode(Double(timestamp))))
                     } else {
                         strongSelf.navigateToMessage(messageLocation: .id(messageId, NavigateToMessageParams(timestamp: Double(timestamp), quote: nil)), animated: true, forceInCurrentChat: true)
@@ -4320,7 +4320,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         }
                     }
                 }
-                if let messageId = message?.id, let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId) ?? message {
+                if let messageId = message?.id, let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId)?._asMessage() ?? message {
                     var quoteData: EngineMessageReplyQuote?
                     
                     let nsRange = NSRange(location: range.lowerBound, length: range.upperBound - range.lowerBound)
@@ -4768,7 +4768,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
             
             var message: Message?
-            if let historyMessage = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId) {
+            if let historyMessage = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId)?._asMessage() {
                 message = historyMessage
             } else if let panelMessage = self.chatDisplayNode.adPanelMessage, panelMessage.id == messageId {
                 message = panelMessage
@@ -5593,7 +5593,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
             self.dismissAllTooltips()
             
-            if let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId), let _ = message.forwardInfo {
+            if let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId)?._asMessage(), let _ = message.forwardInfo {
                 let controller = UndoOverlayController(
                     presentationData: self.presentationData,
                     content: .universalImage(image: generateTintedImage(image: UIImage(bundleImageName: "Chat/Stickers/Lock"), color: .white)!, size: nil, title: nil, text: self.presentationData.strings.Chat_Todo_CompletionLimitedForward, customUndoText: nil, timeout: nil),
@@ -5625,7 +5625,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     }
                 )
                 self.present(controller, in: .current)
-            } else if let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId) {
+            } else if let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId)?._asMessage() {
                 var peerName = ""
                 if let author = message.author {
                     peerName = EnginePeer(author).compactDisplayTitle
@@ -9582,7 +9582,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     func openResolved(result: ResolvedUrl, sourceMessageId: MessageId?, progress: Promise<Bool>? = nil, forceExternal: Bool = false, concealed: Bool = false, commit: @escaping () -> Void = {}) {
         let urlContext: OpenURLContext
         
-        let message = sourceMessageId.flatMap { self.chatDisplayNode.historyNode.messageInCurrentHistoryView($0) }
+        let message = sourceMessageId.flatMap { self.chatDisplayNode.historyNode.messageInCurrentHistoryView($0)?._asMessage() }
         if let peerId = self.chatLocation.peerId {
             urlContext = .chat(peerId: peerId, message: message, updatedPresentationData: self.updatedPresentationData)
         } else {
