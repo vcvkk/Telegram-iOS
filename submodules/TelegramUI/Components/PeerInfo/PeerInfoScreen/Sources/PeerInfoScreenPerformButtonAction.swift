@@ -1139,7 +1139,7 @@ extension PeerInfoScreenNode {
                             }
                         }
                     }
-                } else if let group = peer as? TelegramGroup {
+                } else if let group = peer._asPeer() as? TelegramGroup {
                     if canSetupAutoremoveTimeout {
                         let strings = strongSelf.presentationData.strings
                         items.append(.action(ContextMenuActionItem(text: currentAutoremoveTimeout == nil ? strongSelf.presentationData.strings.PeerInfo_EnableAutoDelete : strongSelf.presentationData.strings.PeerInfo_AdjustAutoDelete, icon: { theme in

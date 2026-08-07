@@ -2224,7 +2224,7 @@ func peerInfoScreenData(
                 requestsStatePromise.get(),
                 hasStories,
                 threadData,
-                context.account.postbox.preferencesView(keys: [PreferencesKeys.appConfiguration]),
+                context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.appConfiguration)),
                 accountIsPremium,
                 hasSavedMessages,
                 hasSavedMessagesChats,
