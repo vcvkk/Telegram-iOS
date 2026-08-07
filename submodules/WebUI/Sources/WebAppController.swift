@@ -83,6 +83,7 @@ public struct WebAppParameters {
     let forceHasSettings: Bool
     let fullSize: Bool
     let isFullscreen: Bool
+    let sameOrigin: Bool
     let appSettings: BotAppSettings?
     
     public init(
@@ -101,6 +102,7 @@ public struct WebAppParameters {
         forceHasSettings: Bool,
         fullSize: Bool,
         isFullscreen: Bool = false,
+        sameOrigin: Bool = false,
         appSettings: BotAppSettings? = nil
     ) {
         self.source = source
@@ -118,6 +120,7 @@ public struct WebAppParameters {
         self.forceHasSettings = forceHasSettings
         self.fullSize = fullSize || isFullscreen
         self.isFullscreen = isFullscreen
+        self.sameOrigin = sameOrigin
         self.appSettings = appSettings
     }
 }

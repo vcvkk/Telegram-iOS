@@ -70,6 +70,7 @@ All in `build-system/merge-tools/`. Run all of them before pushing.
 | `check_engine_adapters.py` | Peer/Message handed across the boundary to a module on the Engine types, or the reverse. Resolves argument types from explicit annotations only | Added later. Note its blind spot: it reads *call arguments*, so a wrongly-typed **stored property** crossing the boundary is invisible to it — that is exactly what `PeerInfoScreenData.peer` was |
 | `plan_module_merge.py` | Checks a proposed `exteraGram/` grouping for induced dependency cycles and type collisions before anything moves | For the Android-parity work in §8 |
 | `check_signal_arity.py` | Every `combineLatest(...)` against the `\|> map` / `\|> mapToSignal` closure that consumes it | 3 of these in the 12.9.2 bump. See failure shape §7.7 — it is the highest-cost-per-line shape in this fork |
+| `check_init_args.py` | Call sites vs the initializer, free function **or method** they resolve to | `NavigationBarTheme.accentDisabledButtonColor`, `cachedWallpaper`, and — once methods were covered — `recentOnlineSmall`/`recent`/`admins` losing `postbox:`/`network:`, `sendVideoRecording` losing `repeatPeriod:`, and `WebAppParameters` losing `sameOrigin` |
 
 ```bash
 python3 build-system/merge-tools/check_api_drift.py    --upstream /tmp/upstream/release-12.9.2
@@ -356,5 +357,15 @@ grouping there, before touching the tree.
   such member on either side, so the argument was removed at four call sites.
   Whether `ChatPresentationInterfaceState` *should* carry it as a fork field —
   i.e. whether a PeersNearby feature is quietly dead — was not investigated.
+- **`WebUI` lost upstream's `sameOrigin` trusted-origin event proxy.** Only the
+  compile-critical half was restored: `WebAppParameters` now carries
+  `sameOrigin` again, because four call sites in `ChatControllerOpenWebApp.swift`
+  pass it. The behaviour is still missing — `WebAppWebView.swift` has no
+  `trustedOrigin`, `bindTrustedOrigin`, `setupEventProxySource`,
+  `securedEventProxySource` or `isTrustedMainFrameMessage`, and
+  `WebAppController` never reads `params.sameOrigin`. So the parameter is
+  currently inert and web apps run with the unsecured event proxy. This is a
+  security-relevant upstream change; port it deliberately, not as part of a
+  build fix.
 - `fork_registry.json` has 24 features, 3 hook markers, 4 count floors. **Add an
   entry whenever a bump turns out to have dropped something.**

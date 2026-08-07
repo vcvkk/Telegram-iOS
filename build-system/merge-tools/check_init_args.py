@@ -75,6 +75,15 @@ CALL_RE = re.compile(r"(?<![\w.$])(?P<name>[A-Z][A-Za-z0-9_]*)\s*\(")
 FUNC_CALL_RE = re.compile(r"(?<![\w.$])(?P<name>[a-z_][A-Za-z0-9_]*)\s*\(")
 FUNC_DECL_RE = re.compile(r"^(?P<access>public\s+|internal\s+|private\s+|fileprivate\s+)?func\s+"
                           r"(?P<name>[a-z_][A-Za-z0-9_]*)\s*(?P<generic><[^\n{(]*>)?\s*\(", re.M)
+# The same, indented and with any modifier order: a method. Kept separate
+# because FUNC_DECL_RE is anchored at column 0 precisely to mean "not a method".
+METHOD_DECL_RE = re.compile(
+    r"^[ \t]+(?P<modifiers>(?:@\w+(?:\([^)\n]*\))?[ \t]+|(?:public|open|internal|private|"
+    r"fileprivate|static|class|final|override|mutating|nonisolated|required|dynamic)[ \t]+)*)"
+    r"func\s+(?P<name>[a-z_][A-Za-z0-9_]*)\s*(?P<generic><[^\n{(]*>)?\s*\(", re.M)
+# A call with an explicit receiver. Only these are checked against methods:
+# an unqualified call could be resolving to `self`, a local, or a free function.
+METHOD_CALL_RE = re.compile(r"(?<![0-9])\.\s*(?P<name>[a-z_][A-Za-z0-9_]*)\s*\(")
 # Statement keywords that take a parenthesised expression.
 KEYWORD_CALLS = {"if", "for", "while", "switch", "guard", "return", "catch", "repeat",
                  "in", "case", "throw", "try", "await", "let", "var", "self", "super"}
@@ -192,10 +201,33 @@ def split_arguments(text):
     return parts
 
 
+def rejoin_generics(parts):
+    """Undo a split made on the comma inside `Signal<Never, NoError>`.
+
+    Only ever applied to a *parameter* list. Angle brackets cannot be counted as
+    delimiters — `->`, `|>` and comparisons all use them — so the rule is "a part
+    that closes more generics than it opens belongs to the one before it", and
+    that rule misreads an *argument* list, where `luminance > 0.5` is ordinary.
+
+    Without this a declaration carrying a generic-with-comma parameter came out
+    unparseable, and an unparseable declaration is dropped from coverage in
+    silence: `profileData(postbox:network:peerId:customData:)` and
+    `profilePhotos` were both invisible to this checker.
+    """
+    joined = []
+    for part in parts:
+        stripped = ARROW_RE.sub("", part)
+        if joined and stripped.count(">") > stripped.count("<"):
+            joined[-1] = f"{joined[-1]},{part}"
+        else:
+            joined.append(part)
+    return joined
+
+
 def parse_parameters(text):
     """[(label or None, has default)] for a parameter list, or None if unparseable."""
     params = []
-    for chunk in split_arguments(text):
+    for chunk in rejoin_generics(split_arguments(text)):
         chunk = chunk.strip()
         if not chunk:
             continue
@@ -217,7 +249,11 @@ def parse_call_labels(text):
     labels = []
     for chunk in split_arguments(text):
         match = re.match(r"\s*([A-Za-z_]\w*)\s*:(?!:)", chunk)
-        labels.append(match.group(1) if match else None)
+        # `f(_: x)` is the spelled-out form of passing an unlabelled argument,
+        # and it is what `DeviceAccess.authorizeAccess`'s `_ completion:` is
+        # given at two call sites. It is an absent label, not a label named `_`.
+        label = match.group(1) if match else None
+        labels.append(None if label == "_" else label)
     return labels
 
 
@@ -312,16 +348,44 @@ def record_top_level_funcs(src, depths, path, funcs):
                                   access in ("private", "fileprivate")))
 
 
+def record_methods(src, depths, path, methods):
+    """Functions declared inside a type body — depth above 0."""
+    for match in METHOD_DECL_RE.finditer(src):
+        if depths[match.start()] == 0:
+            continue
+        info = methods.setdefault(match.group("name"), FuncInfo())
+        if match.group("generic"):
+            info.unparseable = True
+            continue
+        open_paren = match.end() - 1
+        close_paren = match_paren(src, open_paren)
+        if close_paren < 0:
+            info.unparseable = True
+            continue
+        if re.match(r"[^\n{]*\bwhere\b", src[close_paren + 1:close_paren + 200].split("{")[0]):
+            info.unparseable = True
+            continue
+        params = parse_parameters(src[open_paren + 1:close_paren])
+        if params is None:
+            info.unparseable = True
+            continue
+        modifiers = match.group("modifiers") or ""
+        private = bool(re.search(r"\b(?:private|fileprivate)\b", modifiers))
+        info.declarations.append((params, path, line_of(src, match.start()), private))
+
+
 def collect(scope):
     """Type declarations and their initializers, plus every file's source."""
     types = {}
     funcs = {}
+    methods = {}
     sources = {}
     for path in iter_swift_files(scope):
         src = strip_noise(read(path))
         sources[path] = src
         depths = brace_depths(src)
         record_top_level_funcs(src, depths, path, funcs)
+        record_methods(src, depths, path, methods)
         for match in TYPE_DECL_RE.finditer(src):
             name = match.group("name").split(".")[0]
             kind = match.group("kind")
@@ -352,7 +416,49 @@ def collect(scope):
                 info.inherits_initializers = True
             record_inits(src, depths, brace + 1, end, info, path,
                          in_own_body=(kind != "extension"))
-    return types, funcs, sources
+    return types, funcs, methods, sources
+
+
+ARROW_RE = re.compile(r"\|>|->|>=|<=")
+ENUM_CASE_RE = re.compile(r"\bcase\s+(?P<name>[a-z_][A-Za-z0-9_]*)\s*\(")
+
+
+def enum_case_names(sources):
+    """Every name used as a payload-carrying enum case anywhere in the tree.
+
+    `.message(message:media:)` is a case of `MediaReference`; the tree also has
+    a `static func message(...)` on `FetchedMediaResource`. Nothing lexical
+    tells the two apart at a call site, so any name that is both is excluded.
+    """
+    names = set()
+    for src in sources.values():
+        names.update(match.group("name") for match in ENUM_CASE_RE.finditer(src))
+    return names
+
+
+def method_candidates(methods, funcs, excluded):
+    """Methods whose name resolves to exactly one declaration in the tree.
+
+    A name declared twice is dropped: that is a protocol and its conformances
+    (`findLoadedMessage` has ten declarations), an overload set, or two
+    unrelated types that happen to share a verb — and in none of those cases can
+    a call be resolved lexically. A name that is also a free function is dropped
+    for the same reason.
+    """
+    result = {}
+    for name, info in methods.items():
+        if info.unparseable or len(info.declarations) != 1:
+            continue
+        if name in funcs or name in excluded:
+            continue
+        params, path, line, private = info.declarations[0]
+        if len(params) < 3:
+            # Fewer than three parameters cannot clear the two-label overlap
+            # test below, so such a method could only ever be reported by luck.
+            continue
+        result[name] = [(params, os.path.relpath(path, REPO_ROOT), line,
+                         path if private else None)]
+    return result
 
 
 def function_candidates(funcs):
@@ -512,7 +618,51 @@ def walk_calls(path, src, regex, table, rel, findings, kind):
         report(findings, rel, line_of(src, match.start()), name, outcomes, kind)
 
 
-def check_file(path, src, checkable, callable_funcs, findings):
+def walk_method_calls(path, src, table, rel, findings):
+    """`receiver.name(...)` against the one method that name can mean.
+
+    The extra guard over `walk_calls`: at least one supplied label must appear
+    in the declaration. Without it, a tree method named `insert` would be
+    checked against every `array.insert(_:at:)` in the tree. With it, a call
+    whose labels do not overlap the declaration is treated as having resolved
+    somewhere else — a framework method — and is skipped rather than reported.
+    """
+    for match in METHOD_CALL_RE.finditer(src):
+        name = match.group("name")
+        overloads = table.get(name)
+        if overloads is None:
+            continue
+        open_paren = match.end() - 1
+        close_paren = match_paren(src, open_paren)
+        if close_paren < 0:
+            continue
+        if src[close_paren + 1:close_paren + 3].lstrip().startswith("{"):
+            continue
+        supplied = parse_call_labels(src[open_paren + 1:close_paren])
+        if supplied is None or len(supplied) < 2:
+            continue
+
+        outcomes = []
+        for params, decl_rel, decl_line, only_in_file in overloads:
+            if only_in_file is not None and only_in_file != path:
+                continue
+            declared = {label for label, _ in params}
+            if len(declared & {label for label in supplied if label}) < 2:
+                continue
+            outcome = match_labels(params, supplied)
+            if outcome is None:
+                continue
+            missing, unknown = outcome
+            if not missing and not unknown:
+                outcomes = None
+                break
+            outcomes.append((missing, unknown, decl_rel, decl_line))
+        if outcomes is None or not outcomes:
+            continue
+        report(findings, rel, line_of(src, match.start()), name, outcomes, "method")
+
+
+def check_file(path, src, checkable, callable_funcs, findings, callable_methods=None):
     rel = os.path.relpath(path, REPO_ROOT)
     if re.search(r"^import SwiftUI\b", src, re.M):
         # SwiftUI brings its own VStack, LongPressGesture, Text and friends,
@@ -525,6 +675,8 @@ def check_file(path, src, checkable, callable_funcs, findings):
     local = {m.group(1) for m in re.finditer(r"\bfunc\s+([a-z_][A-Za-z0-9_]*)", src)}
     visible = {n: v for n, v in callable_funcs.items() if n not in local}
     walk_calls(path, src, FUNC_CALL_RE, visible, rel, findings, "function")
+    if callable_methods:
+        walk_method_calls(path, src, callable_methods, rel, findings)
 
 
 def main():
@@ -532,9 +684,10 @@ def main():
     include_unbuilt = "--all" in sys.argv
     # Declarations always come from the whole tree: a call site in one module is
     # checked against a type declared in another.
-    types, funcs, sources = collect(SCAN_ROOTS)
+    types, funcs, methods, sources = collect(SCAN_ROOTS)
     checkable = candidates(types)
     callable_funcs = function_candidates(funcs)
+    callable_methods = method_candidates(methods, funcs, enum_case_names(sources))
 
     selected = [
         path for path in sources
@@ -552,12 +705,13 @@ def main():
 
     findings = []
     for path in sorted(selected):
-        check_file(path, sources[path], checkable, callable_funcs, findings)
+        check_file(path, sources[path], checkable, callable_funcs, findings,
+                   callable_methods)
 
     if not findings:
         print(f"OK: call sites agree with their declarations "
               f"({len(checkable)} types, {len(callable_funcs)} functions, "
-              f"{len(selected)} files checked).")
+              f"{len(callable_methods)} methods, {len(selected)} files checked).")
         return 0
 
     print(f"FAIL: {len(findings)} call site(s):\n")

@@ -1132,7 +1132,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 }
             }
             if foundGalleryMessage == nil, let galleryMessage = strongSelf.paneContainerNode.findLoadedMessage(id: message.id) {
-                foundGalleryMessage = galleryMessage
+                foundGalleryMessage = galleryMessage._asMessage()
             }
             
             if let foundGalleryMessage = foundGalleryMessage {

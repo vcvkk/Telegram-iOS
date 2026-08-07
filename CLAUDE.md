@@ -90,6 +90,18 @@ and strands files at the old version.
    SwiftUI`, whose `VStack`/`LongPressGesture`/`Text` shadow the tree's own.
    A clean run is not proof.
 
+   `check_init_args.py` also walks **methods**, but only a name the tree
+   declares exactly once, that is not also a free function or an enum case, that
+   takes three or more parameters, and only at a `receiver.name(...)` call whose
+   labels overlap the declaration in at least two places. Every one of those
+   conditions is load-bearing: without the enum-case exclusion, `MediaReference`'s
+   `.message(message:media:)` is checked against `FetchedMediaResource`'s
+   `static func message(...)` and reports twenty files; without the two-label
+   overlap, a tree method named `insert` is checked against every
+   `array.insert(_:at:)`. It found `sendVideoRecording` missing upstream's
+   `repeatPeriod:` — which had dropped the whole 4-argument `completion` closure
+   type with it — while the caller already passed it.
+
    `check_init_args.py` applies the same walk to top-level functions, which
    drift identically — `cachedWallpaper` moved from `(account:slug:settings:)`
    to `(engine:network:slug:settings:)` and six call sites in
@@ -102,6 +114,13 @@ and strands files at the old version.
    `telegramWallpapers` and `telegramThemes` in favour of
    `context.engine.themes`) is invisible to this checker — there is no way to
    tell it apart from a system-framework function.
+
+   A method or function whose *declaration* cannot be parsed is dropped from
+   coverage in silence, so the parameter splitter matters as much as the checker:
+   it re-joins a split made on the comma inside `Signal<Never, NoError>`, which
+   had been making `profileData` and `profilePhotos` invisible. That re-join is
+   applied to parameter lists **only** — in an argument list `luminance > 0.5`
+   is ordinary, and joining on it silently miscounts arguments.
 
    Both filter to directories reachable from `Telegram/` through BUILD `deps`
    (`buildgraph.py`; `--all` disables it). `submodules/LegacyDataImport` and
