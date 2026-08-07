@@ -6,6 +6,7 @@ import TelegramCore
 import AsyncDisplayKit
 import Display
 import ContextUI
+import BrowserUI
 import UndoUI
 import AccountContext
 import ChatMessageItemView
@@ -16,6 +17,8 @@ import UrlWhitelist
 import OpenInExternalAppUI
 import SafariServices
 import TelegramPresentationData
+import TelegramUIPreferences
+import UrlEscaping
 
 // MARK: exteraGram
 import ShareController
@@ -366,82 +369,105 @@ extension ChatControllerImpl {
             source = .extracted(ChatMessageLinkContextExtractedContentSource(chatNode: self.chatDisplayNode, contentNode: contentNode))
 //                }
         
-        var items: [ContextMenuItem] = []
-        
-        items.append(
-            .action(ContextMenuActionItem(text: openText, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Browser"), color: theme.contextMenu.primaryColor) }, action: { [weak self] _, f in
-                guard let self else {
-                    return
-                }
-                f(.default)
-                
-                if canOpenIn {
-                    self.openUrlIn(url)
-                }
-                else {
-                    self.openUrl(url, concealed: false)
-                }
-            }))
-        )
-        
-        items.append(
-            .action(ContextMenuActionItem(text: copyText, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.contextMenu.primaryColor) }, action: { [weak self]  _, f in
-                f(.default)
+        let itemsSignal = chatLinkContextMenuOpenMode(context: self.context, url: url)
+        |> deliverOnMainQueue
+        |> map { [weak self] openMode -> ContextController.Items in
+            guard let self else {
+                return ContextController.Items(content: .list([]))
+            }
 
-                guard let self else {
-                    return
-                }
-                
-                UIPasteboard.general.string = cleanUrl
+            var items: [ContextMenuItem] = []
 
-                self.present(UndoOverlayController(presentationData: self.presentationData, content: .copy(text: isEmail ? presentationData.strings.Conversation_EmailCopied : presentationData.strings.Conversation_LinkCopied), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
-            }))
-        )
-        
-        // MARK: exteraGram
-        items.append(
-            .action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_ContextMenuForward, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.contextMenu.primaryColor) }, action: { [weak self]  _, f in
-                f(.default)
+            items.append(
+                .action(ContextMenuActionItem(text: openText, icon: { theme in return generateTintedImage(image: openMode?.shouldOpenInApp == true ? UIImage(bundleImageName: "Chat/Context Menu/Browser") : UIImage(bundleImageName: "Chat/Context Menu/Globe"), color: theme.contextMenu.primaryColor) }, action: { [weak self] _, f in
+                    guard let self else {
+                        return
+                    }
+                    f(.default)
 
-                guard let self else {
-                    return
-                }
+                    // MARK: exteraGram
+                    if canOpenIn {
+                        self.openUrlIn(url)
+                    } else {
+                        self.openUrl(url, concealed: false)
+                    }
+                }))
+            )
 
             if let openMode {
                 let reverseText = openMode.shouldOpenInApp ? self.presentationData.strings.Chat_ContextMenu_OpenInBrowser : self.presentationData.strings.Chat_ContextMenu_OpenInApp
                 items.append(
                     .action(ContextMenuActionItem(text: reverseText, icon: { theme in return generateTintedImage(image: openMode.shouldOpenInApp ? UIImage(bundleImageName: "Chat/Context Menu/Globe") : UIImage(bundleImageName: "Chat/Context Menu/Browser"), color: theme.contextMenu.primaryColor) }, action: { [weak self] _, f in
                         f(.default)
-                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: false), in: .window(.root))
-            }))
-        )
-        items.append(
-            .action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_ContextMenuShare, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Share"), color: theme.contextMenu.primaryColor) }, action: { [weak self]  _, f in
-                f(.default)
 
-                guard let self else {
-                    return
-                }
+                        guard let self else {
+                            return
+                        }
+                        if openMode.shouldOpenInApp {
+                            self.presentOpenLinkConfirmation(url, target: .externalBrowser)
+                        } else {
+                            self.presentOpenLinkConfirmation(url, target: .inApp)
+                        }
+                    }))
+                )
+            }
 
-                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: true), in: .current)
-            }))
-        )
-        //
-        if canAddToReadingList {
             items.append(
-                .action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_AddToReadingList, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/ReadingList"), color: theme.contextMenu.primaryColor) }, action: { _, f in
+                .action(ContextMenuActionItem(text: copyText, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.contextMenu.primaryColor) }, action: { [weak self]  _, f in
                     f(.default)
-                    
-                    if let link = URL(string: url) {
-                        let _ = try? SSReadingList.default()?.addItem(with: link, title: nil, previewText: nil)
+
+                    guard let self else {
+                        return
                     }
+
+                    UIPasteboard.general.string = cleanUrl
+
+                    self.present(UndoOverlayController(presentationData: self.presentationData, content: .copy(text: isEmail ? presentationData.strings.Conversation_EmailCopied : presentationData.strings.Conversation_LinkCopied), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
                 }))
             )
+
+            // MARK: exteraGram
+            items.append(
+                .action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_ContextMenuForward, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.contextMenu.primaryColor) }, action: { [weak self]  _, f in
+                    f(.default)
+
+                    guard let self else {
+                        return
+                    }
+
+                    self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: false), in: .window(.root))
+                }))
+            )
+            items.append(
+                .action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_ContextMenuShare, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Share"), color: theme.contextMenu.primaryColor) }, action: { [weak self]  _, f in
+                    f(.default)
+
+                    guard let self else {
+                        return
+                    }
+
+                    self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: true), in: .current)
+                }))
+            )
+            //
+            if canAddToReadingList {
+                items.append(
+                    .action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_AddToReadingList, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/ReadingList"), color: theme.contextMenu.primaryColor) }, action: { _, f in
+                        f(.default)
+
+                        if let link = URL(string: url) {
+                            let _ = try? SSReadingList.default()?.addItem(with: link, title: nil, previewText: nil)
+                        }
+                    }))
+                )
+            }
+
+            return ContextController.Items(content: .list(items))
         }
-        
+
         self.canReadHistory.set(false)
-        
-        let controller = makeContextController(presentationData: self.presentationData, source: source, items: .single(ContextController.Items(content: .list(items))), recognizer: recognizer, gesture: gesture, disableScreenshots: false)
+
+        let controller = makeContextController(presentationData: self.presentationData, source: source, items: itemsSignal, recognizer: recognizer, gesture: gesture, disableScreenshots: false)
         controller.dismissed = { [weak self] in
             self?.canReadHistory.set(true)
         }

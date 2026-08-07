@@ -75,7 +75,7 @@ extension PeerInfoScreenNode {
             } else {
                 displayCustomNotificationSettings = true
             }
-            if self.data?.threadData == nil, let channel = self.data?.peer as? TelegramChannel, channel.isForumOrMonoForum {
+            if self.data?.threadData == nil, let channel = self.data?.peer?._asPeer() as? TelegramChannel, channel.isForumOrMonoForum {
                 displayCustomNotificationSettings = true
             }
             
@@ -575,7 +575,7 @@ extension PeerInfoScreenNode {
                         }
                     }
                     
-                    if user.botInfo == nil && data.isContact, let peer = strongSelf.data?.peer as? TelegramUser, let phone = peer.phone {
+                    if user.botInfo == nil && data.isContact, let peer = strongSelf.data?.peer?._asPeer() as? TelegramUser, let phone = peer.phone {
                         items.append(.action(ContextMenuActionItem(text: presentationData.strings.Profile_ShareContactButton, icon: { theme in
                             generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.contextMenu.primaryColor)
                         }, action: { [weak self] _, f in
@@ -846,7 +846,7 @@ extension PeerInfoScreenNode {
                                 if let cachedUserData = self.data?.cachedData as? CachedUserData, !cachedUserData.flags.contains(.copyProtectionEnabled), let date = cachedUserData.myCopyProtectionEnableDate, currentTime < date + timeout {
                                     action()
                                 } else {
-                                    let peerName = self.data?.peer.flatMap(EnginePeer.init)?.compactDisplayTitle ?? ""
+                                    let peerName = self.data?.peer?.compactDisplayTitle ?? ""
                                     let alertController = AlertScreen(context: self.context, configuration: .init(actionAlignment: .vertical), title: self.presentationData.strings.EnableSharing_Title, text: self.presentationData.strings.EnableSharing_Text(peerName).string, actions: [
                                         .init(title: self.presentationData.strings.EnableSharing_SendRequest, type: .default, action: {
                                             action()
@@ -901,7 +901,7 @@ extension PeerInfoScreenNode {
                     if finalItemsCount > itemsCount {
                         items.insert(.separator, at: itemsCount)
                     }
-                } else if let channel = peer as? TelegramChannel {
+                } else if let channel = peer._asPeer() as? TelegramChannel {
                     if let cachedData = strongSelf.data?.cachedData as? CachedChannelData {
                         if case .broadcast = channel.info, cachedData.flags.contains(.starGiftsAvailable) {
                             items.append(.action(ContextMenuActionItem(text: presentationData.strings.Profile_SendGift, badge: nil, icon: { theme in

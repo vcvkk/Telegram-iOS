@@ -5198,7 +5198,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     case let .webView(webView):
                         self.context.sharedContext.openJoinChatWebView(context: self.context, parentController: self, updatedPresentationData: self.updatedPresentationData, webView: webView, chatTitle: peer.compactDisplayTitle)
                     }
-                ).startStrict(error: { [weak self] error in
+                }, error: { [weak self] error in
                     guard let self else {
                         return
                     }

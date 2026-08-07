@@ -13,13 +13,18 @@ they live in finally reaches the compiler — which, for anything under
    stray `)` where a `}` should have closed an `else` branch — one extra paren
    and one unclosed brace, which cancel out in any per-line review.
 
-Counting delimiters on Swift naively is hopeless: string interpolation, regex
-literals and raw strings all confuse it, and ~170 perfectly good files in this
-tree come out "unbalanced". So the count is only ever compared **against the
-same file upstream**. Both sides get the same parser noise, it cancels, and
-what is left is a real structural difference introduced by a merge. Files with
-no upstream counterpart (fork-only) are skipped — there is nothing to compare
-them to.
+Counting delimiters on Swift needs a real left-to-right pass — stripping
+comments and string literals with successive regex substitutions eats the tail
+of every line holding a URL, because `//` inside `"https://t.me/…"` looks like a
+line comment. That bug alone produced two false reports and, worse, masked the
+two genuine ones above. With the single-pass stripper, only three files in the
+tree come out unbalanced, all under a `#if`.
+
+The count is still compared **against the same file upstream** wherever there is
+a counterpart: both sides get the same residual parser noise and it cancels. A
+fork-only file has nothing to compare against, so it gets the absolute rule
+instead — a whole Swift file must close every brace it opens — and that half is
+a gate, not advisory.
 
 Usage:
     check_syntax_debt.py --upstream /tmp/upstream/release-<NEW> [--paths DIR ...]
@@ -36,17 +41,62 @@ DEFAULT_ROOTS = ["submodules", "exteraGram", "Telegram"]
 
 MARKER = re.compile(r"^(?:<{7}|={7}$|>{7})")
 
-MULTILINE_STRING = re.compile(r'"""[\s\S]*?"""')
-BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
-LINE_COMMENT = re.compile(r"//[^\n]*")
-STRING_LITERAL = re.compile(r'"(?:\\.|[^"\\\n])*"')
-
-
 def strip_noise(src):
-    src = MULTILINE_STRING.sub('""', src)
-    src = BLOCK_COMMENT.sub("", src)
-    src = LINE_COMMENT.sub("", src)
-    return STRING_LITERAL.sub('""', src)
+    """Remove comments and string literals, in one left-to-right pass.
+
+    Regex substitution in stages cannot do this: applying the line-comment
+    pattern before the string pattern eats the tail of every line holding a URL
+    ("https://t.me/\\(name)"), which silently deletes real delimiters. Two of
+    the three files this checker flagged were that bug and not a merge defect.
+    """
+    out = []
+    index = 0
+    length = len(src)
+    while index < length:
+        char = src[index]
+        if char == '"':
+            if src.startswith('"""', index):
+                end = src.find('"""', index + 3)
+                index = length if end == -1 else end + 3
+                continue
+            index += 1
+            while index < length:
+                if src[index] == "\\":
+                    # Skip an interpolation segment whole: it is balanced by
+                    # construction, and its contents can hold nested quotes.
+                    if index + 1 < length and src[index + 1] == "(":
+                        depth = 0
+                        index += 1
+                        while index < length:
+                            if src[index] == "(":
+                                depth += 1
+                            elif src[index] == ")":
+                                depth -= 1
+                                if depth == 0:
+                                    index += 1
+                                    break
+                            index += 1
+                        continue
+                    index += 2
+                    continue
+                if src[index] == '"':
+                    index += 1
+                    break
+                if src[index] == "\n":  # unterminated; do not run away
+                    break
+                index += 1
+            continue
+        if char == "/" and src.startswith("//", index):
+            end = src.find("\n", index)
+            index = length if end == -1 else end
+            continue
+        if char == "/" and src.startswith("/*", index):
+            end = src.find("*/", index)
+            index = length if end == -1 else end + 2
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
 
 
 def balances(src):
@@ -79,6 +129,7 @@ def main():
     scanned = 0
     compared = 0
     drift = []
+    fork_only = []
 
     for root in args.paths:
         for dirpath, _, filenames in os.walk(root):
@@ -101,6 +152,16 @@ def main():
                     continue
                 reference = os.path.join(args.upstream, path)
                 if not os.path.exists(reference):
+                    # Fork-only: nothing to compare against, so use the absolute
+                    # rule instead — a whole Swift file must close every brace
+                    # it opens. Three files in the tree come out non-zero under
+                    # a `#if`, and all three exist upstream, so this stays quiet
+                    # here.
+                    if balances(ours)[0] != 0:
+                        fork_only.append(
+                            f"  {path}: {{}} balance {balances(ours)[0]:+d} "
+                            f"(fork-only file; a whole file must balance)"
+                        )
                     continue
                 with open(reference, encoding="utf-8", errors="replace") as handle:
                     theirs = handle.read()
@@ -125,8 +186,16 @@ def main():
         for line in drift:
             print(line)
 
-    if problems:
-        print(f"\nFAIL: {problems} conflict marker(s) ({scanned} scanned).")
+    if fork_only:
+        print(f"\n{len(fork_only)} fork-only file(s) that do not close every brace:")
+        for line in fork_only:
+            print(line)
+
+    if problems or fork_only:
+        print(
+            f"\nFAIL: {problems} conflict marker(s), "
+            f"{len(fork_only)} unbalanced fork-only file(s) ({scanned} scanned)."
+        )
         return 1
 
     print(f"\nOK: no conflict markers ({scanned} scanned, {compared} compared).")

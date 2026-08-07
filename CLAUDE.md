@@ -61,6 +61,7 @@ and strands files at the old version.
    python3 build-system/merge-tools/check_engine_adapters.py # Peer/Message adapters
    python3 build-system/merge-tools/check_enum_cases.py      # enum cases vs their uses
    python3 build-system/merge-tools/check_init_args.py       # init call sites vs declarations
+   python3 build-system/merge-tools/check_signal_arity.py    # combineLatest vs its closure
    python3 build-system/merge-tools/check_api_drift.py --upstream /tmp/upstream/release-<NEW>
    python3 build-system/merge-tools/check_syntax_debt.py --upstream /tmp/upstream/release-<NEW>
    ```
@@ -106,14 +107,40 @@ and strands files at the old version.
    (`buildgraph.py`; `--all` disables it). `submodules/LegacyDataImport` and
    `exteraGram/Playground` are in the tree but in nothing's dependency graph,
    and have been failing both checks for releases without CI ever noticing.
+   `check_signal_arity.py` counts the arguments of every `combineLatest(...)`
+   against the parameters of the `|> map` / `|> mapToSignal` closure consuming
+   it. This is the shape that costs the most CI rounds per line of damage: the
+   fork prepends its own signal, the merge takes the closure header from
+   upstream, and every binding shifts by one — so the compiler reports a type
+   error several bindings downstream and nothing at all near the signal that
+   moved. It found three in the 12.9.2 bump, one of which the compiler could
+   never have pointed at: the `firstMessage` binding and its
+   `channelCreationTimestamp:` argument were dropped together, and that argument
+   has a default value. It skips a single-parameter closure (binding the whole
+   tuple to one name is legal at any arity) and re-joins arguments split on the
+   comma inside `Signal<Void, NoError>`.
+
    `check_syntax_debt.py` fails on leftover conflict markers — eight orphaned
    `>>>>>>> theirs` lines sat committed in `TelegramUI/Sources` for a whole
    bump, invisible because that module only compiles once everything below it
-   is green. It also lists files whose delimiter balance differs from
-   upstream's; that part is advisory (fork edits shift it legitimately) but it
-   is how two broken merge resolutions were found — a stray `)` where a `}`
-   should have closed an `else`, and an unclosed closure followed by a second
-   `.startStrict(`.
+   is green — and on a fork-only file that does not close every brace it opens.
+   It also lists files whose delimiter balance differs from upstream's; that
+   part is advisory (fork edits shift it legitimately) but it is how four broken
+   merge resolutions were found: a stray `)` where a `}` should have closed an
+   `else`, an unclosed closure followed by a second `.startStrict(`, upstream's
+   `if let openMode {` block spliced into the middle of a fork `items.append`,
+   and `}, error: {` rewritten as `).startStrict(error: {`. The last two were
+   only visible after its stripper was rewritten as a single left-to-right pass
+   — stripping line comments before string literals ate the tail of every line
+   holding a URL, which both invented two false positives and concealed those
+   two real ones. The advisory list is empty as of that fix; treat any new entry
+   as a real finding until proven otherwise.
+
+   No checker covers a *dropped import*: `check_build_deps.py` verifies that
+   every `import` has a Bazel dep, not that every module a file uses is
+   imported. Diff the `^import` lines against upstream after a bump — that is
+   how `TextProcessingScreen`, `BrowserUI`, `TelegramUIPreferences` and
+   `UrlEscaping` were found missing from files that still name their types.
    `check_api_drift.py` is the one worth running *first*. It compares the
    `AccountContext` protocol surface and its `SharedAccountContext`
    implementation against upstream, normalising away the deliberate

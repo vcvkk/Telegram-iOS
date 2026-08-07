@@ -1128,7 +1128,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             if let searchContentNode = strongSelf.searchDisplayController?.contentNode as? ChatHistorySearchContainerNode {
                 if let galleryMessage = searchContentNode.messageForGallery(message.id) {
                     strongSelf.context.engine.messages.ensureMessagesAreLocallyAvailable(messages: [galleryMessage])
-                    foundGalleryMessage = galleryMessage
+                    foundGalleryMessage = galleryMessage._asMessage()
                 }
             }
             if foundGalleryMessage == nil, let galleryMessage = strongSelf.paneContainerNode.findLoadedMessage(id: message.id) {
@@ -1971,7 +1971,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                                 strongSelf.headerNode.navigationButtonContainer.performAction?(.cancel, nil, nil)
                             }))
                         }
-                    } else if let channel = data.peer as? TelegramChannel, canEditPeerInfo(context: strongSelf.context, peer: channel, chatLocation: strongSelf.chatLocation, threadData: data.threadData) {
+                    } else if let channel = data.peer?._asPeer() as? TelegramChannel, canEditPeerInfo(context: strongSelf.context, peer: data.peer, chatLocation: strongSelf.chatLocation, threadData: data.threadData) {
                         let title = strongSelf.headerNode.editingContentNode.editingTextForKey(.title) ?? ""
                         let description = strongSelf.headerNode.editingContentNode.editingTextForKey(.description) ?? ""
                         
@@ -2833,7 +2833,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             
             var previousPhotoIsPersonal: Bool?
             var currentPhotoIsPersonal: Bool?
-            if let previousUser = previousData?.peer as? TelegramUser {
+            if let previousUser = previousData?.peer?._asPeer() as? TelegramUser {
                 previousPhotoIsPersonal = previousUser.profileImageRepresentations.first?.isPersonal == true
             }
             if let user = data.peer?._asPeer() as? TelegramUser {
@@ -3827,7 +3827,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
     }
     
     private func editingOpenPublicLinkSetup() {
-        if let peer = self.data?.peer as? TelegramUser, peer.botInfo != nil {
+        if let peer = self.data?.peer?._asPeer() as? TelegramUser, peer.botInfo != nil {
             let controller = usernameSetupController(context: self.context, mode: .bot(self.peerId))
             self.controller?.push(controller)
         } else {
@@ -3847,7 +3847,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
     }
     
     private func editingOpenAffiliateProgram() {
-        if let peer = self.data?.peer as? TelegramUser, let botInfo = peer.botInfo {
+        if let peer = self.data?.peer?._asPeer() as? TelegramUser, let botInfo = peer.botInfo {
             if botInfo.flags.contains(.canEdit) {
                 let _ = (self.context.sharedContext.makeAffiliateProgramSetupScreenInitialData(context: self.context, peerId: peer.id, mode: .editProgram)
                 |> deliverOnMainQueue).startStandalone(next: { [weak self] initialData in

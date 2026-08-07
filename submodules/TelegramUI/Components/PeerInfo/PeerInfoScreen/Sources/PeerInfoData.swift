@@ -1494,6 +1494,25 @@ func peerInfoScreenData(
             }
 
             let savedMusicContext = ProfileSavedMusicContext(account: context.account, peerId: peerId)
+            let businessConnectedBot: Signal<EnginePeer?, NoError>
+            if isMyProfile {
+                businessConnectedBot = context.engine.data.subscribe(
+                    TelegramEngine.EngineData.Item.Peer.BusinessConnectedBot(id: context.account.peerId)
+                )
+                |> map { bot -> EnginePeer.Id? in
+                    return bot?.id
+                }
+                |> distinctUntilChanged
+                |> mapToSignal { botPeerId -> Signal<EnginePeer?, NoError> in
+                    guard let botPeerId else {
+                        return .single(nil)
+                    }
+                    return context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: botPeerId))
+                }
+            } else {
+                businessConnectedBot = .single(nil)
+            }
+
             let forcedLinkedCommunityId = Atomic<PeerId?>(value: nil)
             
             return combineLatest(
@@ -1518,7 +1537,8 @@ func peerInfoScreenData(
                 revenueContextAndState,
                 premiumGiftOptions,
                 webAppPermissions,
-                savedMusicContext.state
+                savedMusicContext.state,
+                businessConnectedBot
             )
             |> mapToSignal { regDate, peerView, availablePanes, globalNotificationSettings, encryptionKeyFingerprint, status, hasStories, hasStoryArchive, recommendedBots, accountIsPremium, savedMessagesPeer, hasSavedMessagesChats, hasSavedMessages, hasSavedMessageTags, hasBotPreviewItems, personalChannel, privacySettings, starsRevenueContextAndState, revenueContextAndState, premiumGiftOptions, webAppPermissions, savedMusicState, businessConnectedBot -> Signal<PeerInfoScreenData, NoError> in
                 var availablePanes = availablePanes
@@ -1838,7 +1858,7 @@ func peerInfoScreenData(
                 profileGiftsContext.state,
                 personalChannel
             )
-            |> mapToSignal { peerView, availablePanes, globalNotificationSettings, status, currentInvitationsContext, invitations, currentRequestsContext, requests, hasStories, accountIsPremium, recommendedChannels, hasSavedMessages, hasSavedMessagesChats, hasSavedMessageTags, isPremiumRequiredForStoryPosting, starsRevenueContextAndState, revenueContextAndState, profileGiftsState, personalChannel -> Signal<PeerInfoScreenData, NoError> in
+            |> mapToSignal { firstMessage, peerView, availablePanes, globalNotificationSettings, status, currentInvitationsContext, invitations, currentRequestsContext, requests, hasStories, accountIsPremium, recommendedChannels, hasSavedMessages, hasSavedMessagesChats, hasSavedMessageTags, isPremiumRequiredForStoryPosting, starsRevenueContextAndState, revenueContextAndState, profileGiftsState, personalChannel -> Signal<PeerInfoScreenData, NoError> in
                 var availablePanes = availablePanes
                 if let hasStories {
                     if hasStories {
@@ -1943,6 +1963,8 @@ func peerInfoScreenData(
                     }
                     
                     return PeerInfoScreenData(
+                        // MARK: exteraGram
+                        channelCreationTimestamp: firstMessage?.timestamp,
                         peer: peerView.peers[peerId].flatMap(EnginePeer.init),
                         chatPeer: peerView.peers[peerId].flatMap(EnginePeer.init),
                         savedMessagesPeer: nil,

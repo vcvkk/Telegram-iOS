@@ -55,13 +55,13 @@ these two trees.
 
 ## 3. The tools, and what each one actually caught
 
-All in `build-system/merge-tools/`. Run all six before pushing.
+All in `build-system/merge-tools/`. Run all of them before pushing.
 
 | Tool | What it does | What it caught here |
 |---|---|---|
 | `merge3.py` | Per-file 3-way merge via `git merge-file`. States: clean / conflict / ours-only / theirs-new / theirs-deleted / theirs-deleted-modified / unchanged / **stale** / asset-* | The whole bump. Also, re-run on a single file, it fixed `ChatListItem.swift` in one shot: 81 upstream hunks applied, 1 conflict |
 | `check_api_drift.py` | Compares `AccountContext` + `SharedAccountContext` declarations against upstream, **normalising away** the fork's deliberate `Peer`/`Message`/`postbox:` divergence | 4 cross-module bridges left behind while callers and factories moved on. Each would have cost a full CI round |
-| `check_syntax_debt.py` | Gates on leftover conflict markers; advisory report of delimiter balance that differs from upstream | 8 orphaned `>>>>>>> theirs` lines **committed** in `TelegramUI/Sources`, plus 2 resolutions that broke the syntax |
+| `check_syntax_debt.py` | Gates on leftover conflict markers and on a fork-only file that does not close every brace; advisory report of delimiter balance that differs from upstream | 8 orphaned `>>>>>>> theirs` lines **committed** in `TelegramUI/Sources`, plus 4 resolutions that broke the syntax — two of them only after its stripper was fixed (see §7.8) |
 | `check_assets.py` | Files in an asset catalog that no `Contents.json` entry references, and vice versa | 10 directories. `AssetCatalogCompile` rejects these, and `validate.yml` cannot see them at all |
 | `check_build_deps.py` | `import X` vs Bazel `deps`, using the **transitive** closure; also `find_cycle()` | 5+ "no such module", and one dependency cycle (an analysis-phase failure `--keep_going` does not soften) |
 | `check_duplicate_types.py` | Same-module duplicate top-level types | Duplicated methods left by conflict resolutions |
@@ -69,6 +69,7 @@ All in `build-system/merge-tools/`. Run all six before pushing.
 | `parse_ci_errors.py` | Build log → unique `file:line: error:` + failed modules | Used by both workflows |
 | `check_engine_adapters.py` | Peer/Message handed across the boundary to a module on the Engine types, or the reverse. Resolves argument types from explicit annotations only | Added later. Note its blind spot: it reads *call arguments*, so a wrongly-typed **stored property** crossing the boundary is invisible to it — that is exactly what `PeerInfoScreenData.peer` was |
 | `plan_module_merge.py` | Checks a proposed `exteraGram/` grouping for induced dependency cycles and type collisions before anything moves | For the Android-parity work in §8 |
+| `check_signal_arity.py` | Every `combineLatest(...)` against the `\|> map` / `\|> mapToSignal` closure that consumes it | 3 of these in the 12.9.2 bump. See failure shape §7.7 — it is the highest-cost-per-line shape in this fork |
 
 ```bash
 python3 build-system/merge-tools/check_api_drift.py    --upstream /tmp/upstream/release-12.9.2
@@ -76,11 +77,15 @@ python3 build-system/merge-tools/check_syntax_debt.py  --upstream /tmp/upstream/
 python3 build-system/merge-tools/check_assets.py
 python3 build-system/merge-tools/check_build_deps.py
 python3 build-system/merge-tools/check_duplicate_types.py
+python3 build-system/merge-tools/check_engine_adapters.py
+python3 build-system/merge-tools/check_enum_cases.py
+python3 build-system/merge-tools/check_init_args.py      # ~10 min, run it in the background
+python3 build-system/merge-tools/check_signal_arity.py
 python3 build-system/merge-tools/fork_inventory.py
 ```
 
-All six pass at `a32663c0`. **They passing does not mean the build is green** —
-they cover the classes that were expensive to find, not type checking.
+All of them pass. **They passing does not mean the build is green** — they cover
+the classes that were expensive to find, not type checking.
 
 `check_orphans.py` from the original plan was never written; `merge3.py`'s
 `theirs-deleted` state covers most of what it was meant to do.
@@ -218,9 +223,30 @@ declaration lagged while everything around it moved on.
    no parameter for it. Nothing is missing and nothing is extra — every binding
    just shifts by one, so the compiler reports it as `availablePanes` being a
    `PeerView`. Count the signals against the closure parameters; do not read the
-   error at face value.
+   error at face value. `check_signal_arity.py` now does the counting; it found
+   three instances in this file alone — the missing `businessConnectedBot`
+   *signal*, and a missing `firstMessage` *binding* whose
+   `channelCreationTimestamp:` argument had gone with it. That last one shows why
+   the compiler is no help: `channelCreationTimestamp` has a default value, so
+   dropping the argument is silently legal.
+8. **Two hunks of one call spliced into each other.** In
+   `ChatControllerOpenLinkContextMenu.swift` upstream's `if let openMode { … }`
+   block landed *inside* the fork's `items.append(...)` for the forward action;
+   in `ChatController.swift` upstream's `}, error: {` became
+   `).startStrict(error: {`, leaving the `next:` closure open. Both are invisible
+   to a per-hunk review and neither produces a conflict marker. What finds them
+   is delimiter balance measured against the same file upstream — but only after
+   `check_syntax_debt.py`'s stripper was fixed (see §9).
+9. **An import dropped while its symbol stayed.** The same file lost
+   `import BrowserUI` / `TelegramUIPreferences` / `UrlEscaping`, and
+   `ChatControllerLoadDisplayNode.swift` lost `import TextProcessingScreen` while
+   still calling it. `check_build_deps.py` does *not* catch this — it checks that
+   every `import` has a Bazel dep, not that every used module is imported. Diff
+   the `^import` lines of every file against upstream after a bump; ~10 files
+   differ, and the ones that matter are those whose file still names a type the
+   dropped module declares.
 
-8. **`--keep_going` only reports what it can reach.** A module below the failure
+10. **`--keep_going` only reports what it can reach.** A module below the failure
    is never compiled, so its errors are invisible. When you fix module X, sweep
    the *same pattern* across the tree before pushing — that is how 29 more
    `iconColor` sites and 6 more `openPeersNearby` sites were found from 2 and 1
@@ -315,10 +341,16 @@ grouping there, before touching the tree.
   entries are legitimate fork edits, but that bucket is also where 12.8 debt
   hides — `ChatListItem`'s 4-element `mergeType` tuple was found exactly there,
   and it was stale, not conflicting.
-- `check_syntax_debt.py`'s advisory list still names ~7 files whose `{}` balance
-  differs from upstream. Two entries with that same fingerprint turned out to be
-  real breakages, so the list is worth re-reading; the rest are probably fork
-  edits plus regex noise.
+- `check_syntax_debt.py`'s advisory list is now **empty** — every file with an
+  upstream counterpart matches its delimiter balance. That is worth knowing
+  because it was not true before: the tool used to strip comments and strings
+  with successive regex substitutions, so `//` inside `"https://t.me/…"` ate the
+  rest of the line. That produced two false entries *and hid two real ones*
+  (§6.8). It now walks the file once. Three files still come out non-zero in
+  absolute terms, all under a `#if`, and all three match upstream exactly — so
+  the absolute rule is applied only to fork-only files, where it is a gate.
+  If an entry ever reappears in the advisory list, read it: the fingerprint has
+  been right every time.
 - `peerNearbyData` is still an unused init parameter in `ChatController` (line
   ~674). It was being passed to `ChatPresentationInterfaceState`, which has no
   such member on either side, so the argument was removed at four call sites.
