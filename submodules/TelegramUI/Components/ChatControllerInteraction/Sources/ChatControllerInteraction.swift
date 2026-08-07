@@ -199,8 +199,12 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     
     public let openMessage: (Message, OpenMessageParams) -> Bool
     // MARK: exteraGram
-    public let egStartMessageEdit: (Message) -> Void
-    public let egGetChatPredictedLang: () -> String?
+    // MARK: exteraGram
+    // `var` so ChatController can assign these after construction: passing them
+    // inline took that initializer expression to 135 arguments, two past what the
+    // type checker manages (upstream ships 133 and compiles).
+    public var egStartMessageEdit: (Message) -> Void
+    public var egGetChatPredictedLang: () -> String?
     public let openPeer: (EnginePeer, ChatControllerInteractionNavigateToPeer, MessageReference?, OpenPeerSource) -> Void
     public let openPeerMention: (String, Promise<Bool>?) -> Void
     public let openMessageContextMenu: (Message, Bool, ASDisplayNode, CGRect, UIGestureRecognizer?, CGPoint?) -> Void

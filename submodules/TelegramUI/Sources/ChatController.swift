@@ -881,6 +881,31 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             return true
         }
         
+        // MARK: exteraGram
+        // Hoisted out of the ChatControllerInteraction(...) literal below. With the fork's
+        // two extra arguments that expression reaches 135; upstream ships 133 there and
+        // compiles, and the fork compiled at 133 against 12.8. At 135 the type checker
+        // gives up ("unable to type-check this expression in reasonable time") without
+        // naming anything wrong — nothing is. The explicit types keep these two closures
+        // out of that expression entirely.
+        let egGetChatPredictedLangImpl: () -> String? = { [weak self] in
+            if let strongSelf = self {
+                var result: String?
+                if let chatPeerId = strongSelf.chatLocation.peerId {
+                    result = EGSimpleSettings.shared.outgoingLanguageTranslation[EGSimpleSettings.makeOutgoingLanguageTranslationKey(accountId: strongSelf.context.account.peerId.id._internalGetInt64Value(), peerId: chatPeerId.id._internalGetInt64Value())]
+                }
+                return result ?? strongSelf.contentData?.state.predictedChatLanguage
+            }
+            return nil
+        }
+        let egStartMessageEditImpl: (Message) -> Void = { [weak self] message in
+            if let strongSelf = self {
+                if canEditMessage(context: strongSelf.context, limitsConfiguration: strongSelf.context.currentLimitsConfiguration.with { EngineConfiguration.Limits($0) }, message: message) {
+                    strongSelf.interfaceInteraction?.setupEditMessage(message.id, { _ in })
+                }
+            }
+        }
+
         let controllerInteraction = ChatControllerInteraction(openMessage: { [weak self] message, params in
             guard let self, self.isNodeLoaded, let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id)?._asMessage() else {
                 return false
@@ -1674,21 +1699,6 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             self.controllerInteraction?.isOpeningMediaSignal = openChatMessageParams.blockInteraction.get()
             
             return context.sharedContext.openChatMessage(openChatMessageParams)
-        }, egGetChatPredictedLang: { [weak self] in
-            if let strongSelf = self {
-                var result: String?
-                if let chatPeerId = strongSelf.chatLocation.peerId {
-                    result = EGSimpleSettings.shared.outgoingLanguageTranslation[EGSimpleSettings.makeOutgoingLanguageTranslationKey(accountId: strongSelf.context.account.peerId.id._internalGetInt64Value(), peerId: chatPeerId.id._internalGetInt64Value())]
-                }
-                return result ?? strongSelf.contentData?.state.predictedChatLanguage
-            }
-            return nil
-        }, egStartMessageEdit: { [weak self] message in
-            if let strongSelf = self {
-                if canEditMessage(context: strongSelf.context, limitsConfiguration: strongSelf.context.currentLimitsConfiguration.with { EngineConfiguration.Limits($0) }, message: message) {
-                    strongSelf.interfaceInteraction?.setupEditMessage(message.id, { _ in })
-                }
-            }
         }, openPeer: { [weak self] peer, navigation, fromMessage, source in
             var expandAvatar = false
             if case let .groupParticipant(storyStats, avatarHeaderNode) = source {
@@ -5790,6 +5800,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
             self.displayPollRestrictedToast(messageId: messageId)
         }, automaticMediaDownloadSettings: self.automaticMediaDownloadSettings, pollActionState: ChatInterfacePollActionState(), stickerSettings: self.stickerSettings, presentationContext: ChatPresentationContext(context: context, backgroundNode: self.chatBackgroundNode))
+        // MARK: exteraGram
+        controllerInteraction.egGetChatPredictedLang = egGetChatPredictedLangImpl
+        controllerInteraction.egStartMessageEdit = egStartMessageEditImpl
         controllerInteraction.enableFullTranslucency = context.sharedContext.energyUsageSettings.fullTranslucency
         
         self.controllerInteraction = controllerInteraction

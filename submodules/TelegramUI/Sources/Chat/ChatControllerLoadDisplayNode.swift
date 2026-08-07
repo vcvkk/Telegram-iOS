@@ -1641,6 +1641,18 @@ extension ChatControllerImpl {
             strongSelf.window?.presentInGlobalOverlay(controller)
         }
         
+        // MARK: exteraGram
+        // Hoisted for the same reason as ChatController.swift's two: the fork's extra
+        // argument takes this expression to 132 where upstream ships 131, and the type
+        // checker gives up rather than report anything wrong.
+        let openPeersNearbyImpl: () -> Void = { [weak self] in
+            if let strongSelf = self {
+                let controller = strongSelf.context.sharedContext.makePeersNearbyController(context: strongSelf.context)
+                controller.navigationPresentation = .master
+                strongSelf.effectiveNavigationController?.pushViewController(controller, animated: true, completion: { })
+            }
+        }
+
         let interfaceInteraction = ChatPanelInterfaceInteraction(setupReplyMessage: { [weak self] messageId, innerSubject, completion in
             guard let strongSelf = self, strongSelf.isNodeLoaded else {
                 return
@@ -3956,12 +3968,6 @@ extension ChatControllerImpl {
             if let strongSelf = self {
                 strongSelf.openScheduledMessages()
             }
-        }, openPeersNearby: { [weak self] in
-            if let strongSelf = self {
-                let controller = strongSelf.context.sharedContext.makePeersNearbyController(context: strongSelf.context)
-                controller.navigationPresentation = .master
-                strongSelf.effectiveNavigationController?.pushViewController(controller, animated: true, completion: { })
-            }
         }, displaySearchResultsTooltip: { [weak self] node, nodeRect in
             if let strongSelf = self {
                 strongSelf.searchResultsTooltipController?.dismiss()
@@ -4828,6 +4834,8 @@ extension ChatControllerImpl {
         }, chatController: { [weak self] in
             return self
         }, statuses: ChatPanelInterfaceInteractionStatuses(editingMessage: self.editingMessage.get(), startingBot: self.startingBot.get(), unblockingPeer: self.unblockingPeer.get(), searching: self.searching.get(), loadingMessage: self.loadingMessage.get(), inlineSearch: self.performingInlineSearch.get()))
+        // MARK: exteraGram
+        interfaceInteraction.openPeersNearby = openPeersNearbyImpl
         
         self.interfaceInteraction = interfaceInteraction
         
