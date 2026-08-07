@@ -169,7 +169,7 @@ extension PeerInfoScreenNode {
                 text = customLink
                 content = .linkCopied(title: nil, text: self.presentationData.strings.Conversation_LinkCopied)
             } else if let addressName = peer.addressName {
-                if peer is TelegramChannel {
+                if peer._asPeer() is TelegramChannel {
                     text = "https://t.me/\(addressName)"
                     content = .linkCopied(title: nil, text: self.presentationData.strings.Conversation_LinkCopied)
                 } else {

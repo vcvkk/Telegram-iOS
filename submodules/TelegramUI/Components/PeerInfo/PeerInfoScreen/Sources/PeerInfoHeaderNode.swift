@@ -92,7 +92,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     private weak var controller: PeerInfoScreenImpl?
     private var presentationData: PresentationData?
     private var state: PeerInfoState?
-    private var peer: Peer?
+    private var peer: EnginePeer?
     private var threadData: MessageHistoryThreadData?
     private var isSearching: Bool = false
     private var avatarSize: CGFloat?
@@ -519,7 +519,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     private var currentStatusIcon: CredibilityIcon?
     
     private var currentPanelStatusData: PeerInfoStatusData?
-    func update(width: CGFloat, containerHeight: CGFloat, containerInset: CGFloat, statusBarHeight: CGFloat, navigationHeight: CGFloat, isModalOverlay: Bool, isMediaOnly: Bool, contentOffset: CGFloat, paneContainerY: CGFloat, presentationData: PresentationData, peer: Peer?, cachedData: CachedPeerData?, threadData: MessageHistoryThreadData?, peerNotificationSettings: TelegramPeerNotificationSettings?, threadNotificationSettings: TelegramPeerNotificationSettings?, globalNotificationSettings: EngineGlobalNotificationSettings?, statusData: PeerInfoStatusData?, panelStatusData: (PeerInfoStatusData?, PeerInfoStatusData?, CGFloat?), isSecretChat: Bool, isContact: Bool, isSettings: Bool, state: PeerInfoState, profileGiftsContext: ProfileGiftsContext?, screenData: PeerInfoScreenData?, isSearching: Bool, metrics: LayoutMetrics, deviceMetrics: DeviceMetrics, transition: ContainedViewLayoutTransition, additive: Bool, animateHeader: Bool) -> CGFloat {
+    func update(width: CGFloat, containerHeight: CGFloat, containerInset: CGFloat, statusBarHeight: CGFloat, navigationHeight: CGFloat, isModalOverlay: Bool, isMediaOnly: Bool, contentOffset: CGFloat, paneContainerY: CGFloat, presentationData: PresentationData, peer: EnginePeer?, cachedData: CachedPeerData?, threadData: MessageHistoryThreadData?, peerNotificationSettings: TelegramPeerNotificationSettings?, threadNotificationSettings: TelegramPeerNotificationSettings?, globalNotificationSettings: EngineGlobalNotificationSettings?, statusData: PeerInfoStatusData?, panelStatusData: (PeerInfoStatusData?, PeerInfoStatusData?, CGFloat?), isSecretChat: Bool, isContact: Bool, isSettings: Bool, state: PeerInfoState, profileGiftsContext: ProfileGiftsContext?, screenData: PeerInfoScreenData?, isSearching: Bool, metrics: LayoutMetrics, deviceMetrics: DeviceMetrics, transition: ContainedViewLayoutTransition, additive: Bool, animateHeader: Bool) -> CGFloat {
         if self.appliedCustomNavigationContentNode !== self.customNavigationContentNode {
             if let previous = self.appliedCustomNavigationContentNode {
                 ComponentTransition(transition).setAlpha(view: previous.view, alpha: 0.0, completion: { [weak previous] _ in
@@ -645,7 +645,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         }
         
         var isForum = false
-        if let channel = peer as? TelegramChannel, channel.isForumOrMonoForum {
+        if let channel = peer._asPeer() as? TelegramChannel, channel.isForumOrMonoForum {
             isForum = true
         }
         
@@ -1305,7 +1305,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
             // MARK: exteraGram
             if title.isEmpty {
-                if let peer = peer as? TelegramUser, let phone = peer.phone, !self.hidePhoneInSettings {
+                if let peer = peer._asPeer() as? TelegramUser, let phone = peer.phone, !self.hidePhoneInSettings {
                     title = formatPhoneNumber(context: self.context, number: phone)
                 } else if let addressName = peer.addressName {
                     title = "@\(addressName)"
@@ -1318,7 +1318,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             titleAttributes = MultiScaleTextState.Attributes(font: Font.medium(28.0), color: .white)
             smallTitleAttributes = MultiScaleTextState.Attributes(font: Font.medium(28.0), color: .white, shadowColor: titleShadowColor)
             
-            if self.isSettings, let user = peer as? TelegramUser {
+            if self.isSettings, let user = peer._asPeer() as? TelegramUser {
                 // MARK: exteraGram
                 var formattedPhone = formatPhoneNumber(context: self.context, number: user.phone ?? "")
                 if !formattedPhone.isEmpty && self.hidePhoneInSettings {
@@ -1364,7 +1364,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 subtitleColor = UIColor.white
                 
                 let statusText: String
-                if let user = peer as? TelegramUser, user.isForum {
+                if let user = peer._asPeer() as? TelegramUser, user.isForum {
                     statusText = " "
                 } else {
                     statusText = peer.debugDisplayTitle
@@ -2487,7 +2487,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 buttonText = presentationData.strings.PeerInfo_ButtonVideoCall
                 buttonIcon = .videoCall
             case .voiceChat:
-                if let channel = peer as? TelegramChannel, case .broadcast = channel.info {
+                if let channel = peer._asPeer() as? TelegramChannel, case .broadcast = channel.info {
                     buttonText = presentationData.strings.PeerInfo_ButtonLiveStream
                 } else {
                     buttonText = presentationData.strings.PeerInfo_ButtonVoiceChat

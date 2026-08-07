@@ -4599,7 +4599,7 @@ private func peerInfoControllerImpl(context: AccountContext, updatedPresentation
     } else if peer is TelegramUser {
         var nearbyPeerDistance: Int32?
         var reactionSourceMessageId: MessageId?
-        var callMessages: [Message] = []
+        var callMessages: [EngineMessage] = []
         var hintGroupInCommon: PeerId?
         var forumTopicThread: ChatReplyThreadMessage?
         var sharedMediaFromForumTopic: (EnginePeer.Id, Int64)?
@@ -4612,11 +4612,11 @@ private func peerInfoControllerImpl(context: AccountContext, updatedPresentation
         case let .nearbyPeer(distance):
             nearbyPeerDistance = distance
         case let .calls(messages):
-            callMessages = messages
+            callMessages = messages.map(EngineMessage.init)
         case .generic:
             break
-        case let .group(id):
-            hintGroupInCommon = id
+        case let .group(messageId):
+            hintGroupInCommon = messageId.peerId
         case let .reaction(messageId):
             reactionSourceMessageId = messageId
         case let .forumTopic(thread):

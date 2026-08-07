@@ -49,7 +49,7 @@ func settingsItems(showProfileId: Bool, data: PeerInfoScreenData?, context: Acco
     var setStatusTitle: String = ""
     let displaySetStatus: Bool
     var hasEmojiStatus = false
-    if let peer = data.peer as? TelegramUser, peer.isPremium {
+    if let peer = data.peer?._asPeer() as? TelegramUser, peer.isPremium {
         if peer.emojiStatus != nil {
             hasEmojiStatus = true
             setStatusTitle = presentationData.strings.PeerInfo_ChangeEmojiStatus
@@ -109,7 +109,7 @@ func settingsItems(showProfileId: Bool, data: PeerInfoScreenData?, context: Acco
             items[.phone]!.append(PeerInfoScreenActionItem(id: 1, text: "Restore Subscription", action: {
                 interaction.openSettings(.premiumManagement)
             }))
-        } else if settings.suggestPhoneNumberConfirmation, let peer = data.peer as? TelegramUser {
+        } else if settings.suggestPhoneNumberConfirmation, let peer = data.peer?._asPeer() as? TelegramUser {
             let phoneNumber = formatPhoneNumber(context: context, number: peer.phone ?? "")
             items[.phone]!.append(PeerInfoScreenInfoItem(id: 0, title: presentationData.strings.Settings_CheckPhoneNumberTitle(phoneNumber).string, text: .markdown(presentationData.strings.Settings_CheckPhoneNumberText), linkAction: { link in
                 if case .tap = link {
@@ -464,7 +464,7 @@ func settingsEditingItems(data: PeerInfoScreenData?, state: PeerInfoState, conte
         interaction.openBirthdatePrivacy()
     }))
     
-    if let user = data.peer as? TelegramUser {
+    if let user = data.peer?._asPeer() as? TelegramUser {
         items[.info]!.append(PeerInfoScreenDisclosureItem(id: ItemPhoneNumber, label: .text(user.phone.flatMap({ formatPhoneNumber(context: context, number: $0) }) ?? ""), text: presentationData.strings.Settings_PhoneNumber, action: {
             interaction.openSettings(.phoneNumber)
         }))
@@ -477,7 +477,7 @@ func settingsEditingItems(data: PeerInfoScreenData?, state: PeerInfoState, conte
           interaction.openSettings(.username)
     }))
     
-    if let peer = data.peer as? TelegramUser {
+    if let peer = data.peer?._asPeer() as? TelegramUser {
         var colors: [PeerNameColors.Colors] = []
         if let nameColor = peer.nameColor {
             let nameColors: PeerNameColors.Colors

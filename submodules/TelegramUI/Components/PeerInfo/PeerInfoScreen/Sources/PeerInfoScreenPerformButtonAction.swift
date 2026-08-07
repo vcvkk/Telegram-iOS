@@ -22,7 +22,7 @@ extension PeerInfoScreenNode {
         switch key {
         case .message:
             if let navigationController = controller.navigationController as? NavigationController, let peer = self.data?.peer {
-                if let channel = peer as? TelegramChannel, case let .broadcast(info) = channel.info, info.flags.contains(.hasMonoforum), let linkedMonoforumId = channel.linkedMonoforumId {
+                if let channel = peer._asPeer() as? TelegramChannel, case let .broadcast(info) = channel.info, info.flags.contains(.hasMonoforum), let linkedMonoforumId = channel.linkedMonoforumId {
                     Task { @MainActor [weak self] in
                         guard let self else {
                             return
@@ -35,7 +35,7 @@ extension PeerInfoScreenNode {
                         self.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: self.context, chatLocation: .peer(peer), keepStack: .default))
                     }
                 } else {
-                    self.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: self.context, chatLocation: .peer(EnginePeer(peer)), keepStack: self.nearbyPeerDistance != nil ? .always : .default, peerNearbyData: self.nearbyPeerDistance.flatMap({ ChatPeerNearbyData(distance: $0) }), completion: { [weak self] _ in
+                    self.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: self.context, chatLocation: .peer(peer), keepStack: self.nearbyPeerDistance != nil ? .always : .default, peerNearbyData: self.nearbyPeerDistance.flatMap({ ChatPeerNearbyData(distance: $0) }), completion: { [weak self] _ in
                         if let strongSelf = self, strongSelf.nearbyPeerDistance != nil {
                             var viewControllers = navigationController.viewControllers
                             viewControllers = viewControllers.filter { controller in
@@ -233,13 +233,13 @@ extension PeerInfoScreenNode {
                         
                         let mode: NotificationExceptionMode
                         let defaultSound: PeerMessageSound
-                        if let _ = peer as? TelegramUser {
+                        if let _ = peer._asPeer() as? TelegramUser {
                             mode = .users([:])
                             defaultSound = globalSettings.privateChats.sound._asMessageSound()
-                        } else if let _ = peer as? TelegramSecretChat {
+                        } else if let _ = peer._asPeer() as? TelegramSecretChat {
                             mode = .users([:])
                             defaultSound = globalSettings.privateChats.sound._asMessageSound()
-                        } else if let channel = peer as? TelegramChannel {
+                        } else if let channel = peer._asPeer() as? TelegramChannel {
                             if case .broadcast = channel.info {
                                 mode = .channels([:])
                                 defaultSound = globalSettings.channels.sound._asMessageSound()
@@ -255,7 +255,7 @@ extension PeerInfoScreenNode {
                         
                         let canRemove = false
                         
-                        let exceptionController = notificationPeerExceptionController(context: context, updatedPresentationData: strongSelf.controller?.updatedPresentationData, peer: EnginePeer(peer), threadId: threadId, isStories: nil, canRemove: canRemove, defaultSound: defaultSound, defaultStoriesSound: globalSettings.privateChats.storySettings.sound, edit: true, updatePeerSound: { peerId, sound in
+                        let exceptionController = notificationPeerExceptionController(context: context, updatedPresentationData: strongSelf.controller?.updatedPresentationData, peer: peer, threadId: threadId, isStories: nil, canRemove: canRemove, defaultSound: defaultSound, defaultStoriesSound: globalSettings.privateChats.storySettings.sound, edit: true, updatePeerSound: { peerId, sound in
                             let _ = (updatePeerSound(peer.id, sound)
                             |> deliverOnMainQueue).startStandalone(next: { _ in
                             })
@@ -436,18 +436,18 @@ extension PeerInfoScreenNode {
                 
                 var canSetupAutoremoveTimeout = false
                 
-                if let secretChat = chatPeer as? TelegramSecretChat {
+                if let secretChat = chatPeer._asPeer() as? TelegramSecretChat {
                     currentAutoremoveTimeout = secretChat.messageAutoremoveTimeout
                     canSetupAutoremoveTimeout = false
-                } else if let group = chatPeer as? TelegramGroup {
+                } else if let group = chatPeer._asPeer() as? TelegramGroup {
                     if !group.hasBannedPermission(.banChangeInfo) {
                         canSetupAutoremoveTimeout = true
                     }
-                } else if let user = chatPeer as? TelegramUser {
+                } else if let user = chatPeer._asPeer() as? TelegramUser {
                     if user.id != strongSelf.context.account.peerId {
                         canSetupAutoremoveTimeout = true
                     }
-                } else if let channel = chatPeer as? TelegramChannel {
+                } else if let channel = chatPeer._asPeer() as? TelegramChannel {
                     if channel.hasPermission(.changeInfo) {
                         canSetupAutoremoveTimeout = true
                     }
@@ -471,7 +471,7 @@ extension PeerInfoScreenNode {
                 }
                 
                 var hasDiscussion = false
-                if let channel = chatPeer as? TelegramChannel {
+                if let channel = chatPeer._asPeer() as? TelegramChannel {
                     switch channel.info {
                     case let .broadcast(info):
                         hasDiscussion = info.flags.contains(.hasDiscussionGroup)
@@ -488,7 +488,7 @@ extension PeerInfoScreenNode {
                     })))
                 }
                 
-                if let user = peer as? TelegramUser {
+                if let user = peer._asPeer() as? TelegramUser {
                     if user.botInfo == nil && strongSelf.data?.encryptionKeyFingerprint == nil && !user.isDeleted {
                         items.append(.action(ContextMenuActionItem(text: presentationData.strings.UserInfo_ChangeWallpaper, icon: { theme in
                             generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/ApplyTheme"), color: theme.contextMenu.primaryColor)
@@ -782,7 +782,7 @@ extension PeerInfoScreenNode {
                         })))
                     }
                     
-                    if let user = data.peer as? TelegramUser, let cachedData = data.cachedData as? CachedUserData, user.botInfo == nil && !user.flags.contains(.isSupport) && user.id != strongSelf.context.account.peerId && strongSelf.peerId.namespace != Namespaces.Peer.SecretChat {
+                    if let user = data.peer?._asPeer() as? TelegramUser, let cachedData = data.cachedData as? CachedUserData, user.botInfo == nil && !user.flags.contains(.isSupport) && user.id != strongSelf.context.account.peerId && strongSelf.peerId.namespace != Namespaces.Peer.SecretChat {
                         let copyProtectionEnabled = cachedData.flags.contains(.myCopyProtectionEnabled) || cachedData.flags.contains(.copyProtectionEnabled)
                         items.append(.action(ContextMenuActionItem(text: !copyProtectionEnabled ? strongSelf.presentationData.strings.PeerInfo_DisableSharing : strongSelf.presentationData.strings.PeerInfo_EnableSharing, icon: { theme in
                             generateTintedImage(image: UIImage(bundleImageName: !copyProtectionEnabled ? "Chat/Context Menu/ForwardDisable" : "Chat/Context Menu/ForwardEnable"), color: theme.contextMenu.primaryColor)
@@ -812,7 +812,7 @@ extension PeerInfoScreenNode {
                                         }
                                         let _ = self.context.engine.peers.toggleMessageCopyProtection(peerId: user.id, enabled: true).start()
                                         
-                                        self.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: self.context, chatLocation: .peer(EnginePeer(peer)), keepStack: .default, peerNearbyData: nil, completion: { _ in }))
+                                        self.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: self.context, chatLocation: .peer(peer), keepStack: .default, peerNearbyData: nil, completion: { _ in }))
                                     }
                                     let _ = (ApplicationSpecificNotice.getCopyProtectionTips(accountManager: self.context.sharedContext.accountManager)
                                     |> deliverOnMainQueue).start(next: { [weak self] count in

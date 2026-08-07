@@ -69,7 +69,7 @@ final class PeerInfoHeaderEditingContentNode: ASDisplayNode {
         
         var contentHeight: CGFloat = statusBarHeight + 10.0 + avatarSize + 28.0
         
-        if canEditPeerInfo(context: self.context, peer: peer?._asPeer(), chatLocation: chatLocation, threadData: threadData)  {
+        if canEditPeerInfo(context: self.context, peer: peer, chatLocation: chatLocation, threadData: threadData)  {
             if self.avatarButtonNode.supernode == nil {
                 self.addSubnode(self.avatarButtonNode)
             }
@@ -99,12 +99,12 @@ final class PeerInfoHeaderEditingContentNode: ASDisplayNode {
             }
         } else if case .legacyGroup = peer {
             fieldKeys.append(.title)
-            if canEditPeerInfo(context: self.context, peer: peer?._asPeer(), chatLocation: chatLocation, threadData: threadData) {
+            if canEditPeerInfo(context: self.context, peer: peer, chatLocation: chatLocation, threadData: threadData) {
                 fieldKeys.append(.description)
             }
         } else if case .channel = peer {
             fieldKeys.append(.title)
-            if canEditPeerInfo(context: self.context, peer: peer?._asPeer(), chatLocation: chatLocation, threadData: threadData) {
+            if canEditPeerInfo(context: self.context, peer: peer, chatLocation: chatLocation, threadData: threadData) {
                 fieldKeys.append(.description)
             }
         }
@@ -174,10 +174,10 @@ final class PeerInfoHeaderEditingContentNode: ASDisplayNode {
                 } else {
                     placeholder = presentationData.strings.GroupInfo_GroupNamePlaceholder
                 }
-                isEnabled = canEditPeerInfo(context: self.context, peer: peer?._asPeer(), chatLocation: chatLocation, threadData: threadData)
+                isEnabled = canEditPeerInfo(context: self.context, peer: peer, chatLocation: chatLocation, threadData: threadData)
             case .description:
                 placeholder = presentationData.strings.Channel_Edit_AboutItem
-                isEnabled = canEditPeerInfo(context: self.context, peer: peer?._asPeer(), chatLocation: chatLocation, threadData: threadData) || isEditableBot
+                isEnabled = canEditPeerInfo(context: self.context, peer: peer, chatLocation: chatLocation, threadData: threadData) || isEditableBot
             }
             let itemHeight = itemNode.update(width: width, safeInset: safeInset, isSettings: isSettings, hasPrevious: hasPrevious, hasNext: key != fieldKeys.last, placeholder: placeholder, isEnabled: isEnabled, presentationData: presentationData, updateText: updateText)
             transition.updateFrame(node: itemNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentHeight), size: CGSize(width: width, height: itemHeight)))

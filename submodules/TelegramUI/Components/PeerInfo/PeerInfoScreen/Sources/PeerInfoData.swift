@@ -1047,8 +1047,8 @@ func peerInfoScreenSettingsData(context: AccountContext, peerId: EnginePeer.Id, 
         )
         
         return PeerInfoScreenData(
-            peer: peer,
-            chatPeer: peer,
+            peer: peer.flatMap(EnginePeer.init),
+            chatPeer: peer.flatMap(EnginePeer.init),
             savedMessagesPeer: nil,
             cachedData: peerView.cachedData,
             status: nil,
