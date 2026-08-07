@@ -1,9 +1,5 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
-egdeps = [
-    "//exteraGram/EGSimpleSettings:EGSimpleSettings"
-]
-
 swift_library(
     name = "LegacyInstantVideoController",
     module_name = "LegacyInstantVideoController",
@@ -13,11 +9,10 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = egdeps + [
+    deps = [
         "//submodules/AsyncDisplayKit",
         "//submodules/Display",
         "//submodules/TelegramCore",
-        "//submodules/Postbox",
         "//submodules/SSignalKit/SwiftSignalKit",
         "//submodules/TelegramPresentationData",
         "//submodules/MediaResources",

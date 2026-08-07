@@ -10,7 +10,6 @@ from DecryptMatch import decrypt_match_data
 
 class BuildConfiguration:
     def __init__(self,
-        eg_config,
         bundle_id,
         api_id,
         api_hash,
@@ -24,7 +23,6 @@ class BuildConfiguration:
         enable_siri,
         enable_icloud
     ):
-        self.eg_config = eg_config
         self.bundle_id = bundle_id
         self.api_id = api_id
         self.api_hash = api_hash
@@ -42,7 +40,6 @@ class BuildConfiguration:
         string = ''
         string += 'telegram_bazel_path = "{}"\n'.format(bazel_path)
         string += 'telegram_use_xcode_managed_codesigning = {}\n'.format('True' if use_xcode_managed_codesigning else 'False')
-        string += 'eg_config = """{}"""\n'.format(self.eg_config)
         string += 'telegram_bundle_id = "{}"\n'.format(self.bundle_id)
         string += 'telegram_api_id = "{}"\n'.format(self.api_id)
         string += 'telegram_api_hash = "{}"\n'.format(self.api_hash)
@@ -71,7 +68,6 @@ def build_configuration_from_json(path):
     with open(path) as file:
         configuration_dict = json.load(file)
         required_keys = [
-            'eg_config',
             'bundle_id',
             'api_id',
             'api_hash',
@@ -83,13 +79,12 @@ def build_configuration_from_json(path):
             'app_specific_url_scheme',
             'premium_iap_product_id',
             'enable_siri',
-            'enable_icloud',
+            'enable_icloud'
         ]
         for key in required_keys:
             if key not in configuration_dict:
                 print('Configuration at {} does not contain {}'.format(path, key))
         return BuildConfiguration(
-            eg_config=configuration_dict['eg_config'],
             bundle_id=configuration_dict['bundle_id'],
             api_id=configuration_dict['api_id'],
             api_hash=configuration_dict['api_hash'],
@@ -101,7 +96,7 @@ def build_configuration_from_json(path):
             app_specific_url_scheme=configuration_dict['app_specific_url_scheme'],
             premium_iap_product_id=configuration_dict['premium_iap_product_id'],
             enable_siri=configuration_dict['enable_siri'],
-            enable_icloud=configuration_dict['enable_icloud'],
+            enable_icloud=configuration_dict['enable_icloud']
         )
 
 
@@ -111,21 +106,13 @@ def decrypt_codesigning_directory_recursively(source_base_path, destination_base
         destination_path = destination_base_path + '/' + file_name
         allowed_file_extensions = ['.mobileprovision', '.cer', '.p12']
         if os.path.isfile(source_path) and any(source_path.endswith(ext) for ext in allowed_file_extensions):
-            #print('Decrypting {} to {} with {}'.format(source_path, destination_path, password))
-            os.system('ruby build-system/decrypt.rb "{password}" "{source_path}" "{destination_path}"'.format(
-                password=password,
-                source_path=source_path,
-                destination_path=destination_path
-            ))
-            #decrypt_match_data(source_path, destination_path, password)
+            decrypt_match_data(source_path, destination_path, password)
         elif os.path.isdir(source_path):
             os.makedirs(destination_path, exist_ok=True)
             decrypt_codesigning_directory_recursively(source_path, destination_path, password)
 
 
 def load_codesigning_data_from_git(working_dir, repo_url, temp_key_path, branch, password, always_fetch):
-    # MARK: exteraGram
-    branch = "master"
     if not os.path.exists(working_dir):
         os.makedirs(working_dir, exist_ok=True)
 
@@ -166,8 +153,6 @@ def load_codesigning_data_from_git(working_dir, repo_url, temp_key_path, branch,
 
 def copy_profiles_from_directory(source_path, destination_path, team_id, bundle_id):
     profile_name_mapping = {
-        # exteraGram
-        # '.SGActionRequestHandler': 'SGActionRequestHandler',
         '.SiriIntents': 'Intents',
         '.NotificationContent': 'NotificationContent',
         '.NotificationService': 'NotificationService',

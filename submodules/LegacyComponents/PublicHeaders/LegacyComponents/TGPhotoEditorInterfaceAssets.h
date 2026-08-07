@@ -30,8 +30,6 @@
 + (UIImage *)muteIcon;
 + (UIImage *)muteActiveIcon;
 + (UIImage *)qualityIconForHighQuality:(bool)highQuality filled:(bool)filled;
-+ (UIImage *)telescopeIcon;
-+ (UIImage *)telescopeActiveIcon;
 + (UIImage *)qualityIconForPreset:(TGMediaVideoConversionPreset)preset;
 + (UIImage *)timerIconForValue:(NSInteger)value;
 + (UIImage *)eraserIcon;

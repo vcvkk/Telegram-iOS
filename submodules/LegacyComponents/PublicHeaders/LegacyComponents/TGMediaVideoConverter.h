@@ -2,11 +2,6 @@
 
 #import <LegacyComponents/TGVideoEditAdjustments.h>
 
-// MARK: exteraGram
-#import <VideoToolbox/VideoToolbox.h>
-#import <MediaPlayer/MediaPlayer.h>
-//
-
 @interface TGMediaVideoFileWatcher : NSObject
 {
     NSURL *_fileURL;

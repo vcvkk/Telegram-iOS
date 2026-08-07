@@ -939,6 +939,11 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: 
     
     var missingUpdatesFromChannels = Set<PeerId>()
     
+    enum TypingDraftText {
+        case plain(Api.TextWithEntities)
+        case rich(Api.RichMessage)
+    }
+    
     for update in sortedUpdates(updates) {
         switch update {
             case let .updateChannelTooLong(updateChannelTooLongData):
@@ -1156,20 +1161,7 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: 
                         }
                     }
                     updatedState.addMessages([message], location: .UpperHistoryBlock)
-
-                    // Plugin hook — fire-and-forget so the update thread is never blocked.
-                    if message.flags.contains(.Incoming) {
-                        var hookParams: [String: Any] = [
-                            "peer_id": message.id.peerId.toInt64(),
-                            "text":    message.text,
-                            "from_id": message.authorId?.toInt64() ?? 0,
-                        ]
-                        if case let .Id(msgId) = message.id {
-                            hookParams["message_id"] = Int(msgId.id)
-                        }
-                        EGPluginHooks.fireAsync("messages.receivedMessage", params: hookParams)
-                    }
-
+                    
                     if let reportDeliveryAttribute = message.attributes.first(where: { $0 is ReportDeliveryMessageAttribute }) as? ReportDeliveryMessageAttribute, case let .Id(id) = message.id, reportDeliveryAttribute.untilDate > currentTime {
                         updatedState.addReportMessageDelivery(messageIds: [id])
                     }
@@ -1266,8 +1258,7 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: 
                             attributes.append(NonPremiumMessageAttribute())
                         }
                         
-                        if let hasSpoiler = hasSpoiler, hasSpoiler,
-                           !EGPluginHooks.suppressedAttributeTypes.contains("MediaSpoilerMessageAttribute") {
+                        if let hasSpoiler = hasSpoiler, hasSpoiler {
                             attributes.append(MediaSpoilerMessageAttribute())
                         }
                         
@@ -1586,15 +1577,23 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: 
                 let threadId = topMsgId.flatMap { Int64($0) }
             
                 if let date = updatesDate, date + 60 > serverTime {
+                    var typingDraftData: (randomId: Int64, text: TypingDraftText)?
+                    
                     if case let .sendMessageTextDraftAction(sendMessageTextDraftActionData) = type {
-                        let (randomId, text) = (sendMessageTextDraftActionData.randomId, sendMessageTextDraftActionData.text)
-                        switch text {
-                        case let .textWithEntities(textWithEntitiesData):
-                            updatedState.addPeerLiveTypingDraftUpdate(peerAndThreadId: PeerAndThreadId(peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(userId)), threadId: threadId), id: randomId, timestamp: date, peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(userId)), content: .plain(text: textWithEntitiesData.text, entities: messageTextEntitiesFromApiEntities(textWithEntitiesData.entities)))
-                        }
+                        typingDraftData = (sendMessageTextDraftActionData.randomId, .plain(sendMessageTextDraftActionData.text))
                     } else if case let .sendMessageRichMessageDraftAction(sendMessageRichMessageDraftActionData) = type {
-                        let parsedRichMessage = RichTextMessageAttribute(apiRichMessage: sendMessageRichMessageDraftActionData.richMessage)
-                        updatedState.addPeerLiveTypingDraftUpdate(peerAndThreadId: PeerAndThreadId(peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(userId)), threadId: threadId), id: sendMessageRichMessageDraftActionData.randomId, timestamp: date, peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(userId)), content: .rich(parsedRichMessage))
+                        typingDraftData = (sendMessageRichMessageDraftActionData.randomId, .rich(sendMessageRichMessageDraftActionData.richMessage))
+                    }
+                    if let typingDraftData {
+                        switch typingDraftData.text {
+                        case let .plain(plain):
+                            if case let .textWithEntities(textWithEntitiesData) = plain {
+                                updatedState.addPeerLiveTypingDraftUpdate(peerAndThreadId: PeerAndThreadId(peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(userId)), threadId: threadId), id: typingDraftData.randomId, timestamp: date, peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(userId)), content: .plain(text: textWithEntitiesData.text, entities: messageTextEntitiesFromApiEntities(textWithEntitiesData.entities)))
+                            }
+                        case let .rich(richMessage):
+                            let parsedRichMessage = RichTextMessageAttribute(apiRichMessage: richMessage)
+                            updatedState.addPeerLiveTypingDraftUpdate(peerAndThreadId: PeerAndThreadId(peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(userId)), threadId: threadId), id: typingDraftData.randomId, timestamp: date, peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(userId)), content: .rich(parsedRichMessage))
+                        }
                     } else {
                         let activity = PeerInputActivity(apiType: type, peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(userId)), timestamp: date)
                         var category: PeerActivitySpace.Category = .global
@@ -1805,19 +1804,6 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: 
                             updatedState.updatePeerChatInclusion(peerId: peer.peerId, groupId: PeerGroupId(rawValue: folderId), changedGroup: true)
                     }
                 }
-            case let .updatePeerLocated(updatePeerLocatedData):
-                var peersNearby: [PeerNearby] = []
-                for peer in updatePeerLocatedData.peers {
-                    switch peer {
-                        case let .peerLocated(peerLocatedData):
-                            let (peer, expires, distance) = (peerLocatedData.peer, peerLocatedData.expires, peerLocatedData.distance)
-                            peersNearby.append(.peer(id: peer.peerId, expires: expires, distance: distance))
-                        case let .peerSelfLocated(peerSelfLocatedData):
-                            let expires = peerSelfLocatedData.expires
-                            peersNearby.append(.selfPeer(expires: expires))
-                    }
-                }
-                updatedState.updatePeersNearby(peersNearby)
             case let .updateNewScheduledMessage(updateNewScheduledMessageData):
                 var peerIsForum = false
                 if let peerId = updateNewScheduledMessageData.message.peerId {
@@ -1947,6 +1933,8 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: 
                 updatedState.addUpdateAttachMenuBots()
             case let .updateWebViewResultSent(updateWebViewResultSentData):
                 updatedState.addDismissWebView(updateWebViewResultSentData.queryId)
+            case let .updateJoinChatWebViewDecision(updateJoinChatWebViewDecisionData):
+                updatedState.addJoinChatWebViewDecision(JoinChatWebViewDecision(peerId: updateJoinChatWebViewDecisionData.peer.peerId, queryId: updateJoinChatWebViewDecisionData.queryId, result: JoinChatWebViewResult(apiResult: updateJoinChatWebViewDecisionData.result)))
             case .updateConfig:
                 updatedState.reloadConfig()
             case let .updateMessageExtendedMedia(updateMessageExtendedMediaData):
@@ -1964,6 +1952,34 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: 
                 let (flags, hash, date, device, location) = (updateNewAuthorizationData.flags, updateNewAuthorizationData.hash, updateNewAuthorizationData.date, updateNewAuthorizationData.device, updateNewAuthorizationData.location)
                 let isUnconfirmed = (flags & (1 << 0)) != 0
                 updatedState.updateNewAuthorization(isUnconfirmed: isUnconfirmed, hash: hash, date: date ?? 0, device: device ?? "", location: location ?? "")
+            case let .updateNewBotConnection(updateNewBotConnectionData):
+                let (flags, botId, date, device, location) = (updateNewBotConnectionData.flags, updateNewBotConnectionData.botId, updateNewBotConnectionData.date, updateNewBotConnectionData.device, updateNewBotConnectionData.location)
+                updatedState.updateNewBotConnection(
+                    confirmed: (flags & (1 << 0)) != 0,
+                    botId: PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(botId)),
+                    date: date,
+                    device: device,
+                    location: location
+                )
+            case let .updateWebBrowserSettings(updateWebBrowserSettingsData):
+                updatedState.updateWebBrowserSettings(openExternalBrowser: (updateWebBrowserSettingsData.flags & (1 << 0)) != 0)
+            case let .updateWebBrowserException(updateWebBrowserExceptionData):
+                let openExternalBrowser: Bool?
+                if let value = updateWebBrowserExceptionData.openExternalBrowser {
+                    switch value {
+                    case .boolFalse:
+                        openExternalBrowser = false
+                    case .boolTrue:
+                        openExternalBrowser = true
+                    }
+                } else {
+                    openExternalBrowser = nil
+                }
+                updatedState.updateWebBrowserException(
+                    openExternalBrowser: openExternalBrowser,
+                    delete: (updateWebBrowserExceptionData.flags & (1 << 1)) != 0,
+                    exception: AccountWebBrowserException(apiWebDomainException: updateWebBrowserExceptionData.exception)
+                )
             case let .updatePeerWallpaper(updatePeerWallpaperData):
                 updatedState.updateWallpaper(peerId: updatePeerWallpaperData.peer.peerId, wallpaper: updatePeerWallpaperData.wallpaper.flatMap { TelegramWallpaper(apiWallpaper: $0) })
             case let .updateStarsBalance(updateStarsBalanceData):
@@ -3313,7 +3329,7 @@ func resetChannels(accountPeerId: PeerId, postbox: Postbox, network: Network, pe
                         
                         resetForumTopics.insert(peerId)
                     }
-                    
+
                     for message in messages {
                         var peerIsForum = false
                         if let peerId = message.peerId {
@@ -3805,7 +3821,7 @@ private func optimizedOperations(_ operations: [AccountStateMutationOperation]) 
     var currentAddQuickReplyMessages: OptimizeAddMessagesState?
     for operation in operations {
         switch operation {
-        case .DeleteMessages, .DeleteMessagesWithGlobalIds, .EditMessage, .UpdateMessagePoll, .UpdateMessageReactions, .UpdateMedia, .MergeApiChats, .MergeApiUsers, .MergePeerPresences, .UpdatePeer, .ReadInbox, .ReadOutbox, .ReadGroupFeedInbox, .ResetReadState, .ResetIncomingReadState, .UpdatePeerChatUnreadMark, .ResetMessageTagSummary, .UpdateNotificationSettings, .UpdateGlobalNotificationSettings, .UpdateSecretChat, .AddSecretMessages, .ReadSecretOutbox, .AddPeerInputActivity, .AddPeerLiveTypingDraftUpdate, .UpdateCachedPeerData, .UpdatePinnedItemIds, .UpdatePinnedSavedItemIds, .UpdatePinnedTopic, .UpdatePinnedTopicOrder, .ReadMessageContents, .UpdateMessageImpressionCount, .UpdateMessageForwardsCount, .UpdateInstalledStickerPacks, .UpdateRecentGifs, .UpdateChatInputState, .UpdateCall, .AddCallSignalingData, .UpdateLangPack, .UpdateMinAvailableMessage, .UpdateIsContact, .UpdatePeerChatInclusion, .UpdatePeersNearby, .UpdateTheme, .SyncChatListFilters, .UpdateChatListFilter, .UpdateChatListFilterOrder, .UpdateReadThread, .UpdateMessagesPinned, .UpdateGroupCallParticipants, .UpdateGroupCall, .UpdateGroupCallChainBlocks, .UpdateGroupCallMessage, .UpdateGroupCallOpaqueMessage, .UpdateAutoremoveTimeout, .UpdateAttachMenuBots, .UpdateAudioTranscription, .UpdateConfig, .UpdateExtendedMedia, .ResetForumTopic, .UpdateStory, .UpdateReadStories, .UpdateStoryStealthMode, .UpdateStorySentReaction, .UpdateNewAuthorization, .UpdateNewBotConnection, .UpdateWebBrowserSettings, .UpdateWebBrowserException, .UpdateWallpaper, .UpdateStarsBalance, .UpdateStarsRevenueStatus, .UpdateStarsReactionsDefaultPrivacy, .ReportMessageDelivery, .UpdateMonoForumNoPaidException, .UpdateStarGiftAuctionState, .UpdateStarGiftAuctionMyState, .UpdateEmojiGameInfo:
+        case .DeleteMessages, .DeleteMessagesWithGlobalIds, .EditMessage, .UpdateMessagePoll, .UpdateMessageReactions, .UpdateMedia, .MergeApiChats, .MergeApiUsers, .MergePeerPresences, .UpdatePeer, .ReadInbox, .ReadOutbox, .ReadGroupFeedInbox, .ResetReadState, .ResetIncomingReadState, .UpdatePeerChatUnreadMark, .ResetMessageTagSummary, .UpdateNotificationSettings, .UpdateGlobalNotificationSettings, .UpdateSecretChat, .AddSecretMessages, .ReadSecretOutbox, .AddPeerInputActivity, .AddPeerLiveTypingDraftUpdate, .UpdateCachedPeerData, .UpdatePinnedItemIds, .UpdatePinnedSavedItemIds, .UpdatePinnedTopic, .UpdatePinnedTopicOrder, .ReadMessageContents, .UpdateMessageImpressionCount, .UpdateMessageForwardsCount, .UpdateInstalledStickerPacks, .UpdateRecentGifs, .UpdateChatInputState, .UpdateCall, .AddCallSignalingData, .UpdateLangPack, .UpdateMinAvailableMessage, .UpdateIsContact, .UpdatePeerChatInclusion, .UpdateTheme, .SyncChatListFilters, .UpdateChatListFilter, .UpdateChatListFilterOrder, .UpdateReadThread, .UpdateMessagesPinned, .UpdateGroupCallParticipants, .UpdateGroupCall, .UpdateGroupCallChainBlocks, .UpdateGroupCallMessage, .UpdateGroupCallOpaqueMessage, .UpdateAutoremoveTimeout, .UpdateAttachMenuBots, .UpdateAudioTranscription, .UpdateConfig, .UpdateExtendedMedia, .ResetForumTopic, .UpdateStory, .UpdateReadStories, .UpdateStoryStealthMode, .UpdateStorySentReaction, .UpdateNewAuthorization, .UpdateNewBotConnection, .UpdateWebBrowserSettings, .UpdateWebBrowserException, .UpdateWallpaper, .UpdateStarsBalance, .UpdateStarsRevenueStatus, .UpdateStarsReactionsDefaultPrivacy, .ReportMessageDelivery, .UpdateMonoForumNoPaidException, .UpdateStarGiftAuctionState, .UpdateStarGiftAuctionMyState, .UpdateEmojiGameInfo:
                 if let currentAddMessages = currentAddMessages, !currentAddMessages.messages.isEmpty {
                     result.append(.AddMessages(currentAddMessages.messages, currentAddMessages.location))
                 }
@@ -3924,7 +3940,6 @@ func replayFinalState(
     var updatedGroupCallParticipants: [(Int64, GroupCallParticipantsContext.Update)] = []
     var groupCallMessageUpdates: [GroupCallMessageUpdate] = []
     var storyUpdates: [InternalStoryUpdate] = []
-    var updatedPeersNearby: [PeerNearby]?
     var isContactUpdates: [(PeerId, Bool)] = []
     var stickerPackOperations: [AccountStateUpdateStickerPacksOperation] = []
     var recentlyUsedStickers: [MediaId: (MessageIndex, TelegramMediaFile)] = [:]
@@ -3946,11 +3961,11 @@ func replayFinalState(
     var updatedStarsRevenueStatus: [PeerId: StarsRevenueStats.Balances] = [:]
     var updatedStarsReactionsDefaultPrivacy: TelegramPaidReactionPrivacy?
     var reportMessageDelivery = Set<MessageId>()
-    var webBrowserSettingsUpdates: [(AccountWebBrowserSettings) -> AccountWebBrowserSettings] = []
     var updatedStarGiftAuctionState: [Int64: GiftAuctionContext.State.AuctionState] = [:]
     var updatedStarGiftAuctionMyState: [Int64: GiftAuctionContext.State.MyState] = [:]
     var updatedEmojiGameInfo: EmojiGameInfo?
     var recentlyUsedGuestChatBots = Set<PeerId>()
+    var webBrowserSettingsUpdates: [(AccountWebBrowserSettings) -> AccountWebBrowserSettings] = []
     
     var holesFromPreviousStateMessageIds: [MessageId] = []
     var clearHolesFromPreviousStateForChannelMessagesWithPts: [PeerIdAndMessageNamespace: Int32] = [:]
@@ -4347,13 +4362,13 @@ func replayFinalState(
                                     }
                                 }
                             }
-                        }
-
-                        if message.flags.contains(.Incoming), let authorId = message.authorId {
-                            for attribute in message.attributes {
-                                if let attribute = attribute as? GuestChatMessageAttribute, attribute.peerId == accountPeerId {
-                                    recentlyUsedGuestChatBots.insert(authorId)
-                                    break
+                            
+                            if message.flags.contains(.Incoming), let authorId = message.authorId {
+                                for attribute in message.attributes {
+                                    if let attribute = attribute as? GuestChatMessageAttribute, attribute.peerId == accountPeerId {
+                                        recentlyUsedGuestChatBots.insert(authorId)
+                                        break
+                                    }
                                 }
                             }
                         }
@@ -4362,10 +4377,10 @@ func replayFinalState(
                                 slowModeLastMessageTimeouts[message.id.peerId] = max(slowModeLastMessageTimeouts[message.id.peerId] ?? 0, message.timestamp)
                             }
                         }
-
+                        
                         if !message.flags.contains(.Incoming), message.forwardInfo == nil {
                             if [Namespaces.Peer.CloudGroup, Namespaces.Peer.CloudChannel].contains(message.id.peerId.namespace), let peer = transaction.getPeer(message.id.peerId), peer.isCopyProtectionEnabled {
-                                
+ 
                             } else if message.id.peerId.namespace == Namespaces.Peer.CloudUser, let cachedUserData = transaction.getPeerCachedData(peerId: message.id.peerId) as? CachedUserData, cachedUserData.flags.contains(.copyProtectionEnabled) || cachedUserData.flags.contains(.myCopyProtectionEnabled) {
                                 
                             } else {
@@ -4912,20 +4927,19 @@ func replayFinalState(
                     if peerId == accountPeerId {
                         if explicit {
                             switch status.status {
-                                case let .userStatusOnline(userStatusOnlineData):
-                                    let timestamp = userStatusOnlineData.expires
-                                    delayNotificatonsUntil = timestamp + 30
-                                case let .userStatusOffline(userStatusOfflineData):
-                                    let timestamp = userStatusOfflineData.wasOnline
-                                    delayNotificatonsUntil = timestamp
-                                default:
-                                    break
+                            case let .userStatusOnline(userStatusOnlineData):
+                                let timestamp = userStatusOnlineData.expires
+                                delayNotificatonsUntil = timestamp + 30
+                            case let .userStatusOffline(userStatusOfflineData):
+                                let timestamp = userStatusOfflineData.wasOnline
+                                delayNotificatonsUntil = timestamp
+                            default:
+                                break
                             }
                         }
                     } else {
                         presences[peerId] = status
                     }
-
                 }
                 updatePeerPresencesClean(transaction: transaction, accountPeerId: accountPeerId, peerPresences: presences)
             case let .UpdateSecretChat(chat, _):
@@ -5217,8 +5231,6 @@ func replayFinalState(
                 }
             case let .UpdateIsContact(peerId, value):
                 isContactUpdates.append((peerId, value))
-            case let .UpdatePeersNearby(peersNearby):
-                updatedPeersNearby = peersNearby
             case let .UpdateTheme(theme):
                 updatedThemes[theme.id] = theme
             case let .UpdateWallpaper(peerId, wallpaper):
@@ -5906,11 +5918,11 @@ func replayFinalState(
     for peerId in recentlyUsedGuestChatBots {
         _internal_addRecentlyUsedInlineBot(transaction: transaction, peerId: peerId)
     }
-
+    
     if syncAttachMenuBots {
 //        addSynchronizeAttachMenuBotsOperation(transaction: transaction)
     }
-
+    
     for groupId in invalidateGroupStats {
         transaction.setNeedsPeerGroupMessageStatsSynchronization(groupId: groupId, namespace: Namespaces.Message.Cloud)
     }
@@ -5930,7 +5942,7 @@ func replayFinalState(
     var addedSecretMessageIds: [MessageId] = []
     var addedSecretMessageAuthorIds: [PeerId: PeerId] = [:]
     let keepArchivedUnmuted = fetchGlobalPrivacySettings(transaction: transaction).keepArchivedUnmuted
-
+    
     for peerId in peerIdsWithAddedSecretMessages {
         inner: while true {
             let keychain = (transaction.getPeerChatState(peerId) as? SecretChatState)?.keychain
@@ -6038,6 +6050,16 @@ func replayFinalState(
             })
         }.start()
     }
+
+    if !webBrowserSettingsUpdates.isEmpty {
+        transaction.updatePreferencesEntry(key: PreferencesKeys.webBrowserSettings, { current in
+            var settings = current?.get(AccountWebBrowserSettings.self) ?? AccountWebBrowserSettings.defaultSettings
+            for update in webBrowserSettingsUpdates {
+                settings = update(settings)
+            }
+            return PreferencesEntry(settings)
+        })
+    }
     
     if !updatedWallpapers.isEmpty {
         for (peerId, wallpaper) in updatedWallpapers {
@@ -6090,16 +6112,6 @@ func replayFinalState(
         default:
             break
         }
-    }
-    
-    if !webBrowserSettingsUpdates.isEmpty {
-        transaction.updatePreferencesEntry(key: PreferencesKeys.webBrowserSettings, { current in
-            var settings = current?.get(AccountWebBrowserSettings.self) ?? AccountWebBrowserSettings.defaultSettings
-            for update in webBrowserSettingsUpdates {
-                settings = update(settings)
-            }
-            return PreferencesEntry(settings)
-        })
     }
     
     if let updatedStarsReactionsDefaultPrivacy {
@@ -6201,7 +6213,6 @@ func replayFinalState(
         updatedGroupCallParticipants: updatedGroupCallParticipants,
         groupCallMessageUpdates: groupCallMessageUpdates,
         storyUpdates: storyUpdates,
-        updatedPeersNearby: updatedPeersNearby,
         isContactUpdates: isContactUpdates,
         delayNotificatonsUntil: delayNotificatonsUntil,
         updatedIncomingThreadReadStates: updatedIncomingThreadReadStates,

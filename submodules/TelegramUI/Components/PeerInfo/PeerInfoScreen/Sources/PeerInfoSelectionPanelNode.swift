@@ -47,7 +47,7 @@ final class PeerInfoSelectionPanelNode: ASDisplayNode {
         }, setupEditMessage: { _, _ in
         }, beginMessageSelection: { _, _ in
         }, cancelMessageSelection: { _ in
-        }, deleteSelectedMessages: {
+        }, deleteSelectedMessages: { _ in
             deleteMessages()
         }, reportSelectedMessages: {
             reportMessages()
@@ -55,10 +55,10 @@ final class PeerInfoSelectionPanelNode: ASDisplayNode {
         }, blockMessageAuthor: { _, _ in
         }, deleteMessages: { _, _, f in
             f(.default)
-        }, forwardSelectedMessages: { _ in
+        }, forwardSelectedMessages: {
             forwardMessages()
         }, forwardCurrentForwardMessages: {
-        }, forwardMessages: { _, _ in
+        }, forwardMessages: { _ in
         }, updateForwardOptionsState: { _ in
         }, presentForwardOptions: { _ in
         }, presentReplyOptions: { _ in
@@ -132,8 +132,6 @@ final class PeerInfoSelectionPanelNode: ASDisplayNode {
         }, displaySlowmodeTooltip: { _, _ in
         }, displaySendMessageOptions: { _, _ in
         }, openScheduledMessages: {
-        // MARK: exteraGram
-        }, openPeersNearby: {
         }, displaySearchResultsTooltip: { _, _ in
         }, unarchivePeer: {
         }, scrollToTop: {

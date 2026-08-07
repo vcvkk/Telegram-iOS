@@ -1,4 +1,3 @@
-import EGSimpleSettings
 import Foundation
 import TelegramCore
 import TelegramPresentationData
@@ -140,10 +139,7 @@ public func stringForMessageTimestamp(timestamp: Int32, dateTimeFormat: Presenta
     } else {
         gmtime_r(&t, &timeinfo)
     }
-    var withSeconds = withSeconds
-    // MARK: exteraGram
-    if EGSimpleSettings.shared.secondsInMessages { withSeconds = true }
-    //
+    
     return stringForShortTimestamp(hours: timeinfo.tm_hour, minutes: timeinfo.tm_min, seconds: withSeconds ? timeinfo.tm_sec : nil, dateTimeFormat: dateTimeFormat)
 }
 

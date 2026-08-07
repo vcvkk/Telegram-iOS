@@ -255,7 +255,7 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
             })
         })
     }
-    
+
     public func updateHasContextMenu(hasContextMenu: Bool) {
         let transition: ContainedViewLayoutTransition
         if hasContextMenu {
@@ -340,10 +340,7 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
                 insets.bottom = 0.0
             }
             
-            // MARK: exteraGram
-            let titleConstrainedWidth = max(1.0, params.width - leftInset - params.rightInset - (item.maximumNumberOfLines == 1 ? 64.0 : 84.0))
-            //
-            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.title, font: titleFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor), backgroundColor: nil, maximumNumberOfLines: item.maximumNumberOfLines, truncationType: .end, constrainedSize: CGSize(width: titleConstrainedWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.title, font: titleFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor), backgroundColor: nil, maximumNumberOfLines: item.maximumNumberOfLines, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - params.rightInset - 64.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
             contentSize.height = max(contentSize.height, titleLayout.size.height + topInset * 2.0)
             
@@ -509,7 +506,11 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
                             transition.updateFrame(node: strongSelf.bottomStripeNode, frame: CGRect(origin: CGPoint(x: bottomStripeInset, y: contentSize.height - separatorHeight), size: CGSize(width: layoutSize.width - params.rightInset - bottomStripeInset - separatorRightInset, height: separatorHeight)))
                     }
                     
-                    let titleFrame = CGRect(origin: CGPoint(x: leftInset, y: topInset), size: CGSize(width: titleConstrainedWidth, height: titleLayout.size.height))
+                    var titleOriginY = floorToScreenPixels((contentSize.height - titleLayout.size.height) / 2.0) + 1.0
+                    if textLayoutAndApply != nil {
+                        titleOriginY = topInset + 1.0
+                    }
+                    let titleFrame = CGRect(origin: CGPoint(x: leftInset, y: titleOriginY), size: titleLayout.size)
                     transition.updatePosition(node: strongSelf.titleNode, position: titleFrame.origin)
                     strongSelf.titleNode.bounds = CGRect(origin: CGPoint(), size: titleFrame.size)
                     

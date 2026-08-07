@@ -1,6 +1,0 @@
-files:
-  - source: exteraGram/EGStrings/Strings/en.lproj/EGLocalizable.strings
-    translation: /exteraGram/EGStrings/Strings/%osx_code%/EGLocalizable.strings
-    translation_replace:
-      zh-Hans: zh-hans
-      zh-Hant: zh-hant

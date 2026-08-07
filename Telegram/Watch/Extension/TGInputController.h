@@ -5,7 +5,6 @@
 @interface TGInputController : NSObject
 
 + (void)presentPlainInputControllerForInterfaceController:(TGInterfaceController *)interfaceController completion:(void (^)(NSString *))completion;
-+ (void)presentInputControllerWithEmojisForInterfaceController:(TGInterfaceController *)interfaceController completion:(void (^)(NSString *))completion;
 + (void)presentInputControllerForInterfaceController:(TGInterfaceController *)interfaceController suggestionsForText:(NSString *)text completion:(void (^)(NSString *))completion;
 + (void)presentAudioControllerForInterfaceController:(TGInterfaceController *)interfaceController completion:(void (^)(int64_t uniqueId, int32_t duration, NSURL *url))completion;
 

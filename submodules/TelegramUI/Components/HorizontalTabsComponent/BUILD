@@ -1,9 +1,5 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
-egdeps = [
-    "//exteraGram/EGSimpleSettings:EGSimpleSettings"
-]
-
 swift_library(
     name = "HorizontalTabsComponent",
     module_name = "HorizontalTabsComponent",
@@ -13,7 +9,7 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = egdeps + [
+    deps = [
         "//submodules/Display",
         "//submodules/ComponentFlow",
         "//submodules/TelegramPresentationData",

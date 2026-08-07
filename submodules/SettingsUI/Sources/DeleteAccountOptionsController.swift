@@ -1,4 +1,3 @@
-import EGStrings
 import Foundation
 import UIKit
 import Display
@@ -202,15 +201,15 @@ public func deleteAccountOptionsController(context: AccountContext, navigationCo
         |> take(1)
         |> deliverOnMainQueue
         ).start(next: { accountAndPeer, accountsAndPeers in
-            var maximumAvailableAccounts: Int = maximumexteraGramNumberOfAccounts
+            var maximumAvailableAccounts: Int = 3
             if accountAndPeer?.1.isPremium == true && !context.account.testingEnvironment {
-                maximumAvailableAccounts = maximumexteraGramNumberOfAccounts
+                maximumAvailableAccounts = 4
             }
             var count: Int = 1
             for (accountContext, peer, _) in accountsAndPeers {
                 if !accountContext.account.testingEnvironment {
                     if peer.isPremium {
-                        maximumAvailableAccounts = maximumexteraGramNumberOfAccounts
+                        maximumAvailableAccounts = 4
                     }
                     count += 1
                 }
@@ -228,18 +227,8 @@ public func deleteAccountOptionsController(context: AccountContext, navigationCo
                 }
                 pushControllerImpl?(controller)
             } else {
-                if count + 1 > maximumSafeNumberOfAccounts {
-                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                    let alertController = textAlertController(context: context, title: presentationData.strings.ChatList_DeleteSavedMessagesConfirmationTitle, text: i18n("Auth.AccountBackupReminder", presentationData.strings.baseLanguageCode), actions: [
-                        TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {
-                            context.sharedContext.beginNewAuth(testingEnvironment: context.account.testingEnvironment)
-                        })
-                    ], dismissOnOutsideTap: false)
-                    presentControllerImpl?(alertController, nil)
-                } else {
-                    context.sharedContext.beginNewAuth(testingEnvironment: context.account.testingEnvironment)
-                }
-                
+                context.sharedContext.beginNewAuth(testingEnvironment: context.account.testingEnvironment)
+
                 dismissImpl?()
             }
         })
@@ -419,7 +408,7 @@ public func deleteAccountOptionsController(context: AccountContext, navigationCo
         activeAccountsAndPeers(context: context)
     )
     |> map { presentationData, accessChallengeData, accountsAndPeers -> (ItemListControllerState, (ItemListNodeState, Any)) in
-        let leftNavigationButton = ItemListNavigationButton(content: .text(presentationData.strings.Common_Cancel), style: .regular, enabled: true, action: {
+        let leftNavigationButton = ItemListNavigationButton(content: .icon(.close), style: .regular, enabled: true, action: {
             dismissImpl?()
         })
 

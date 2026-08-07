@@ -740,7 +740,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
                         if let controller = self.context.sharedContext.makePeerInfoController(
                             context: self.context,
                             updatedPresentationData: nil,
-                            peer: peer._asPeer(),
+                            peer: peer,
                             mode: .myProfile,
                             avatarInitiallyExpanded: false,
                             fromChat: false,

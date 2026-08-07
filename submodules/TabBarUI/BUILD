@@ -1,23 +1,15 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
-egdeps = [
-    "//exteraGram/EGSimpleSettings:EGSimpleSettings",
-]
-
-egsrc = [
-    "//exteraGram/EGTabBarHeightModifier:EGTabBarHeightModifier"
-]
-
 swift_library(
     name = "TabBarUI",
     module_name = "TabBarUI",
-    srcs = egsrc + glob([
+    srcs = glob([
 		"Sources/**/*.swift",
     ]),
     copts = [
         "-warnings-as-errors",
     ],
-    deps = egdeps + [
+    deps = [
         "//submodules/AsyncDisplayKit",
         "//submodules/Display",
     	"//submodules/SSignalKit/SwiftSignalKit",

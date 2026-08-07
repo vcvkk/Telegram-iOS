@@ -68,10 +68,9 @@ public class ItemListSingleLineInputItem: ListViewItem, ItemListItem {
     let processPaste: ((String) -> String)?
     let updatedFocus: ((Bool) -> Void)?
     let cleared: (() -> Void)?
-    let dismissKeyboardOnEnter: Bool // MARK: exteraGram
     public let tag: ItemListItemTag?
     
-    public init(context: AccountContext? = nil, presentationData: ItemListPresentationData, systemStyle: ItemListSystemStyle = .legacy, title: NSAttributedString, text: String, placeholder: String, label: String? = nil, type: ItemListSingleLineInputItemType = .regular(capitalization: true, autocorrection: true), returnKeyType: UIReturnKeyType = .`default`, alignment: ItemListSingleLineInputAlignment = .default, spacing: CGFloat = 0.0, clearType: ItemListSingleLineInputClearType = .none, maxLength: Int = 0, enabled: Bool = true, selectAllOnFocus: Bool = false, secondaryStyle: Bool = false, tag: ItemListItemTag? = nil, sectionId: ItemListSectionId, textUpdated: @escaping (String) -> Void, shouldUpdateText: @escaping (String) -> Bool = { _ in return true }, processPaste: ((String) -> String)? = nil, updatedFocus: ((Bool) -> Void)? = nil, action: @escaping () -> Void, cleared: (() -> Void)? = nil, dismissKeyboardOnEnter: Bool = false) {
+    public init(context: AccountContext? = nil, presentationData: ItemListPresentationData, systemStyle: ItemListSystemStyle = .legacy, title: NSAttributedString, text: String, placeholder: String, label: String? = nil, type: ItemListSingleLineInputItemType = .regular(capitalization: true, autocorrection: true), returnKeyType: UIReturnKeyType = .`default`, alignment: ItemListSingleLineInputAlignment = .default, spacing: CGFloat = 0.0, clearType: ItemListSingleLineInputClearType = .none, maxLength: Int = 0, enabled: Bool = true, selectAllOnFocus: Bool = false, secondaryStyle: Bool = false, tag: ItemListItemTag? = nil, sectionId: ItemListSectionId, textUpdated: @escaping (String) -> Void, shouldUpdateText: @escaping (String) -> Bool = { _ in return true }, processPaste: ((String) -> String)? = nil, updatedFocus: ((Bool) -> Void)? = nil, action: @escaping () -> Void, cleared: (() -> Void)? = nil) {
         self.context = context
         self.presentationData = presentationData
         self.systemStyle = systemStyle
@@ -96,7 +95,6 @@ public class ItemListSingleLineInputItem: ListViewItem, ItemListItem {
         self.updatedFocus = updatedFocus
         self.action = action
         self.cleared = cleared
-        self.dismissKeyboardOnEnter = dismissKeyboardOnEnter
     }
     
     public func nodeConfiguredForParams(async: @escaping (@escaping () -> Void) -> Void, params: ListViewItemLayoutParams, synchronousLoads: Bool, previousItem: ListViewItem?, nextItem: ListViewItem?, completion: @escaping (ListViewItemNode, @escaping () -> (Signal<Void, NoError>?, (ListViewItemApply) -> Void)) -> Void) {
@@ -603,10 +601,6 @@ public class ItemListSingleLineInputItemNode: ListViewItemNode, UITextFieldDeleg
     
     @objc public func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         self.item?.action()
-        // MARK: exteraGram
-        if self.item?.dismissKeyboardOnEnter ?? false && self.textNode.textField.canResignFirstResponder {
-            self.textNode.textField.resignFirstResponder()
-        }
         return false
     }
     

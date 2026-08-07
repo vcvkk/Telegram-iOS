@@ -1128,15 +1128,15 @@ final class AttachmentPanel: ASDisplayNode, ASScrollViewDelegate, ASGestureRecog
         }, setupEditMessage: { _, _ in
         }, beginMessageSelection: { _, _ in
         }, cancelMessageSelection: { _ in
-        }, deleteSelectedMessages: {
+        }, deleteSelectedMessages: { _ in
         }, reportSelectedMessages: {
         }, reportMessages: { _, _ in
         }, blockMessageAuthor: { _, _ in
         }, deleteMessages: { _, _, f in
             f(.default)
-        }, forwardSelectedMessages: { _ in
+        }, forwardSelectedMessages: {
         }, forwardCurrentForwardMessages: {
-        }, forwardMessages: { _, _ in
+        }, forwardMessages: { _ in
         }, updateForwardOptionsState: { [weak self] value in
             if let strongSelf = self {
                 strongSelf.updateChatPresentationInterfaceState(animated: true, { $0.updatedInterfaceState({ $0.withUpdatedForwardOptionsState($0.forwardOptionsState) }) })
@@ -1425,8 +1425,6 @@ final class AttachmentPanel: ASDisplayNode, ASScrollViewDelegate, ASGestureRecog
                 })
             })
         }, openScheduledMessages: {
-        // MARK: exteraGram
-        }, openPeersNearby: {
         }, displaySearchResultsTooltip: { _, _ in
         }, unarchivePeer: {
         }, scrollToTop: {

@@ -8,7 +8,7 @@ public func currentAppConfiguration(transaction: Transaction) -> AppConfiguratio
     }
 }
 
-public func updateAppConfiguration(transaction: Transaction, _ f: (AppConfiguration) -> AppConfiguration) {
+func updateAppConfiguration(transaction: Transaction, _ f: (AppConfiguration) -> AppConfiguration) {
     let current = currentAppConfiguration(transaction: transaction)
     let updated = f(current)
     if updated != current {

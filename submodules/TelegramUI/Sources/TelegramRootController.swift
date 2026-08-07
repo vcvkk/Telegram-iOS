@@ -1,9 +1,7 @@
-import EGSimpleSettings
 import Foundation
 import UIKit
 import Display
 import AsyncDisplayKit
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 import TelegramPresentationData
@@ -200,7 +198,7 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         super.containerLayoutUpdated(layout, transition: transition)
     }
     
-    public func addRootControllers(hidePhoneInSettings: Bool, showContactsTab: Bool, showCallsTab: Bool) {
+    public func addRootControllers(showCallsTab: Bool) {
         let tabBarController = TabBarControllerImpl(theme: self.presentationData.theme, strings: self.presentationData.strings)
         tabBarController.navigationPresentation = .master
         let chatListController = self.context.sharedContext.makeChatListController(context: self.context, location: .chatList(groupId: .root), controlsHistoryPreload: true, hideNetworkActivityStatus: false, previewing: false, enableDebugActions: !GlobalExperimentalSettings.isAppStoreBuild)
@@ -215,10 +213,7 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         contactsController.switchToChatsController = {  [weak self] in
             self?.openChatsController(activateSearch: false)
         }
-        // MARK: exteraGram
-        if showContactsTab {
-            controllers.append(contactsController)
-        }
+        controllers.append(contactsController)
         
         if showCallsTab {
             controllers.append(callListController)
@@ -234,7 +229,7 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
             sharedContext.switchingData = (nil, nil, nil)
         }
         
-        let accountSettingsController = PeerInfoScreenImpl(hidePhoneInSettings: hidePhoneInSettings, context: self.context, updatedPresentationData: nil, peerId: self.context.account.peerId, avatarInitiallyExpanded: false, isOpenedFromChat: false, nearbyPeerDistance: nil, reactionSourceMessageId: nil, callMessages: [], isSettings: true)
+        let accountSettingsController = PeerInfoScreenImpl(context: self.context, updatedPresentationData: nil, peerId: self.context.account.peerId, avatarInitiallyExpanded: false, isOpenedFromChat: false, reactionSourceMessageId: nil, callMessages: [], isSettings: true)
         accountSettingsController.tabBarItemDebugTapAction = { [weak self] in
             guard let strongSelf = self else {
                 return
@@ -254,14 +249,12 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         self.pushViewController(tabBarController, animated: false)
     }
         
-    public func updateRootControllers(showContactsTab: Bool, showCallsTab: Bool) {
+    public func updateRootControllers(showCallsTab: Bool) {
         guard let rootTabController = self.rootTabController as? TabBarControllerImpl else {
             return
         }
         var controllers: [ViewController] = []
-        if showContactsTab {
-            controllers.append(self.contactsController!)
-        }
+        controllers.append(self.contactsController!)
         if showCallsTab {
             controllers.append(self.callListController!)
         }
@@ -701,18 +694,18 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
                 if let mediaResult = result.media {
                     switch mediaResult {
                     case let .image(image, dimensions):
-                        let tempFile = TempBox.shared.tempFile(fileName: "file")
+                        let tempFile = EngineTempBox.shared.tempFile(fileName: "file")
                         defer {
-                            TempBox.shared.dispose(tempFile)
+                            EngineTempBox.shared.dispose(tempFile)
                         }
-                        if let imageData = compressImageToJPEG(image, quality: Float(EGSimpleSettings.shared.outgoingPhotoQuality) / 100.0, tempFilePath: tempFile.path) {
+                        if let imageData = compressImageToJPEG(image, quality: 0.7, tempFilePath: tempFile.path) {
                             media = .image(dimensions: dimensions, data: imageData, stickers: result.stickers)
                         }
                     case let .video(content, firstFrameImage, values, duration, dimensions):
                         let adjustments: VideoMediaResourceAdjustments
                         if let valuesData = try? JSONEncoder().encode(values) {
-                            let data = MemoryBuffer(data: valuesData)
-                            let digest = MemoryBuffer(data: data.md5Digest())
+                            let data = EngineMemoryBuffer(data: valuesData)
+                            let digest = EngineMemoryBuffer(data: data.md5Digest())
                             adjustments = VideoMediaResourceAdjustments(data: data, digest: digest, isStory: true)
                             
                             let resource: TelegramMediaResource
@@ -724,13 +717,13 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
                             case let .asset(localIdentifier):
                                 resource = VideoLibraryMediaResource(localIdentifier: localIdentifier, conversion: .compress(adjustments))
                             }
-                            let tempFile = TempBox.shared.tempFile(fileName: "file")
+                            let tempFile = EngineTempBox.shared.tempFile(fileName: "file")
                             defer {
-                                TempBox.shared.dispose(tempFile)
+                                EngineTempBox.shared.dispose(tempFile)
                             }
-                            let imageData = firstFrameImage.flatMap { compressImageToJPEG($0, quality: Float(EGSimpleSettings.shared.outgoingPhotoQuality) / 100.0, tempFilePath: tempFile.path) }
-                            let firstFrameFile = imageData.flatMap { data -> TempBoxFile? in
-                                let file = TempBox.shared.tempFile(fileName: "image.jpg")
+                            let imageData = firstFrameImage.flatMap { compressImageToJPEG($0, quality: 0.6, tempFilePath: tempFile.path) }
+                            let firstFrameFile = imageData.flatMap { data -> EngineTempBoxFile? in
+                                let file = EngineTempBox.shared.tempFile(fileName: "image.jpg")
                                 if let _ = try? data.write(to: URL(fileURLWithPath: file.path)) {
                                     return file
                                 } else {

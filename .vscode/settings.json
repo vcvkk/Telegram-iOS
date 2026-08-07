@@ -24,8 +24,6 @@
         }
     },
     "swift.sourcekit-lsp.serverPath": "${workspaceFolder}/build-input/sourcekit-lsp",
-
-
-    /* MARK: exteraGram */
-    "editor.wordWrap": "on"
+    "sourcekit-bazel-bsp.rulesAppleName": "build_bazel_rules_apple",
+    "cmake.sourceDirectory": "/Users/ali/build/telegram/telegram-ios/submodules/rlottie/rlottie/test"
 }

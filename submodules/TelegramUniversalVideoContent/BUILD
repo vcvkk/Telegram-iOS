@@ -8,10 +8,6 @@ load("//build-system/bazel-utils:plist_fragment.bzl",
     "plist_fragment",
 )
 
-sgsrc = [
-    "//exteraGram/EGExternalVideoPlayer:EGExternalVideoPlayer",
-]
-
 filegroup(
     name = "HlsBundleContents",
     srcs = glob([
@@ -47,7 +43,7 @@ apple_resource_bundle(
 swift_library(
     name = "TelegramUniversalVideoContent",
     module_name = "TelegramUniversalVideoContent",
-    srcs = sgsrc + glob([
+    srcs = glob([
         "Sources/**/*.swift",
     ]),
     copts = [

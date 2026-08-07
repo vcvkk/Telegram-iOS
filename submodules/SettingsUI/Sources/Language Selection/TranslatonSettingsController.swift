@@ -160,13 +160,10 @@ public func translationSettingsController(context: AccountContext) -> ViewContro
         }
     }
 
-    for code in supportedTranslationLanguages + ["zh-hans", "zh-hant"] {
+    for code in supportedTranslationLanguages {
         if !addedLanguages.contains(code), let title = enLocale.localizedString(forLanguageCode: code) {
             let languageLocale = Locale(identifier: code)
-            var subtitle = languageLocale.localizedString(forLanguageCode: code) ?? title
-            if code == "zh-hans" || code == "zh-hant" {
-                subtitle += " \(code)"
-            }
+            let subtitle = languageLocale.localizedString(forLanguageCode: code) ?? title
             let value = (code, title.capitalized, subtitle.capitalized)
             if code == interfaceLanguageCode {
                 languages.insert(value, at: 0)

@@ -1,4 +1,3 @@
-import EGSimpleSettings
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -420,6 +419,9 @@ private final class UniversalVideoGalleryItemOverlayNode: GalleryOverlayContentN
             adView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.25, removeOnCompletion: false)
             adView.layer.animatePosition(from: .zero, to: CGPoint(x: 0.0, y: 64.0), duration: 0.4, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false, additive: true, completion: { _ in
                 adView.removeFromSuperview()
+                if self.adView.view === adView {
+                    self.adView = ComponentView<Empty>()
+                }
                 Queue.mainQueue().after(0.1) {
                     adView.layer.removeAllAnimations()
                 }
@@ -445,7 +447,7 @@ private final class UniversalVideoGalleryItemOverlayNode: GalleryOverlayContentN
                 return result
             }
         }
-        if let adView = self.adView.view, adView.frame.contains(point) {
+        if let adView = self.adView.view, adView.superview === self.view, !self.isAnimatingOut, adView.frame.contains(point) {
             return super.hitTest(point, with: event)
         }
         return nil
@@ -1437,7 +1439,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
             if let content = item.content as? NativeVideoContent {
                 isAnimated = content.fileReference.media.isAnimated
                 self.videoFramePreview = MediaPlayerFramePreview(postbox: item.context.account.postbox, userLocation: content.userLocation, userContentType: .video, fileReference: content.fileReference)
-                if case let .message(message, _) = item.contentInfo, let _ = message.media.first(where: { $0 is TelegramMediaImage }) {
+                if case let .message(message, _) = item.contentInfo, let _ = message.effectiveMedia.first(where: { $0 is TelegramMediaImage }) {
                     self.isLivePhoto = true
                     disablePlayerControls = true
                     isAnimated = false
@@ -1633,7 +1635,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                 
                 var file: TelegramMediaFile?
                 var isWebpage = false
-                for m in message.media {
+                for m in message.effectiveMedia {
                     if let m = m as? TelegramMediaFile, m.isVideo {
                         file = m
                         break
@@ -1883,7 +1885,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
             self.zoomableContent = (videoSize, videoNode)
             
             
-            if case let .message(message, _) = item.contentInfo, let content = item.content as? NativeVideoContent, let image = message.media.first(where: { $0 is TelegramMediaImage }), let imageReference = content.fileReference.abstract.withUpdatedMedia(image).concrete(TelegramMediaImage.self) {
+            if case let .message(message, _) = item.contentInfo, let content = item.content as? NativeVideoContent, let image = message.effectiveMedia.first(where: { $0 is TelegramMediaImage }), let imageReference = content.fileReference.abstract.withUpdatedMedia(image).concrete(TelegramMediaImage.self) {
                 let imageNode = TransformImageNode()
                 imageNode.alpha = 1.0
                 imageNode.isUserInteractionEnabled = false
@@ -2938,12 +2940,6 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
     }
     
     override func maybePerformActionForSwipeDismiss() -> Bool {
-        if #available(iOS 15.0, *) {
-            if EGSimpleSettings.shared.videoPIPSwipeDirection != EGSimpleSettings.VideoPIPSwipeDirection.up.rawValue {
-                return false
-            }
-        }
-        
         if let data = self.context.currentAppConfiguration.with({ $0 }).data {
             if let _ = data["ios_killswitch_disable_swipe_pip"] {
                 return false
@@ -2956,7 +2952,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
             }
             
             if swipeUpToClose {
-                self.context.engine.accountData.addAppLogEvent(type: "swipe_up_close", peerId: self.context.account.peerId)
+                self.context.engine.accountData.addAppLogEvent(type: "swipe_up_close")
                 
                 return false
             }
@@ -2964,7 +2960,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
         
         if #available(iOS 15.0, *) {
             if let nativePictureInPictureContent = self.nativePictureInPictureContent as? NativePictureInPictureContentImpl {
-                self.context.engine.accountData.addAppLogEvent(type: "swipe_up_pip", peerId: self.context.account.peerId)
+                self.context.engine.accountData.addAppLogEvent(type: "swipe_up_pip")
                 nativePictureInPictureContent.beginPictureInPicture()
                 return true
             }
@@ -2973,7 +2969,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
     }
     
     override func maybePerformActionForSwipeDownDismiss() -> Bool {
-        self.context.engine.accountData.addAppLogEvent(type: "swipe_down_close", peerId: self.context.account.peerId)
+        self.context.engine.accountData.addAppLogEvent(type: "swipe_down_close")
         return false
     }
     
@@ -3138,7 +3134,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
         var hiddenMedia: (MessageId, Media)? = nil
         switch item.contentInfo {
         case let .message(message, _):
-            for media in message.media {
+            for media in message.effectiveMedia {
                 if let media = media as? TelegramMediaImage {
                     hiddenMedia = (message.id, media)
                 } else if let media = media as? TelegramMediaFile, media.isVideo {
@@ -3191,7 +3187,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                     self.activePictureInPictureController = nil
                     self.activePictureInPictureNavigationController = nil
                     
-                    self.context.engine.accountData.addAppLogEvent(type: "pip_close_btn", peerId: self.context.account.peerId)
+                    self.context.engine.accountData.addAppLogEvent(type: "pip_close_btn")
                 }
             }, expand: { [weak self] completion in
                 didExpand = true
@@ -3241,7 +3237,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
             
             if #available(iOS 15.0, *) {
                 if let nativePictureInPictureContent = self.nativePictureInPictureContent as? NativePictureInPictureContentImpl {
-                    self.context.engine.accountData.addAppLogEvent(type: "pip_btn", peerId: self.context.account.peerId)
+                    self.context.engine.accountData.addAppLogEvent(type: "pip_btn")
                     nativePictureInPictureContent.beginPictureInPicture()
                     return
                 }
@@ -3533,9 +3529,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
     }
 
 
-    private typealias EGContextMenuItems = (items: [ContextMenuItem], topItems: [ContextMenuItem])
-
-    private func contextMenuMainItems(isSettings: Bool, dismiss: @escaping () -> Void) -> Signal<EGContextMenuItems, NoError> {
+    private func contextMenuMainItems(isSettings: Bool, dismiss: @escaping () -> Void) -> Signal<(items: [ContextMenuItem], topItems: [ContextMenuItem]), NoError> {
         guard let videoNode = self.videoNode, let item = self.item else {
             return .single(([], []))
         }
@@ -3547,12 +3541,15 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
             peer = .single(nil)
         }
 
-        func mapMenu(values: (MediaPlayerStatus?, EnginePeer?, (current: Int, preferred: UniversalVideoContentVideoQuality, available: [Int])?)) -> EGContextMenuItems {
-            let (status, peer, videoQualityState) = values
-            guard let status = status else {
-                return (items: [], topItems: [])
+        return combineLatest(queue: Queue.mainQueue(),
+            videoNode.status |> take(1),
+            peer,
+            videoNode.videoQualityStateSignal()
+        )
+        |> map { [weak self] status, peer, videoQualityState -> (items: [ContextMenuItem], topItems: [ContextMenuItem]) in
+            guard let status = status, let strongSelf = self else {
+                return ([], [])
             }
-            let strongSelf = self
 
             var topItems: [ContextMenuItem] = []
             var items: [ContextMenuItem] = []
@@ -3583,7 +3580,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                             } else {
                                 return UIImage()
                             }
-                        }), action: { [weak self] _, f in
+                        }), action: { _, f in
                             f(.default)
                             
                             guard let strongSelf = self, let videoNode = strongSelf.videoNode else {
@@ -3688,7 +3685,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                 }
             } else {
                 if let (message, maybeFile, _) = strongSelf.contentInfo(), let file = maybeFile, !message.isCopyProtected() && !item.peerIsCopyProtected && message.paidContent == nil {
-                    items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.Gallery_MenuSaveToGallery, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Download"), color: theme.actionSheet.primaryTextColor) }, action: { [weak self] c, _ in
+                    items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.Gallery_MenuSaveToGallery, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Download"), color: theme.actionSheet.primaryTextColor) }, action: { c, _ in
                         guard let self else {
                             c?.dismiss(result: .default, completion: nil)
                             return
@@ -3710,7 +3707,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                             allFiles.append(contentsOf: qualitySet.qualityFiles.values)
                             
                             let qualitySignals = allFiles.map { file -> Signal<(fileId: MediaId, isCached: Bool), NoError> in
-                                return self.context.account.postbox.mediaBox.resourceStatus(file.media.resource)
+                                return self.context.engine.resources.status(resource: EngineMediaResource(file.media.resource))
                                 |> take(1)
                                 |> map { status -> (fileId: MediaId, isCached: Bool) in
                                     return (file.media.fileId, status == .Local)
@@ -3860,18 +3857,8 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                         f(.default)
                     })))
                 }
-                // MARK: exteraGram
-                if #available(iOS 11.0, *) {
-                    items.append(.action(ContextMenuActionItem(text: "AirPlay", textColor: .primary, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Media Gallery/AirPlay"), color: theme.contextMenu.primaryColor) }, action: { [weak self] _, f in
-                        f(.default)
-                        guard let strongSelf = self else {
-                            return
-                        }
-                        strongSelf.beginAirPlaySetup()
-                    })))
-                }
-
-                if let (message, _, _) = strongSelf.contentInfo(), let image = message.media.first(where: { $0 is TelegramMediaImage }) as? TelegramMediaImage, !message.isCopyProtected() && !item.peerIsCopyProtected && message.paidContent == nil {
+                
+                if let (message, _, _) = strongSelf.contentInfo(), let image = message.effectiveMedia.first(where: { $0 is TelegramMediaImage }) as? TelegramMediaImage, !message.isCopyProtected() && !item.peerIsCopyProtected && message.paidContent == nil {
                     let context = strongSelf.context
                     var videoReference: AnyMediaReference?
                     if let video = image.video {
@@ -3879,7 +3866,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                     }
                     items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.Gallery_SaveImage, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Download"), color: theme.actionSheet.primaryTextColor) }, action: { [weak self] _, f in
                         f(.default)
-
+                        
                         let _ = (SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: image), video: videoReference)
                         |> deliverOnMainQueue).start(completed: { [weak self] in
                             guard let strongSelf = self else {
@@ -3892,7 +3879,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                         })
                     })))
                 }
-                
+                                
                 if let (message, _, _) = strongSelf.contentInfo() {
                     for media in message.media {
                         if let webpage = media as? TelegramMediaWebpage, case let .Loaded(content) = webpage.content {
@@ -3900,7 +3887,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                             
                             let item = OpenInItem.url(url: url)
                             let openText = strongSelf.presentationData.strings.Conversation_FileOpenIn
-                            items.append(.action(ContextMenuActionItem(text: openText, textColor: .primary, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Share"), color: theme.contextMenu.primaryColor) }, action: { [weak self] _, f in
+                            items.append(.action(ContextMenuActionItem(text: openText, textColor: .primary, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Share"), color: theme.contextMenu.primaryColor) }, action: { _, f in
                                 f(.default)
                                 
                                 if let strongSelf = self, let controller = strongSelf.galleryController() {
@@ -3942,7 +3929,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                 }
                 
                 if strongSelf.canDelete() {
-                    items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.Common_Delete, textColor: .destructive, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.contextMenu.destructiveColor) }, action: { [weak self] _, f in
+                    items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.Common_Delete, textColor: .destructive, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.contextMenu.destructiveColor) }, action: { _, f in
                         f(.default)
                         
                         if let strongSelf = self {
@@ -3950,50 +3937,9 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                         }
                     })))
                 }
-
-                // MARK: exteraGram
-                if #available(iOS 11.0, *) {
-                    items.append(.action(ContextMenuActionItem(text: "AirPlay", textColor: .primary, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Media Gallery/AirPlay"), color: theme.contextMenu.primaryColor) }, action: { [weak self] _, f in
-                        f(.default)
-                        guard let strongSelf = self else {
-                            return
-                        }
-                        strongSelf.beginAirPlaySetup()
-                    })))
-                }
             }
 
-            return (items: items, topItems: topItems)
-        }
-
-        return combineLatest(queue: Queue.mainQueue(),
-            videoNode.status |> take(1),
-            peer,
-            videoNode.videoQualityStateSignal() |> take(1)
-        )
-        |> take(1)
-        |> map(mapMenu(values:))
-    }
-
-    private var isAirPlayActive = false
-    private var externalVideoPlayer: ExternalVideoPlayer?
-
-    func beginAirPlaySetup() {
-        guard let content = self.item?.content as? NativeVideoContent else {
-            return
-        }
-        if #available(iOS 11.0, *) {
-            self.externalVideoPlayer = ExternalVideoPlayer(context: self.context, content: content)
-            self.externalVideoPlayer?.openRouteSelection()
-            self.externalVideoPlayer?.isActiveUpdated = { [weak self] isActive in
-                if let strongSelf = self {
-                    if strongSelf.isAirPlayActive && !isActive {
-                        strongSelf.externalVideoPlayer = nil
-                    }
-                    strongSelf.isAirPlayActive = isActive
-                    strongSelf.updateDisplayPlaceholder()
-                }
-            }
+            return (items, topItems)
         }
     }
 

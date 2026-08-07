@@ -1,5 +1,4 @@
 import Foundation
-import EGSimpleSettings
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -387,14 +386,7 @@ public final class ShareController: ViewController {
     
     public var parentNavigationController: NavigationController?
     
-    public convenience init(context: AccountContext, subject: ShareControllerSubject, presetText: String? = nil, preferredAction: ShareControllerPreferredAction = .default, showInChat: ((Message) -> Void)? = nil, fromForeignApp: Bool = false, segmentedValues: [ShareControllerSegmentedValue]? = nil, externalShare: Bool = true, immediateExternalShare: Bool = false, immediateExternalShareOverridingEGBehaviour: Bool? = nil, switchableAccounts: [AccountWithInfo] = [], immediatePeerId: PeerId? = nil, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil, forceTheme: PresentationTheme? = nil, forcedActionTitle: String? = nil, shareAsLink: Bool = false, collectibleItemInfo: TelegramCollectibleItemInfo? = nil) {
-        var immediateExternalShare = immediateExternalShare
-        if EGSimpleSettings.shared.forceSystemSharing {
-            immediateExternalShare = true
-        }
-        if let immediateExternalShareOverridingEGBehaviour = immediateExternalShareOverridingEGBehaviour {
-            immediateExternalShare = immediateExternalShareOverridingEGBehaviour
-        }
+    public convenience init(context: AccountContext, subject: ShareControllerSubject, presetText: String? = nil, preferredAction: ShareControllerPreferredAction = .default, showInChat: ((Message) -> Void)? = nil, fromForeignApp: Bool = false, segmentedValues: [ShareControllerSegmentedValue]? = nil, externalShare: Bool = true, immediateExternalShare: Bool = false, switchableAccounts: [AccountWithInfo] = [], immediatePeerId: PeerId? = nil, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil, forceTheme: PresentationTheme? = nil, forcedActionTitle: String? = nil, shareAsLink: Bool = false, collectibleItemInfo: TelegramCollectibleItemInfo? = nil) {
         self.init(
             environment: ShareControllerAppEnvironment(sharedContext: context.sharedContext),
             currentContext: ShareControllerAppAccountContext(context: context),
@@ -407,7 +399,7 @@ public final class ShareController: ViewController {
             externalShare: externalShare,
             immediateExternalShare: immediateExternalShare,
             switchableAccounts: switchableAccounts.map { info in
-                return ShareControllerSwitchableAccount(account: ShareControllerAppAccountContext(context: context.sharedContext.makeTempAccountContext(account: info.account)), peer: EnginePeer(info.peer))
+                return ShareControllerSwitchableAccount(account: ShareControllerAppAccountContext(context: context.sharedContext.makeTempAccountContext(account: info.account)), peer: info.peer)
             },
             immediatePeerId: immediatePeerId,
             updatedPresentationData: updatedPresentationData,
@@ -1033,7 +1025,7 @@ public final class ShareController: ViewController {
                             var restrictedText: String?
                             for attribute in message.attributes {
                                 if let attribute = attribute as? RestrictedContentMessageAttribute {
-                                    restrictedText = attribute.platformText(platform: "ios", contentSettings: strongSelf.currentContext.contentSettings, chatId: message.author?.id.id._internalGetInt64Value()) ?? ""
+                                    restrictedText = attribute.platformText(platform: "ios", contentSettings: strongSelf.currentContext.contentSettings) ?? ""
                                 }
                             }
                             

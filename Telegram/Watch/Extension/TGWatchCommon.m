@@ -130,7 +130,7 @@ void TGResetLocalization()
     TGLocalizedStaticVersion++;
 }
 
-NSString *TGLocalizedInternal(NSString *s)
+NSString *TGLocalized(NSString *s)
 {
     static NSString *untranslatedString = nil;
     
@@ -197,10 +197,4 @@ NSString *TGLocalizedInternal(NSString *s)
     }
     
     return s;
-}
-
-// MARK: exteraGram
-NSString *TGLocalized(NSString *s) {
-    NSString *result = TGLocalizedInternal(s);
-    return [result stringByReplacingOccurrencesOfString:@"Telegram" withString:@"exteraGram"];
 }

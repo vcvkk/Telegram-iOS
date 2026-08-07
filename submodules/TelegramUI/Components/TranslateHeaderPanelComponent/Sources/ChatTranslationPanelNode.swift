@@ -3,7 +3,6 @@ import UIKit
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import TelegramPresentationData
 import LocalizedPeerData
@@ -180,14 +179,13 @@ final class ChatTranslationPanelNode: ASDisplayNode {
         let closeButtonSize = self.closeButton.measure(CGSize(width: 100.0, height: 100.0))
         self.closeButton.frame = CGRect(origin: CGPoint(x: width - contentRightInset - closeButtonSize.width, y: floorToScreenPixels((panelHeight - closeButtonSize.height) / 2.0)), size: closeButtonSize)
         
-        // MARK: exteraGram
-        // if info.isPremium {
+        if info.isPremium {
             self.moreButton.isHidden = false
             self.closeButton.isHidden = true
-        /* } else {
+        } else {
             self.moreButton.isHidden = true
             self.closeButton.isHidden = false
-        }*/
+        }
         
         let buttonPadding: CGFloat = 10.0
         let buttonSpacing: CGFloat = 10.0
@@ -239,7 +237,7 @@ final class ChatTranslationPanelNode: ASDisplayNode {
             translationAvailable = true
         }
         
-        if translationAvailable || true {
+        if translationAvailable {
             self.toggle()
         } else if !info.isActive {
             if !isPremium {
@@ -395,7 +393,7 @@ final class ChatTranslationPanelNode: ASDisplayNode {
             
             let cocoonPath = getAppBundle().url(forResource: "Cocoon", withExtension: "tgs")?.path ?? ""
             let cocoonFile = TelegramMediaFile(
-                fileId: MediaId(namespace: Namespaces.Media.CloudFile, id: -123456789),
+                fileId: EngineMedia.Id(namespace: Namespaces.Media.CloudFile, id: -123456789),
                 partialReference: nil,
                 resource: BundleResource(name: "Cocoon", path: cocoonPath),
                 previewRepresentations: [],

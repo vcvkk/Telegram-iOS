@@ -1,9 +1,5 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
-egDeps = [
-    "//exteraGram/EGSimpleSettings:EGSimpleSettings"
-]
-
 swift_library(
     name = "VideoMessageCameraScreen",
     module_name = "VideoMessageCameraScreen",
@@ -13,10 +9,9 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = egDeps + [
+    deps = [
         "//submodules/AsyncDisplayKit",
         "//submodules/Display",
-        "//submodules/Postbox",
         "//submodules/TelegramCore",
         "//submodules/SSignalKit/SwiftSignalKit",
         "//submodules/ComponentFlow",

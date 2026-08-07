@@ -18,26 +18,27 @@ import UndoUI
 import TranslateUI
 
 private func tagsForMessage(_ message: Message) -> MessageTags? {
-    for media in message.media {
+    //TODO:rewrite to take all media (effectiveMedia returns all rich-text media; we stop at the first)
+    for media in message.effectiveMedia {
         switch media {
-            case _ as TelegramMediaImage:
-                return .photoOrVideo
-            case let file as TelegramMediaFile:
-                if file.isVideo {
-                    if file.isAnimated {
-                        return .gif
-                    } else {
-                        return .photoOrVideo
-                    }
-                } else if file.isVoice {
-                    return .voiceOrInstantVideo
-                } else if file.isSticker {
-                    return nil
+        case _ as TelegramMediaImage:
+            return .photoOrVideo
+        case let file as TelegramMediaFile:
+            if file.isVideo {
+                if file.isAnimated {
+                    return .gif
                 } else {
-                    return .file
+                    return .photoOrVideo
                 }
-            default:
-                break
+            } else if file.isVoice {
+                return .voiceOrInstantVideo
+            } else if file.isSticker {
+                return nil
+            } else {
+                return .file
+            }
+        default:
+            break
         }
     }
     return nil
@@ -61,7 +62,8 @@ private func galleryMediaForMedia(media: Media) -> Media? {
 }
 
 func mediaForMessage(message: Message, mediaSubject: GalleryMediaSubject? = nil) -> [(Media, TelegramMediaImage?)] {
-    for media in message.media {
+    //TODO:rewrite to take all media (effectiveMedia returns all rich-text media; we return the first match)
+    for media in message.effectiveMedia {
         if let result = galleryMediaForMedia(media: media) {
             return [(result, nil)]
         } else if let poll = media as? TelegramMediaPoll {
@@ -115,6 +117,7 @@ func mediaForMessage(message: Message, mediaSubject: GalleryMediaSubject? = nil)
             }
         }
     }
+
     return []
 }
 
@@ -628,10 +631,6 @@ public struct GalleryConfiguration {
     }
     
     static func with(appConfiguration: AppConfiguration) -> GalleryConfiguration {
-        // MARK: exteraGram
-        if appConfiguration.egWebSettings.global.ytPip {
-            return GalleryConfiguration(youtubePictureInPictureEnabled: true)
-        }
         if let data = appConfiguration.data, let value = data["youtube_pip"] as? String {
             return GalleryConfiguration(youtubePictureInPictureEnabled: value != "disabled")
         } else {
@@ -936,7 +935,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
         var isFirstTime = true
         self.disposable.set(combineLatest(
             messageView,
-            self.context.account.postbox.preferencesView(keys: [PreferencesKeys.appConfiguration]) |> take(1),
+            self.context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.appConfiguration)) |> take(1),
             translateToLanguage |> take(1)
         ).start(next: { [weak self] view, preferencesView, translateToLanguage in
             let f: () -> Void = {
@@ -944,7 +943,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                     if let view = view {
                         strongSelf.peerIsCopyProtected = view.peerIsCopyProtected
                         
-                        let appConfiguration: AppConfiguration = preferencesView.values[PreferencesKeys.appConfiguration]?.get(AppConfiguration.self) ?? .defaultValue
+                        let appConfiguration: AppConfiguration = preferencesView?.get(AppConfiguration.self) ?? .defaultValue
                         let configuration = GalleryConfiguration.with(appConfiguration: appConfiguration)
                         strongSelf.configuration = configuration
                         

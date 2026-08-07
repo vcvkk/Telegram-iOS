@@ -59,7 +59,7 @@ $(TargetPath)
 #define SINGLE_REF_FRAME            // need to disable it when use multi-reference
 
 
-#if defined(WELS_TESTBED)               // for EGE testing
+#if defined(WELS_TESTBED)               // for SGE testing
 #define ENABLE_FRAME_DUMP
 
 #ifdef FRAME_INFO_OUTPUT

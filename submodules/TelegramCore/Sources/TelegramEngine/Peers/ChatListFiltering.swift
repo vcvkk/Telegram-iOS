@@ -1,21 +1,8 @@
-import EGSimpleSettings
 import Foundation
 import Postbox
 import SwiftSignalKit
 import TelegramApi
 
-
-public struct ChatListFilteringConfiguration: Equatable {
-    public let isEnabled: Bool
-    
-    public init(appConfiguration: AppConfiguration) {
-        var isEnabled = false
-        if let data = appConfiguration.data, let value = data["dialog_filters_enabled"] as? Bool, value {
-            isEnabled = true
-        }
-        self.isEnabled = isEnabled
-    }
-}
 
 public struct ChatListFilterPeerCategories: OptionSet, Hashable {
     public var rawValue: Int32
@@ -1163,18 +1150,13 @@ func _internal_updatedChatListFilters(postbox: Postbox, hiddenIds: Signal<Set<In
     )
     |> map { preferences, hiddenIds -> [ChatListFilter] in
         let filtersState = preferences.values[PreferencesKeys.chatListFilters]?.get(ChatListFiltersState.self) ?? ChatListFiltersState.default
-        var filters = filtersState.filters.filter { filter in
+        return filtersState.filters.filter { filter in
             if hiddenIds.contains(filter.id) {
                 return false
             } else {
                 return true
             }
         }
-        // MARK: exteraGram
-        if filters.count > 1 && EGSimpleSettings.shared.allChatsHidden {
-            filters.removeAll { $0 == .allChats }
-        }
-        return filters
     }
     |> distinctUntilChanged
 }

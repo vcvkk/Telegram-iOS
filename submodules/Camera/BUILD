@@ -8,10 +8,6 @@ load("//build-system/bazel-utils:plist_fragment.bzl",
     "plist_fragment",
 )
 
-egDeps = [
-    "//exteraGram/EGSimpleSettings:EGSimpleSettings"
-]
-
 filegroup(
     name = "CameraMetalResources",
     srcs = glob([
@@ -56,7 +52,7 @@ swift_library(
     data = [
         ":CameraBundle",
     ],
-    deps = egDeps + [
+    deps = [
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",

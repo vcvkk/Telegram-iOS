@@ -10,11 +10,9 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
-        "//exteraGram/EGBadges:EGBadges",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",
-        "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/LegacyComponents:LegacyComponents",
         "//submodules/TelegramPresentationData:TelegramPresentationData",

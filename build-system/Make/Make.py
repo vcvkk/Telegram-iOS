@@ -47,6 +47,11 @@ class BazelCommandLine:
         self.enable_sandbox = False
         self.disable_provisioning_profiles = False
         self.profile_swift = False
+        self.embed_watch_app = False
+        self.watch_api_id = None
+        self.watch_api_hash = None
+        self.watch_signing_identity = None
+        self.watch_provisioning_profile = None
 
         self.common_args = [
             # https://docs.bazel.build/versions/master/command-line-reference.html
@@ -146,7 +151,7 @@ class BazelCommandLine:
                 '--ios_multi_cpus=arm64',
 
                 # Always build universal Watch binaries.
-                '--watchos_cpus=armv7k,arm64_32'
+                '--watchos_cpus=arm64_32'
             ] + self.common_debug_args
         elif configuration == 'debug_sim_arm64':
             self.configuration_args = [
@@ -157,7 +162,7 @@ class BazelCommandLine:
                 '--ios_multi_cpus=sim_arm64',
 
                 # Always build universal Watch binaries.
-                '--watchos_cpus=armv7k,arm64_32'
+                '--watchos_cpus=arm64_32'
             ] + self.common_debug_args
         elif configuration == 'release_sim_arm64':
             self.configuration_args = [
@@ -168,7 +173,7 @@ class BazelCommandLine:
                 '--ios_multi_cpus=sim_arm64',
 
                 # Always build universal Watch binaries.
-                '--watchos_cpus=armv7k,arm64_32'
+                '--watchos_cpus=arm64_32'
             ] + self.common_debug_args
         elif configuration == 'release_arm64':
             self.configuration_args = [
@@ -179,7 +184,7 @@ class BazelCommandLine:
                 '--ios_multi_cpus=arm64',
 
                 # Always build universal Watch binaries.
-                '--watchos_cpus=armv7k,arm64_32',
+                '--watchos_cpus=arm64_32',
 
                 # Generate DSYM files when building.
                 '--apple_generate_dsym',
@@ -189,6 +194,13 @@ class BazelCommandLine:
             ] + self.common_release_args
         else:
             raise Exception('Unknown configuration {}'.format(configuration))
+
+    def set_watch_app(self, api_id, api_hash, signing_identity, provisioning_profile):
+        self.embed_watch_app = True
+        self.watch_api_id = api_id
+        self.watch_api_hash = api_hash
+        self.watch_signing_identity = signing_identity
+        self.watch_provisioning_profile = provisioning_profile
 
     def get_startup_bazel_arguments(self):
         combined_arguments = []
@@ -210,9 +222,20 @@ class BazelCommandLine:
         call_executable(combined_arguments)
 
     def get_define_arguments(self):
-        return [
+        args = [
             '--define=buildNumber={}'.format(self.build_number),
         ]
+        if self.embed_watch_app:
+            args += ['--//Telegram:embedWatchApp']
+            # watch_api_id/hash are guaranteed non-None here: set_watch_app is the only
+            # setter of embed_watch_app, and build() raises if they are missing.
+            args += [
+                '--define=watchApiId={}'.format(self.watch_api_id),
+                '--define=watchApiHash={}'.format(self.watch_api_hash),
+                '--define=watchSigningIdentity={}'.format(self.watch_signing_identity or ''),
+                '--define=watchProvisioningProfile={}'.format(self.watch_provisioning_profile or ''),
+            ]
+        return args
 
     def get_project_generation_arguments(self):
         combined_arguments = []
@@ -263,7 +286,7 @@ class BazelCommandLine:
         if self.custom_target is not None:
             combined_arguments += [self.custom_target]
         else:
-            combined_arguments += ['Telegram/exteraGram']
+            combined_arguments += ['Telegram/Telegram']
 
         if self.continue_on_error:
             combined_arguments += ['--keep_going']
@@ -299,7 +322,7 @@ class BazelCommandLine:
         print(subprocess.list2cmdline(combined_arguments))
         call_executable(combined_arguments)
 
-    def invoke_test(self):
+    def invoke_test(self, test_target='Tests/AllTests'):
         combined_arguments = [
             self.build_environment.bazel_path
         ]
@@ -309,7 +332,7 @@ class BazelCommandLine:
         combined_arguments += ['--cache_test_results=no']
         combined_arguments += ['--test_output=errors']
 
-        combined_arguments += ['Tests/AllTests']
+        combined_arguments += [test_target]
 
         combined_arguments += self.common_args
         combined_arguments += self.common_build_args
@@ -585,6 +608,53 @@ def generate_project(bazel, arguments):
     call_executable(['open', xcodeproj_path])
 
 
+def resolve_watch_provisioning_profile(arguments, base_path):
+    """Resolve the watchkitapp provisioning profile for an --embedWatchApp build.
+
+    Returns the absolute path of the profile to sign the embedded watch app with, or None
+    to build the watch app UNSIGNED. None is only returned (with a warning) for
+    non-distribution codesigning — a distribution build (appstore/adhoc/enterprise) raises
+    instead, because the host ios_application does NOT re-sign the embedded watch app, so an
+    unsigned Watch/ payload ships as-is and is silently rejected at install time. Failing
+    here turns that silent "won't install" into a build error that names the missing profile.
+    """
+    is_distribution_codesigning = arguments.gitCodesigningType in ('appstore', 'adhoc', 'enterprise')
+
+    explicit_profile = arguments.watchProvisioningProfile
+    if explicit_profile is not None:
+        if not os.path.exists(explicit_profile):
+            raise Exception('--watchProvisioningProfile was set to a path that does not exist: {}'.format(explicit_profile))
+        return explicit_profile
+
+    # Default to the watchkitapp profile that resolve_configuration() just extracted from the
+    # codesigning material (renamed via the bundle-id mapping in BuildConfiguration.py). This
+    # matches the active codesigning type (e.g. appstore) and the host app's identity, so the
+    # embedded watch app is signed correctly without an explicit --watchProvisioningProfile.
+    # The worker derives the signing identity (cert) from this profile when
+    # --watchSigningIdentity is omitted.
+    resolved_watch_profile = os.path.join(base_path, 'build-input/configuration-repository/provisioning/WatchApp.mobileprovision')
+    if os.path.exists(resolved_watch_profile):
+        return resolved_watch_profile
+
+    if is_distribution_codesigning:
+        raise Exception(
+            '--embedWatchApp is set for a distribution build (--gitCodesigningType={ct}), but no watchkitapp '
+            'provisioning profile resolved (looked for {p}).\n'
+            'The {ct} codesigning material does not contain a `.watchkitapp` profile, so the embedded watch app '
+            'would be UNSIGNED — the host app is not re-signed over it, so it ships unsigned and is silently '
+            'rejected when installing on a watch.\n'
+            'Fix: fetch the latest codesigning material so the watchkitapp profile is present — drop '
+            '--gitCodesigningUseCurrent (it skips the fetch), or run '
+            '`git -C build-input/configuration-repository-workdir/encrypted pull` — or create/register the {ct} '
+            'watchkitapp provisioning profile, or pass an explicit --watchProvisioningProfile.'.format(
+                ct=arguments.gitCodesigningType, p=resolved_watch_profile
+            )
+        )
+
+    print('TelegramBuild: warning: --embedWatchApp is set but no watch provisioning profile was found (pass --watchProvisioningProfile, or use codesigning material that includes the watchkitapp profile; looked for {}). The embedded watch app will be UNSIGNED and rejected by the App Store.'.format(resolved_watch_profile))
+    return None
+
+
 def build(bazel, arguments):
     bazel_command_line = BazelCommandLine(
         bazel=bazel,
@@ -609,6 +679,19 @@ def build(bazel, arguments):
     )
 
     bazel_command_line.set_configuration(arguments.configuration)
+    if arguments.embedWatchApp:
+        if arguments.configuration in ('debug_arm64', 'release_arm64'):
+            if arguments.watchApiId is None or arguments.watchApiHash is None:
+                raise Exception('--embedWatchApp requires --watchApiId and --watchApiHash (the embedded watch app build needs API credentials).')
+            watch_provisioning_profile = resolve_watch_provisioning_profile(arguments=arguments, base_path=os.getcwd())
+            bazel_command_line.set_watch_app(
+                arguments.watchApiId,
+                arguments.watchApiHash,
+                arguments.watchSigningIdentity,
+                watch_provisioning_profile
+            )
+        else:
+            print('TelegramBuild: warning: --embedWatchApp requires a device configuration (debug_arm64 or release_arm64); ignored for simulator builds.')
     bazel_command_line.set_build_number(arguments.buildNumber)
     bazel_command_line.set_custom_target(arguments.target)
     bazel_command_line.set_continue_on_error(arguments.continueOnError)
@@ -622,24 +705,24 @@ def build(bazel, arguments):
 
     if arguments.outputBuildArtifactsPath is not None:
         artifacts_path = os.path.abspath(arguments.outputBuildArtifactsPath)
-        if os.path.exists(artifacts_path + '/exteraGram.ipa'):
-            os.remove(artifacts_path + '/exteraGram.ipa')
+        if os.path.exists(artifacts_path + '/Telegram.ipa'):
+            os.remove(artifacts_path + '/Telegram.ipa')
         if os.path.exists(artifacts_path + '/DSYMs'):
             shutil.rmtree(artifacts_path + '/DSYMs')
         os.makedirs(artifacts_path, exist_ok=True)
         os.makedirs(artifacts_path + '/DSYMs', exist_ok=True)
 
         built_ipa_path_prefix = 'bazel-bin/Telegram'
-        ipa_paths = glob.glob('{}/exteraGram.ipa'.format(built_ipa_path_prefix))
+        ipa_paths = glob.glob('{}/Telegram.ipa'.format(built_ipa_path_prefix))
         if len(ipa_paths) == 0:
-            print(f'Could not find the IPA at {built_ipa_path_prefix}/exteraGram.ipa')
+            print(f'Could not find the IPA at {built_ipa_path_prefix}/Telegram.ipa')
             sys.exit(1)
         elif len(ipa_paths) > 1:
             print('Multiple matching IPA files found: {}'.format(ipa_paths))
             sys.exit(1)
-        shutil.copyfile(ipa_paths[0], artifacts_path + '/exteraGram.ipa')
+        shutil.copyfile(ipa_paths[0], artifacts_path + '/Telegram.ipa')
 
-        dsym_paths = glob.glob('bazel-bin/Telegram/*.dSYM') + glob.glob('bazel-out/watchos_arm64_32-opt-watchos-arm64_32-min7.0-applebin_watchos-ST-*/bin/Telegram/TelegramWatchApp_dsyms/*.dSYM') + glob.glob('bazel-out/watchos_armv7k-opt-watchos-armv7k-min7.0-applebin_watchos-ST-*/bin/Telegram/TelegramWatchApp_dsyms/*.dSYM') 
+        dsym_paths = glob.glob('bazel-bin/Telegram/*.dSYM')
         for dsym_path in dsym_paths:
             file_name = os.path.basename(dsym_path)
             shutil.copytree(dsym_path, artifacts_path + '/DSYMs/{}'.format(file_name))
@@ -647,7 +730,7 @@ def build(bazel, arguments):
         os.chdir(artifacts_path)
         run_executable_with_output('zip', arguments=[
             '-r',
-            'exteraGram.DSYMs.zip',
+            'Telegram.DSYMs.zip',
             './DSYMs'
         ], check_result=True)
         os.chdir(previous_directory)
@@ -677,7 +760,7 @@ def test(bazel, arguments):
     bazel_command_line.set_configuration('debug_sim_arm64')
     bazel_command_line.set_build_number('10000')
 
-    bazel_command_line.invoke_test()
+    bazel_command_line.invoke_test(test_target=arguments.target)
 
 
 def query(bazel, arguments):
@@ -877,6 +960,12 @@ if __name__ == '__main__':
             '''
     )
     add_project_and_build_common_arguments(testParser)
+    testParser.add_argument(
+        '--target',
+        type=str,
+        default='Tests/AllTests',
+        help='Bazel test target to run (default: Tests/AllTests, the full suite).'
+    )
 
     generateProjectParser = subparsers.add_parser('generateProject', help='Generate Xcode project')
     generateProjectParser.add_argument(
@@ -1009,6 +1098,40 @@ if __name__ == '__main__':
         default=False,
         help='Respect MODULE.bazel.lock.'
     )
+    buildParser.add_argument(
+        '--embedWatchApp',
+        action='store_true',
+        default=False,
+        help='Embed the tgwatch watch app (from the in-repo Telegram/WatchApp snapshot) under Watch/ in a device build.'
+    )
+    buildParser.add_argument(
+        '--watchApiId',
+        required=False,
+        type=str,
+        help='TG_API_ID for the watch build.',
+        metavar='api_id'
+    )
+    buildParser.add_argument(
+        '--watchApiHash',
+        required=False,
+        type=str,
+        help='TG_API_HASH for the watch build.',
+        metavar='api_hash'
+    )
+    buildParser.add_argument(
+        '--watchSigningIdentity',
+        required=False,
+        type=str,
+        help='Codesigning identity (SHA1 hash) for the watch app.',
+        metavar='identity'
+    )
+    buildParser.add_argument(
+        '--watchProvisioningProfile',
+        required=False,
+        type=str,
+        help='Absolute path to the watchkitapp .mobileprovision file.',
+        metavar='path'
+    )
 
     remote_build_parser = subparsers.add_parser('remote-build', help='Build the app using a remote environment.')
     add_codesigning_common_arguments(remote_build_parser)
@@ -1037,6 +1160,40 @@ if __name__ == '__main__':
         required=False,
         type=str,
         help='Bazel remote cache host address.'
+    )
+    remote_build_parser.add_argument(
+        '--embedWatchApp',
+        action='store_true',
+        default=False,
+        help='Embed the tgwatch watch app (from the in-repo Telegram/WatchApp snapshot) under Watch/ in the remote device build.'
+    )
+    remote_build_parser.add_argument(
+        '--watchApiId',
+        required=False,
+        type=str,
+        help='TG_API_ID for the watch build.',
+        metavar='api_id'
+    )
+    remote_build_parser.add_argument(
+        '--watchApiHash',
+        required=False,
+        type=str,
+        help='TG_API_HASH for the watch build.',
+        metavar='api_hash'
+    )
+    remote_build_parser.add_argument(
+        '--watchSigningIdentity',
+        required=False,
+        type=str,
+        help='Codesigning identity (SHA1 hash) for the watch app. The matching certificate must be present in the uploaded codesigning material.',
+        metavar='identity'
+    )
+    remote_build_parser.add_argument(
+        '--watchProvisioningProfile',
+        required=False,
+        type=str,
+        help='Local absolute path to the watchkitapp .mobileprovision file; uploaded to the remote build environment.',
+        metavar='path'
     )
 
     vm_build_parser = subparsers.add_parser('vm-build', help='Build the app using a VM.')
@@ -1258,13 +1415,27 @@ if __name__ == '__main__':
             
             shutil.copyfile(args.configurationPath, remote_input_path + '/configuration.json')
 
+            watch_provisioning_profile_remote_path = None
+            if args.embedWatchApp:
+                if args.watchApiId is None or args.watchApiHash is None:
+                    raise Exception('--embedWatchApp requires --watchApiId and --watchApiHash (the embedded watch app build needs API credentials).')
+                if args.watchProvisioningProfile is not None:
+                    shutil.copyfile(args.watchProvisioningProfile, remote_input_path + '/watch_provisioning_profile.mobileprovision')
+                    # remote_input_path is uploaded to the guest as $HOME/telegram-build-input.
+                    watch_provisioning_profile_remote_path = '$HOME/telegram-build-input/watch_provisioning_profile.mobileprovision'
+
             RemoteBuild.remote_build_darwin_containers(
                 darwin_containers_path=args.darwinContainers,
                 darwin_containers_host=args.darwinContainersHost,
                 macos_version=versions.macos_version,
                 bazel_cache_host=args.cacheHost,
                 configuration=args.configuration,
-                build_input_data_path=remote_input_path
+                build_input_data_path=remote_input_path,
+                embed_watch_app=args.embedWatchApp,
+                watch_api_id=args.watchApiId,
+                watch_api_hash=args.watchApiHash,
+                watch_signing_identity=args.watchSigningIdentity,
+                watch_provisioning_profile_remote_path=watch_provisioning_profile_remote_path
             )
         elif args.commandName == 'vm-build':
             base_path = os.getcwd()

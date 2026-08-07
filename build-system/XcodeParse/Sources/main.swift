@@ -79,22 +79,12 @@ struct XcodeParse: ParsableCommand {
         }
 
         var rawVariables: [String: String] = [:]
-        let requiredBuildSettings: [String] = ["SRCROOT", "PROJECT_DIR", "BAZEL_OUT", /* MARK: Swifgram */ "BAZEL_EXTERNAL", "BAZEL_OUTPUT_BASE", "_BAZEL_OUTPUT_BASE:standardizepath" ]
+        let requiredBuildSettings: [String] = ["SRCROOT", "PROJECT_DIR", "BAZEL_OUT"]
         for buildConfiguration in xcodeproj.pbxproj.buildConfigurations {
             if buildConfiguration.name == "Debug" {
-                for setting in requiredBuildSettings {
-                    let components = setting.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-                    let name = String(components[0])
-                    let modifier = components.count > 1 ? String(components[1]) : nil
-
+                for name in requiredBuildSettings {
                     if let value = buildConfiguration.buildSettings[name]?.stringValue {
-                        var finalValue = value
-
-                        if modifier == "standardizepath" {
-                            finalValue = (value as NSString).standardizingPath
-                        }
-
-                        rawVariables[setting] = finalValue
+                        rawVariables[name] = value
                     }
                 }
             }

@@ -1,6 +1,5 @@
 import Foundation
 import Postbox
-import EGSimpleSettings
 
 public let anonymousSavedMessagesId: Int64 = 2666000
 
@@ -31,13 +30,6 @@ public extension Peer {
             break
         }
         
-        // MARK: exteraGram
-        let chatId = self.id.id._internalGetInt64Value()
-        if contentSettings.appConfiguration.egWebSettings.global.forceReasons.contains(chatId) {
-            return "Unavailable in exteraGram due to App Store Guidelines"
-        } else if contentSettings.appConfiguration.egWebSettings.global.unforceReasons.contains(chatId) {
-            return nil
-        }
         if let restrictionInfo = restrictionInfo {
             for rule in restrictionInfo.rules {
                 if rule.reason == "sensitive" {
@@ -45,7 +37,7 @@ public extension Peer {
                 }
                 if rule.platform == "all" || rule.platform == platform || contentSettings.addContentRestrictionReasons.contains(rule.platform) {
                     if !contentSettings.ignoreContentRestrictionReasons.contains(rule.reason) {
-                        return rule.text + "\n" + "\(rule.reason)-\(rule.platform)"
+                        return rule.text
                     }
                 }
             }
@@ -328,9 +320,6 @@ public extension Peer {
     }
     
     var nameColor: PeerColor? {
-        if EGSimpleSettings.shared.accountColorsSaturation == 0 { // MARK: exteraGram
-            return nil
-        }
         switch self {
         case let user as TelegramUser:
             if let nameColor = user.nameColor {
@@ -501,18 +490,6 @@ public func peerViewMainPeer(_ view: PeerView) -> Peer? {
             return view.peers[peer.regularPeerId]
         } else {
             return peer
-        }
-    } else {
-        return nil
-    }
-}
-
-public func peerViewMonoforumMainPeer(_ view: PeerView) -> Peer? {
-    if let peer = peerViewMainPeer(view) {
-        if let channel = peer as? TelegramChannel, channel.flags.contains(.isMonoforum), let linkedMonoforumId = channel.linkedMonoforumId {
-            return view.peers[linkedMonoforumId]
-        } else {
-            return nil
         }
     } else {
         return nil

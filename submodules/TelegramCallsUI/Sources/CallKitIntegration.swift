@@ -1,4 +1,3 @@
-import EGAppGroupIdentifier
 import Foundation
 import UIKit
 import CallKit
@@ -21,7 +20,7 @@ public final class CallKitIntegration {
         return false
         #else
         if #available(iOSApplicationExtension 10.0, iOS 10.0, *) {
-            return Locale.current.regionCode?.lowercased() != "cn" && !(UserDefaults(suiteName: egAppGroupIdentifier())?.bool(forKey: "legacyNotificationsFix") ?? false)
+            return Locale.current.regionCode?.lowercased() != "cn"
         } else {
             return false
         }
@@ -159,8 +158,7 @@ class CallKitProviderDelegate: NSObject, CXProviderDelegate {
     }
     
     private static func providerConfiguration() -> CXProviderConfiguration {
-        // MARK: exteraGram
-        let providerConfiguration = CXProviderConfiguration(localizedName: "exteraGram")
+        let providerConfiguration = CXProviderConfiguration(localizedName: "Telegram")
         
         providerConfiguration.supportsVideo = true
         providerConfiguration.maximumCallsPerCallGroup = 1

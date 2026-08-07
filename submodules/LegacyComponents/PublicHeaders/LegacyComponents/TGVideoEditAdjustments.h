@@ -13,7 +13,6 @@ typedef enum
     TGMediaVideoConversionPresetCompressedVeryHigh,
     TGMediaVideoConversionPresetAnimation,
     TGMediaVideoConversionPresetVideoMessage,
-    TGMediaVideoConversionPresetVideoMessageHD,
     TGMediaVideoConversionPresetProfileLow,
     TGMediaVideoConversionPresetProfile,
     TGMediaVideoConversionPresetProfileHigh,
@@ -67,7 +66,6 @@ typedef enum
                                      toolValues:(NSDictionary *)toolValues
                                    paintingData:(TGPaintingData *)paintingData
                                       sendAsGif:(bool)sendAsGif
-                                sendAsTelescope:(bool)sendAsTelescope
                                          preset:(TGMediaVideoConversionPreset)preset;
 
 @end
@@ -76,4 +74,3 @@ typedef TGVideoEditAdjustments TGMediaVideoEditAdjustments;
 
 extern const NSTimeInterval TGVideoEditMinimumTrimmableDuration;
 extern const NSTimeInterval TGVideoEditMaximumGifDuration;
-extern const NSTimeInterval TGVideoEditMaximumTelescopeDuration;

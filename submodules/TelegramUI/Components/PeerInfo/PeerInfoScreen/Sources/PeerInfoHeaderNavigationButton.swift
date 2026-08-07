@@ -122,7 +122,7 @@ private final class MoreIconNode: ManagedAnimationNode {
 final class PeerInfoHeaderNavigationButton: HighlightableButtonNode {
     let containerNode: ContextControllerSourceNode
     let contextSourceNode: ContextReferenceContentNode
-    public let textNode: ImmediateTextNode
+    private let textNode: ImmediateTextNode
     private let iconNode: ASImageNode
     private var animationNode: MoreIconNode?
     
@@ -269,12 +269,6 @@ final class PeerInfoHeaderNavigationButton: HighlightableButtonNode {
                 text = ""
                 accessibilityText = presentationData.strings.Story_Privacy_PostStory
                 icon = PresentationResourcesRootController.navigationPostStoryIcon(presentationData.theme)
-            // MARK: exteraGram
-            case .plugin:
-                text = ""
-                accessibilityText = "Плагины"
-                icon = UIImage(bundleImageName: "msg_plugins")
-                isGestureEnabled = true
             case .sort:
                 text = ""
                 accessibilityText = presentationData.strings.Common_More

@@ -1,4 +1,3 @@
-import EGSimpleSettings
 import Foundation
 import UIKit
 import SwiftSignalKit

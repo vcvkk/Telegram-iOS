@@ -410,6 +410,9 @@ public enum DeviceMetrics: CaseIterable, Equatable {
     }
     
     public var showAppBadge: Bool {
-        return self.egShowAppBadge
+        if case .iPhoneX = self {
+            return false
+        }
+        return self.hasTopNotch
     }
 }

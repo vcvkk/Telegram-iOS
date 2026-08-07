@@ -250,7 +250,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     private let statusDisposable = MetaDisposable()
     private let dataDisposable = MetaDisposable()
     private let recognitionDisposable = MetaDisposable()
-    private var status: MediaResourceStatus?
+    private var status: EngineMediaResource.FetchStatus?
     private var fetchedDimensions: PixelDimensions?
     
     private let pagingEnabledPromise = ValuePromise<Bool>(true)
@@ -518,7 +518,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                 
                 self.zoomableContent = (largestSize.dimensions.cgSize, self.imageNode)
                 
-                self.fetchDisposable.set(fetchedMediaResource(mediaBox: self.context.account.postbox.mediaBox, userLocation: userLocation, userContentType: .image, reference: imageReference.resourceReference(largestSize.resource)).start())
+                self.fetchDisposable.set(self.context.engine.resources.fetch(reference: imageReference.resourceReference(largestSize.resource), userLocation: userLocation, userContentType: .image).start())
                 self.setupStatus(resource: largestSize.resource)
             } else {
                 self._ready.set(.single(Void()))
@@ -777,21 +777,6 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                             controller.present(UndoOverlayController(presentationData: strongSelf.presentationData, content: .mediaSaved(text: strongSelf.presentationData.strings.Gallery_ImageSaved), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
                         })
                     })))
-                    // MARK: exteraGram
-                    items.append(.action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_ContextMenuCopy, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.actionSheet.primaryTextColor) }, action: { [weak self] action in
-                        action.dismissWithResult(.default)
-
-                        let _ = (SaveToCameraRoll.copyToPasteboard(context: context, userLocation: .peer(message.id.peerId), mediaReference: media)
-                        |> deliverOnMainQueue).start(completed: { [weak self] in
-                            guard let strongSelf = self else {
-                                return
-                            }
-                            guard let controller = strongSelf.galleryController() else {
-                                return
-                            }
-                            controller.present(UndoOverlayController(presentationData: strongSelf.presentationData, content: .mediaSaved(text: strongSelf.presentationData.strings.Conversation_ImageCopied), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
-                        })
-                    })))
                 }
             }
             
@@ -958,7 +943,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                 }
                 self._rightBarButtonItems.set(.single(barButtonItems))
                 
-                self.fetchDisposable.set(fetchedMediaResource(mediaBox: self.context.account.postbox.mediaBox, userLocation: userLocation, userContentType: .image, reference: fileReference.resourceReference(fileReference.media.resource)).start())
+                self.fetchDisposable.set(self.context.engine.resources.fetch(reference: fileReference.resourceReference(fileReference.media.resource), userLocation: userLocation, userContentType: .image).start())
             } else {
                 let _ = (chatMessageFileDatas(account: context.account, userLocation: userLocation, fileReference: fileReference, progressive: false, fetched: true)
                 |> mapToSignal { value -> Signal<UIImage?, NoError> in
@@ -983,7 +968,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     }
     
     private func setupStatus(resource: MediaResource) {
-        self.statusDisposable.set((self.context.account.postbox.mediaBox.resourceStatus(resource)
+        self.statusDisposable.set((self.context.engine.resources.status(resource: EngineMediaResource(resource))
         |> deliverOnMainQueue).start(next: { [weak self] status in
             if let strongSelf = self {
                 let previousStatus = strongSelf.status
@@ -1222,7 +1207,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
             if let resource = resource {
                 switch status {
                     case .Fetching:
-                        self.context.account.postbox.mediaBox.cancelInteractiveResourceFetch(resource.resource)
+                        self.context.engine.resources.cancelInteractiveResourceFetch(id: EngineMediaResource.Id(resource.resource.id))
                     case .Remote:
                     self.fetchDisposable.set(fetchedMediaResource(mediaBox: self.context.account.postbox.mediaBox, userLocation: (self.message?.id.peerId).flatMap(MediaResourceUserLocation.peer) ?? .other, userContentType: .image, reference: resource, statsCategory: statsCategory ?? .generic).start())
                     default:

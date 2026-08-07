@@ -1,4 +1,3 @@
-import EGSimpleSettings
 import Foundation
 import UIKit
 import Display
@@ -26,7 +25,7 @@ public func presentTranslateScreen(
     display: (ViewController) -> Void
 ) {
     let translationConfiguration = TranslationConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
-    var useSystemTranslation = EGSimpleSettings.shared.translationBackendEnum == .system
+    var useSystemTranslation = false
     switch translationConfiguration.manual {
     case .system:
         if #available(iOS 18.0, *) {

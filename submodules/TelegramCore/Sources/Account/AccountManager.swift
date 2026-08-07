@@ -104,6 +104,7 @@ private var declaredEncodables: Void = {
     declareEncodable(InlineBotMessageAttribute.self, f: { InlineBotMessageAttribute(decoder: $0) })
     declareEncodable(InlineBusinessBotMessageAttribute.self, f: { InlineBusinessBotMessageAttribute(decoder: $0) })
     declareEncodable(TextEntitiesMessageAttribute.self, f: { TextEntitiesMessageAttribute(decoder: $0) })
+    declareEncodable(RichTextMessageAttribute.self, f: { RichTextMessageAttribute(decoder: $0) })
     declareEncodable(ReplyMessageAttribute.self, f: { ReplyMessageAttribute(decoder: $0) })
     declareEncodable(QuotedReplyMessageAttribute.self, f: { QuotedReplyMessageAttribute(decoder: $0) })
     declareEncodable(ReplyStoryAttribute.self, f: { ReplyStoryAttribute(decoder: $0) })
@@ -220,8 +221,6 @@ private var declaredEncodables: Void = {
     declareEncodable(AuthSessionInfoAttribute.self, f: { AuthSessionInfoAttribute(decoder: $0) })
     declareEncodable(TranslationMessageAttribute.self, f: { TranslationMessageAttribute(decoder: $0) })
     declareEncodable(TranslationMessageAttribute.Additional.self, f: { TranslationMessageAttribute.Additional(decoder: $0) })
-    // MARK: exteraGram
-    declareEncodable(QuickTranslationMessageAttribute.self, f: { QuickTranslationMessageAttribute(decoder: $0) })
     declareEncodable(SynchronizeAutosaveItemOperation.self, f: { SynchronizeAutosaveItemOperation(decoder: $0) })
     declareEncodable(TelegramMediaStory.self, f: { TelegramMediaStory(decoder: $0) })
     declareEncodable(SynchronizeViewStoriesOperation.self, f: { SynchronizeViewStoriesOperation(decoder: $0) })

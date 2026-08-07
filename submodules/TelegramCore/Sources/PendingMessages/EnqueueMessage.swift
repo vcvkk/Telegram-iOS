@@ -255,6 +255,8 @@ private func filterMessageAttributesForOutgoingMessage(_ attributes: [MessageAtt
         switch attribute {
         case _ as TextEntitiesMessageAttribute:
             return true
+        case _ as RichTextMessageAttribute:
+            return true
         case _ as InlineBotMessageAttribute:
             return true
         case _ as OutgoingMessageInfoAttribute:
@@ -478,6 +480,8 @@ private func filterMessageAttributesForForwardedMessage(_ attributes: [MessageAt
         switch attribute {
             case _ as TextEntitiesMessageAttribute:
                 return true
+            case _ as RichTextMessageAttribute:
+                return true
             case _ as InlineBotMessageAttribute:
                 return true
             case _ as NotificationInfoMessageAttribute:
@@ -566,25 +570,6 @@ private func opportunisticallyTransformOutgoingMedia(network: Network, postbox: 
 }
 
 public func enqueueMessages(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
-    var hookParams: [String: Any] = ["peer_id": peerId.id._internalGetInt64Value(), "count": messages.count]
-    EGPluginHooks.sendMessageHook?(&hookParams)
-    // Synchronous intercept: a plugin may cancel the send (e.g. to replace message with computed content).
-    // Only fires for text messages and only when a hook is registered — zero overhead otherwise.
-    if let interceptHook = EGPluginHooks.messageInterceptHook {
-        for msg in messages {
-            if case .message(let text, _, _, _, _, _, _, _, _, _) = msg, !text.isEmpty {
-                var iParams: [String: Any] = ["peer_id": peerId.id._internalGetInt64Value(), "text": text]
-                if interceptHook(&iParams) {
-                    return .single([])
-                }
-                break
-            }
-        }
-    }
-    let forwardCount = messages.filter { if case .forward = $0 { return true }; return false }.count
-    if forwardCount > 0 {
-        EGPluginHooks.fireAsync("messages.forwardMessages", params: ["peer_id": peerId.id._internalGetInt64Value(), "count": forwardCount])
-    }
     let signal: Signal<[(Bool, EnqueueMessage)], NoError>
     if let transformOutgoingMessageMedia = account.transformOutgoingMessageMedia {
         signal = opportunisticallyTransformOutgoingMedia(network: account.network, postbox: account.postbox, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messages: messages, userInteractive: true)
@@ -820,11 +805,11 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                         transaction.storeMediaIfNotPresent(media: file)
                     }
                 
-                    // MARK: exteraGram
-                    var filteredEmojiItems = [NSRange: RecentEmojiItem]()
-                    text.enumerateSubstrings(in: text.startIndex ..< text.endIndex, options: .byComposedCharacterSequences) { substring, range, _, _ in
-                        if let substring, substring.isSingleEmoji {
-                            filteredEmojiItems[NSRange(range, in: text)] = RecentEmojiItem(.text(substring))
+                    for emoji in text.emojis {
+                        if emoji.isSingleEmoji {
+                            if !emojiItems.contains(where: { $0.content == .text(emoji) }) {
+                                emojiItems.append(RecentEmojiItem(.text(emoji)))
+                            }
                         }
                     }
                 
@@ -949,17 +934,10 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                                         addedHashtags.append(hashtag)
                                     }
                                 } else if case let .CustomEmoji(_, fileId) = entity.type {
-                                    // MARK: exteraGram
                                     let mediaId = MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)
-                                    let entityRange = NSRange(location: entity.range.lowerBound, length: entity.range.upperBound - entity.range.lowerBound)
-                                    var file: TelegramMediaFile?
-                                    if let unwrappedFile = inlineStickers[mediaId] as? TelegramMediaFile {
-                                        file = unwrappedFile
-                                    } else if let unwrappedFile = transaction.getMedia(mediaId) as? TelegramMediaFile {
-                                        file = unwrappedFile
-                                    }
-                                    if let file {
-                                        filteredEmojiItems.removeValue(forKey: entityRange)
+                                    if let file = inlineStickers[mediaId] as? TelegramMediaFile {
+                                        emojiItems.append(RecentEmojiItem(.file(file)))
+                                    } else if let file = transaction.getMedia(mediaId) as? TelegramMediaFile {
                                         emojiItems.append(RecentEmojiItem(.file(file)))
                                     }
                                 }
@@ -967,8 +945,6 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                             break
                         }
                     }
-                    // MARK: exteraGram
-                    emojiItems.insert(contentsOf: filteredEmojiItems.values, at: 0)
                                     
                     let (tags, globalTags) = tagsForStoreMessage(incoming: false, attributes: attributes, media: mediaList, textEntities: entitiesAttribute?.entities, isPinned: false)
                     

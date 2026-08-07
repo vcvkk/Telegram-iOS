@@ -42,13 +42,9 @@ public func notificationMuteSettingsController(presentationData: PresentationDat
         updateSettings(muteInterval)
     }
     
-    // MARK: exteraGram
     let options: [NotificationMuteOption] = [
         .enable,
         .interval(1 * 60 * 60),
-        .interval(4 * 60 * 60),
-        .interval(8 * 60 * 60),
-        .interval(1 * 24 * 60 * 60),
         .interval(2 * 24 * 60 * 60),
         .disable
     ]

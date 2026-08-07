@@ -35,7 +35,7 @@ private struct MentionChatInputContextPanelEntry: Comparable, Identifiable {
         return lhs.index < rhs.index
     }
     
-    func item(context: AccountContext, presentationData: PresentationData, inverted: Bool, setPeerIdRevealed: @escaping (EnginePeer.Id?) -> Void, peerSelected: @escaping (EnginePeer, Bool) -> Void, removeRequested: @escaping (EnginePeer.Id) -> Void) -> ListViewItem {
+    func item(context: AccountContext, presentationData: PresentationData, inverted: Bool, setPeerIdRevealed: @escaping (EnginePeer.Id?) -> Void, peerSelected: @escaping (EnginePeer) -> Void, removeRequested: @escaping (EnginePeer.Id) -> Void) -> ListViewItem {
         return MentionChatInputPanelItem(context: context, presentationData: ItemListPresentationData(presentationData), inverted: inverted, peer: self.peer, revealed: self.revealed, setPeerIdRevealed: setPeerIdRevealed, peerSelected: peerSelected, removeRequested: removeRequested)
     }
 }
@@ -46,7 +46,7 @@ private struct CommandChatInputContextPanelTransition {
     let updates: [ListViewUpdateItem]
 }
 
-private func preparedTransition(from fromEntries: [MentionChatInputContextPanelEntry], to toEntries: [MentionChatInputContextPanelEntry], context: AccountContext, presentationData: PresentationData, inverted: Bool, forceUpdate: Bool, setPeerIdRevealed: @escaping (EnginePeer.Id?) -> Void, peerSelected: @escaping (EnginePeer, Bool) -> Void, removeRequested: @escaping (EnginePeer.Id) -> Void) -> CommandChatInputContextPanelTransition {
+private func preparedTransition(from fromEntries: [MentionChatInputContextPanelEntry], to toEntries: [MentionChatInputContextPanelEntry], context: AccountContext, presentationData: PresentationData, inverted: Bool, forceUpdate: Bool, setPeerIdRevealed: @escaping (EnginePeer.Id?) -> Void, peerSelected: @escaping (EnginePeer) -> Void, removeRequested: @escaping (EnginePeer.Id) -> Void) -> CommandChatInputContextPanelTransition {
     let (deleteIndices, indicesAndItems, updateIndices) = mergeListsStableWithUpdates(leftList: fromEntries, rightList: toEntries, allUpdated: forceUpdate)
     
     let deletions = deleteIndices.map { ListViewDeleteItem(index: $0, directionHint: nil) }
@@ -146,7 +146,7 @@ final class MentionChatInputContextPanelNode: ChatInputContextPanelNode {
                 strongSelf.revealedPeerId = peerId
                 strongSelf.updateResults(strongSelf.currentResults)
             }
-        }, peerSelected: { [weak self] peer, mentionNext in
+        }, peerSelected: { [weak self] peer in
             if let strongSelf = self, let interfaceInteraction = strongSelf.interfaceInteraction {
                 switch strongSelf.mode {
                     case .input:
@@ -163,8 +163,7 @@ final class MentionChatInputContextPanelNode: ChatInputContextPanelNode {
                                 let inputText = NSMutableAttributedString(attributedString: textInputState.inputText)
                                 
                                 if let addressName = peer.addressName, !addressName.isEmpty {
-                                    // MARK: exteraGram
-                                    let replacementText = addressName + (mentionNext ? " @" : " ")
+                                    let replacementText = addressName + " "
                                     
                                     inputText.replaceCharacters(in: range, with: replacementText)
                                     
@@ -174,8 +173,7 @@ final class MentionChatInputContextPanelNode: ChatInputContextPanelNode {
                                 } else if !peer.compactDisplayTitle.isEmpty {
                                     let replacementText = NSMutableAttributedString()
                                     replacementText.append(NSAttributedString(string: peer.compactDisplayTitle, attributes: [ChatTextInputAttributes.textMention: ChatTextInputTextMentionAttribute(peerId: peer.id)]))
-                                    // MARK: exteraGram
-                                    replacementText.append(NSAttributedString(string: mentionNext ? " @" : " "))
+                                    replacementText.append(NSAttributedString(string: " "))
                                     
                                     let updatedRange = NSRange(location: range.location - 1, length: range.length + 1)
                                     

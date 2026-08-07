@@ -1,10 +1,5 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
-egDeps = [
-    "//exteraGram/EGSimpleSettings:EGSimpleSettings",
-    "//exteraGram/EGInputToolbar:EGInputToolbar"
-]
-
 swift_library(
     name = "AttachmentTextInputPanelNode",
     module_name = "AttachmentTextInputPanelNode",
@@ -14,11 +9,10 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = egDeps + [
+    deps = [
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",
-        "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/TextFormat:TextFormat",
@@ -33,6 +27,7 @@ swift_library(
         "//submodules/ChatPresentationInterfaceState:ChatPresentationInterfaceState",
         "//submodules/Pasteboard:Pasteboard",
         "//submodules/ContextUI:ContextUI",
+        "//submodules/TelegramUI/Components/ChatEntityKeyboardInputNode:ChatEntityKeyboardInputNode",
         "//submodules/TelegramUI/Components/EmojiTextAttachmentView:EmojiTextAttachmentView",
         "//submodules/ComponentFlow:ComponentFlow",
         "//submodules/Components/LottieAnimationComponent:LottieAnimationComponent",
@@ -42,7 +37,6 @@ swift_library(
         "//submodules/TelegramUI/Components/Chat/ChatInputTextNode",
         "//submodules/AnimatedCountLabelNode",
         "//submodules/TelegramUI/Components/GlassBackgroundComponent",
-        "//submodules/TelegramUI/Components/ChatEntityKeyboardInputNode:ChatEntityKeyboardInputNode",
     ],
     visibility = [
         "//visibility:public",

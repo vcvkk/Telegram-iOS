@@ -1,4 +1,3 @@
-import EGSimpleSettings
 import Foundation
 import Postbox
 import SwiftSignalKit
@@ -389,9 +388,9 @@ private final class FetchImpl {
             }
             
             if isStory {
-                self.defaultPartSize = getEGDownloadPartSize(512 * 1024, fileSize: self.size)
+                self.defaultPartSize = 512 * 1024
             } else {
-                self.defaultPartSize = getEGDownloadPartSize(128 * 1024, fileSize: self.size)
+                self.defaultPartSize = 128 * 1024
             }
             self.cdnPartSize = 128 * 1024
             
@@ -441,7 +440,7 @@ private final class FetchImpl {
                     maxPartSize: 1 * 1024 * 1024,
                     partAlignment: 4 * 1024,
                     partDivision: 1 * 1024 * 1024,
-                    maxPendingParts: getEGMaxPendingParts(6),
+                    maxPendingParts: 6,
                     decryptionState: decryptionState
                 ))
             }
@@ -697,7 +696,7 @@ private final class FetchImpl {
                             maxPartSize: self.cdnPartSize * 2,
                             partAlignment: self.cdnPartSize,
                             partDivision: 1 * 1024 * 1024,
-                            maxPendingParts: getEGMaxPendingParts(6),
+                            maxPendingParts: 6,
                             decryptionState: nil
                         ))
                         self.update()
@@ -746,7 +745,7 @@ private final class FetchImpl {
                                 maxPartSize: self.defaultPartSize,
                                 partAlignment: 4 * 1024,
                                 partDivision: 1 * 1024 * 1024,
-                                maxPendingParts: getEGMaxPendingParts(6),
+                                maxPendingParts: 6,
                                 decryptionState: nil
                             ))
                             
@@ -936,7 +935,7 @@ private final class FetchImpl {
                             maxPartSize: self.cdnPartSize * 2,
                             partAlignment: self.cdnPartSize,
                             partDivision: 1 * 1024 * 1024,
-                            maxPendingParts: getEGMaxPendingParts(6),
+                            maxPendingParts: 6,
                             decryptionState: nil
                         ))
                     case let .cdnRefresh(cdnData, refreshToken):

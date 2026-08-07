@@ -1,8 +1,6 @@
-import EGSimpleSettings
 import Foundation
 import UIKit
 import AsyncDisplayKit
-import Postbox
 import TelegramCore
 import Display
 import SwiftSignalKit
@@ -1476,7 +1474,5 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
 }
 
 public func shouldDisplayInlineDateReactions(message: EngineMessage, isPremium: Bool, forceInline: Bool) -> Bool {
-    // MARK: exteraGram
-    // With 10.13 it now hides reactions in favor of message effect badge
-    return EGSimpleSettings.shared.hideReactions
+    return false
 }

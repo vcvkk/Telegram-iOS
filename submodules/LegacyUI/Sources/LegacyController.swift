@@ -561,14 +561,14 @@ open class LegacyController: ViewController, PresentableController {
     
     public var disposables = DisposableSet()
             
-    public init(presentation: LegacyControllerPresentation, theme: PresentationTheme? = nil, strings: PresentationStrings? = nil, initialLayout: ContainerViewLayout? = nil, navigationBarStyle: NavigationBar.Style = .legacy) {
+    public init(presentation: LegacyControllerPresentation, theme: PresentationTheme? = nil, strings: PresentationStrings? = nil, initialLayout: ContainerViewLayout? = nil) {
         self.sizeClass.set(SSignal.single(UIUserInterfaceSizeClass.compact.rawValue as NSNumber))
         self.presentation = presentation
         self.validLayout = initialLayout
         
         let navigationBarPresentationData: NavigationBarPresentationData?
         if let theme = theme, let strings = strings, case .navigation = presentation {
-            navigationBarPresentationData = NavigationBarPresentationData(theme: NavigationBarTheme(rootControllerTheme: theme, style: navigationBarStyle), strings: NavigationBarStrings(presentationStrings: strings))
+            navigationBarPresentationData = NavigationBarPresentationData(theme: NavigationBarTheme(rootControllerTheme: theme), strings: NavigationBarStrings(presentationStrings: strings))
         } else {
             navigationBarPresentationData = nil
         }
@@ -590,7 +590,7 @@ open class LegacyController: ViewController, PresentableController {
         fatalError("init(coder:) has not been implemented")
     }
     
-    open func bind(controller: UIViewController) {
+    public func bind(controller: UIViewController) {
         self.legacyController = controller
         if let controller = controller as? TGViewController {
             controller.customRemoveFromParentViewController = { [weak self] in

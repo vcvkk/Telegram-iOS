@@ -4,16 +4,14 @@ import TelegramApi
 import SwiftSignalKit
 
 public struct ContentSettings: Equatable {
-    public static var `default` = ContentSettings(ignoreContentRestrictionReasons: [], addContentRestrictionReasons: [], appConfiguration: AppConfiguration.defaultValue)
+    public static var `default` = ContentSettings(ignoreContentRestrictionReasons: [], addContentRestrictionReasons: [])
     
     public var ignoreContentRestrictionReasons: Set<String>
     public var addContentRestrictionReasons: [String]
-    public var appConfiguration: AppConfiguration
     
-    public init(ignoreContentRestrictionReasons: Set<String>, addContentRestrictionReasons: [String], appConfiguration: AppConfiguration) {
+    public init(ignoreContentRestrictionReasons: Set<String>, addContentRestrictionReasons: [String]) {
         self.ignoreContentRestrictionReasons = ignoreContentRestrictionReasons
         self.addContentRestrictionReasons = addContentRestrictionReasons
-        self.appConfiguration = appConfiguration
     }
 }
 
@@ -29,9 +27,7 @@ extension ContentSettings {
                 addContentRestrictionReasons = addContentRestrictionReasonsData
             }
         }
-        // MARK: exteraGram
-        reasons += appConfiguration.egWebSettings.user.expandedContentReasons()
-        self.init(ignoreContentRestrictionReasons: Set(reasons), addContentRestrictionReasons: addContentRestrictionReasons, appConfiguration: appConfiguration)
+        self.init(ignoreContentRestrictionReasons: Set(reasons), addContentRestrictionReasons: addContentRestrictionReasons)
     }
 }
 

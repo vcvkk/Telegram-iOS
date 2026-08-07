@@ -1,4 +1,3 @@
-import EGSimpleSettings
 import Foundation
 import UIKit
 import TelegramCore
@@ -8,16 +7,16 @@ private extension PeerNameColors.Colors {
         if colors.colors.isEmpty {
             return nil
         }
-        self._main = UIColor(rgb: colors.colors[0])
+        self.main = UIColor(rgb: colors.colors[0])
         if colors.colors.count > 1 {
-            self._secondary = UIColor(rgb: colors.colors[1])
+            self.secondary = UIColor(rgb: colors.colors[1])
         } else {
-            self._secondary = nil
+            self.secondary = nil
         }
         if colors.colors.count > 2 {
-            self._tertiary = UIColor(rgb: colors.colors[2])
+            self.tertiary = UIColor(rgb: colors.colors[2])
         } else {
-            self._tertiary = nil
+            self.tertiary = nil
         }
     }
 }
@@ -30,67 +29,39 @@ public class PeerNameColors: Equatable {
     }
     
     public struct Colors: Equatable {
-        private let _main: UIColor
-        private let _secondary: UIColor?
-        private let _tertiary: UIColor?
-        // MARK: exteraGram
-        public var main: UIColor {
-            let currentSaturation = EGSimpleSettings.shared.accountColorsSaturation
-            if currentSaturation == 0 {
-                return _main
-            } else {
-                return _main.withReducedSaturation(CGFloat(currentSaturation) / 100.0)
-            }
-        }
-        
-        public var secondary: UIColor? {
-            let currentSaturation = EGSimpleSettings.shared.accountColorsSaturation
-            if currentSaturation == 0 {
-                return _secondary
-            } else {
-                return _secondary?.withReducedSaturation(CGFloat(currentSaturation) / 100.0)
-            }
-        }
-        
-        public var tertiary: UIColor? {
-            let currentSaturation = EGSimpleSettings.shared.accountColorsSaturation
-            if currentSaturation == 0 {
-                return _tertiary
-            } else {
-                return _tertiary?.withReducedSaturation(CGFloat(currentSaturation) / 100.0)
-            }
-        }
+        public let main: UIColor
+        public let secondary: UIColor?
+        public let tertiary: UIColor?
         
         public init(main: UIColor, secondary: UIColor?, tertiary: UIColor?) {
-            self._main = main
-            self._secondary = secondary
-            self._tertiary = tertiary
+            self.main = main
+            self.secondary = secondary
+            self.tertiary = tertiary
         }
         
         public init(main: UIColor) {
-            self._main = main
-            self._secondary = nil
-            self._tertiary = nil
+            self.main = main
+            self.secondary = nil
+            self.tertiary = nil
         }
         
         public init?(colors: [UIColor]) {
             guard let first = colors.first else {
                 return nil
             }
-            self._main = first
+            self.main = first
             if colors.count == 3 {
-                self._secondary = colors[1]
-                self._tertiary = colors[2]
+                self.secondary = colors[1]
+                self.tertiary = colors[2]
             } else if colors.count == 2, let second = colors.last {
-                self._secondary = second
-                self._tertiary = nil
+                self.secondary = second
+                self.tertiary = nil
             } else {
-                self._secondary = nil
-                self._tertiary = nil
+                self.secondary = nil
+                self.tertiary = nil
             }
         }
     }
-
     
     public static var defaultSingleColors: [Int32: Colors] {
         return [
@@ -388,22 +359,5 @@ public extension PeerCollectibleColor {
         } else {
             return nil
         }
-    }
-}
-
-// MARK: exteraGram
-extension UIColor {
-    func withReducedSaturation(_ factor: CGFloat) -> UIColor {
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
-
-        if self.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) {
-            let newSaturation = max(0, min(1, saturation * factor))
-            return UIColor(hue: hue, saturation: newSaturation, brightness: brightness, alpha: alpha)
-        }
-
-        return self
     }
 }

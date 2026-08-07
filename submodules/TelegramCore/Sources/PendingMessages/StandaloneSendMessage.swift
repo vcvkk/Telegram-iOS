@@ -265,7 +265,7 @@ public func standaloneSendEnqueueMessages(
             }
 
             var sendSignals: [Signal<Never, StandaloneSendMessagesError>] = []
-
+            
             for (content, media, attributes) in allResults {
                 var text: String = ""
                 switch content.content {
@@ -276,7 +276,7 @@ public func standaloneSendEnqueueMessages(
                 default:
                     break
                 }
-
+                
                 sendSignals.append(sendUploadedMessageContent(
                     postbox: postbox,
                     network: network,
@@ -360,55 +360,13 @@ private func sendUploadedMessageContent(
     threadId: Int64?
 ) -> Signal<Never, StandaloneSendMessagesError> {
     return postbox.transaction { transaction -> Signal<Never, StandaloneSendMessagesError> in
-        // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
-        let isPremium = transaction.getPeer(accountPeerId)?.isPremium ?? false
-        var apiRichMessage: Api.InputRichMessage?
         if peerId.namespace == Namespaces.Peer.SecretChat {
-            var secretFile: SecretChatOutgoingFile?
-            switch content.content {
-                case let .secretMedia(file, size, key):
-                    if let fileReference = SecretChatOutgoingFileReference(file) {
-                        secretFile = SecretChatOutgoingFile(reference: fileReference, size: size, key: key)
-                    }
-                default:
-                    break
-            }
-            
-            var layer: SecretChatLayer?
-            let state = transaction.getPeerChatState(peerId) as? SecretChatState
-            if let state = state {
-                switch state.embeddedState {
-                case .terminated, .handshake:
-                    break
-                case .basicLayer:
-                    layer = .layer8
-                case let .sequenceBasedLayer(sequenceState):
-                    layer = sequenceState.layerNegotiationState.activeLayer.secretChatLayer
-                }
-            }
-            
-            if let state = state, let layer = layer {
-                let messageContents = StandaloneSecretMessageContents(
-                    id: Int64.random(in: Int64.min ... Int64.max),
-                    text: text,
-                    attributes: attributes,
-                    media: media.first,
-                    file: secretFile
-                )
-                
-                let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: peerId, operation: .sendStandaloneMessage(layer: layer, contents: messageContents), state: state)
-                if updatedState != state {
-                    transaction.setPeerChatState(peerId, state: updatedState)
-                }
-                
-                return .fail(StandaloneSendMessagesError(peerId: peerId, reason: .none))
-            } else {
-                return .fail(StandaloneSendMessagesError(peerId: peerId, reason: .none))
-            }
+            return .fail(StandaloneSendMessagesError(peerId: peerId, reason: .none))
         } else if let peer = transaction.getPeer(peerId), let inputPeer = apiInputPeer(peer) {
             var uniqueId: Int64 = 0
             var forwardSourceInfoAttribute: ForwardSourceInfoAttribute?
             var messageEntities: [Api.MessageEntity]?
+            var apiRichMessage: Api.InputRichMessage?
             var replyMessageId: Int32?
             var topMsgId: Int32?
             var monoforumPeerId: Api.InputPeer?
@@ -460,7 +418,7 @@ private func sendUploadedMessageContent(
                             associatedPeers[peer.id] = peer
                         }
                     }
-                    messageEntities = apiTextAttributeEntities(attribute, associatedPeers: associatedPeers, isPremium: isPremium)
+                    messageEntities = apiTextAttributeEntities(attribute, associatedPeers: associatedPeers)
                 } else if let attribute = attribute as? OutgoingContentInfoMessageAttribute {
                     if attribute.flags.contains(.disableLinkPreviews) {
                         flags |= Int32(1 << 1)
@@ -735,15 +693,13 @@ public func standaloneSendMessage(account: Account, peerId: PeerId, text: String
 
 private func sendMessageContent(account: Account, peerId: PeerId, attributes: [MessageAttribute], content: StandaloneMessageContent, threadId: Int32?) -> Signal<Void, NoError> {
     return account.postbox.transaction { transaction -> Signal<Void, NoError> in
-        // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
-        let isPremium = transaction.getPeer(account.peerId)?.isPremium ?? false
-        var apiRichMessage: Api.InputRichMessage?
         if peerId.namespace == Namespaces.Peer.SecretChat {
             return .complete()
         } else if let peer = transaction.getPeer(peerId), let inputPeer = apiInputPeer(peer) {
             var uniqueId: Int64 = Int64.random(in: Int64.min ... Int64.max)
             //var forwardSourceInfoAttribute: ForwardSourceInfoAttribute?
             var messageEntities: [Api.MessageEntity]?
+            var apiRichMessage: Api.InputRichMessage?
             var replyMessageId: Int32?
             var replyToStoryId: StoryId?
             var scheduleTime: Int32?
@@ -765,7 +721,7 @@ private func sendMessageContent(account: Account, peerId: PeerId, attributes: [M
                 } else if let _ = attribute as? ForwardSourceInfoAttribute {
                     //forwardSourceInfoAttribute = attribute
                 } else if let attribute = attribute as? TextEntitiesMessageAttribute {
-                    messageEntities = apiTextAttributeEntities(attribute, associatedPeers: SimpleDictionary(), isPremium: isPremium)
+                    messageEntities = apiTextAttributeEntities(attribute, associatedPeers: SimpleDictionary())
                 } else if let attribute = attribute as? OutgoingContentInfoMessageAttribute {
                     if attribute.flags.contains(.disableLinkPreviews) {
                         flags |= Int32(1 << 1)

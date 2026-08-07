@@ -1,4 +1,3 @@
-import EGStrings
 import Foundation
 import UIKit
 import Display
@@ -140,15 +139,15 @@ public func logoutOptionsController(context: AccountContext, navigationControlle
         |> take(1)
         |> deliverOnMainQueue
         ).start(next: { accountAndPeer, accountsAndPeers in
-            var maximumAvailableAccounts: Int = maximumexteraGramNumberOfAccounts
+            var maximumAvailableAccounts: Int = 3
             if accountAndPeer?.1.isPremium == true && !context.account.testingEnvironment {
-                maximumAvailableAccounts = maximumexteraGramNumberOfAccounts
+                maximumAvailableAccounts = 4
             }
             var count: Int = 1
             for (accountContext, peer, _) in accountsAndPeers {
                 if !accountContext.account.testingEnvironment {
                     if peer.isPremium {
-                        maximumAvailableAccounts = maximumexteraGramNumberOfAccounts
+                        maximumAvailableAccounts = 4
                     }
                     count += 1
                 }
@@ -166,17 +165,7 @@ public func logoutOptionsController(context: AccountContext, navigationControlle
                 }
                 pushControllerImpl?(controller)
             } else {
-                if count + 1 > maximumSafeNumberOfAccounts {
-                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                    let alertController = textAlertController(context: context, title: presentationData.strings.ChatList_DeleteSavedMessagesConfirmationTitle, text: i18n("Auth.AccountBackupReminder", presentationData.strings.baseLanguageCode), actions: [
-                        TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {
-                            context.sharedContext.beginNewAuth(testingEnvironment: context.account.testingEnvironment)
-                        })
-                    ], dismissOnOutsideTap: false)
-                    presentControllerImpl?(alertController, nil)
-                } else {
-                    context.sharedContext.beginNewAuth(testingEnvironment: context.account.testingEnvironment)
-                }
+                context.sharedContext.beginNewAuth(testingEnvironment: context.account.testingEnvironment)
                 
                 dismissImpl?()
             }
@@ -303,7 +292,7 @@ public func logoutOptionsController(context: AccountContext, navigationControlle
         navigationController?.pushViewController(value, animated: false)
     }
     presentControllerImpl = { [weak controller] value, arguments in
-        controller?.present(value, in: .window(.root), with: arguments ?? ViewControllerPresentationArguments(presentationAnimation: .modalSheet))
+        controller?.present(value, in: .window(.root), with: arguments)
     }
     replaceTopControllerImpl = { [weak navigationController] c in
         navigationController?.replaceTopController(c, animated: true)

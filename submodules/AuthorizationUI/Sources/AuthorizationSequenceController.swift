@@ -1,10 +1,7 @@
-import EGStrings
-
 import Foundation
 import UIKit
 import AsyncDisplayKit
 import Display
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 import MtProtoKit
@@ -211,7 +208,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                 |> deliverOnMainQueue).startStandalone(next: { [weak self] authorizationPushConfiguration in
                     if let strongSelf = self {
                         strongSelf.actionDisposable.set((sendAuthorizationCode(accountManager: strongSelf.sharedContext.accountManager, account: strongSelf.account, phoneNumber: number, apiId: strongSelf.apiId, apiHash: strongSelf.apiHash, pushNotificationConfiguration: authorizationPushConfiguration, firebaseSecretStream: strongSelf.sharedContext.firebaseSecretStream, syncContacts: syncContacts, disableAuthTokens: disableAuthTokens, forcedPasswordSetupNotice: { value in
-                            guard let entry = CodableEntry(ApplicationSpecificCounterNotice(value: value)) else {
+                            guard let entry = EngineCodableEntry(ApplicationSpecificCounterNotice(value: value)) else {
                                 return nil
                             }
                             return (ApplicationSpecificNotice.forcedPasswordSetupKey(), entry)
@@ -329,7 +326,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                     passkey: passkey,
                     foreignDatacenter: nil,
                     forcedPasswordSetupNotice: { value in
-                        guard let entry = CodableEntry(ApplicationSpecificCounterNotice(value: value)) else {
+                        guard let entry = EngineCodableEntry(ApplicationSpecificCounterNotice(value: value)) else {
                             return nil
                         }
                         return (ApplicationSpecificNotice.forcedPasswordSetupKey(), entry)
@@ -520,7 +517,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                         }))
                     } else {
                         strongSelf.actionDisposable.set((authorizeWithCode(accountManager: strongSelf.sharedContext.accountManager, account: strongSelf.account, code: authorizationCode, termsOfService: termsOfService?.0, forcedPasswordSetupNotice: { value in
-                            guard let entry = CodableEntry(ApplicationSpecificCounterNotice(value: value)) else {
+                            guard let entry = EngineCodableEntry(ApplicationSpecificCounterNotice(value: value)) else {
                                 return nil
                             }
                             return (ApplicationSpecificNotice.forcedPasswordSetupKey(), entry)
@@ -648,10 +645,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                         let mnc = carrier.mobileNetworkCode ?? "none"
                         let _ = strongSelf.engine.auth.reportMissingCode(phoneNumber: number, phoneCodeHash: phoneCodeHash, mnc: mnc).start()
                         
-                        // MARK: exteraGram
-                        controller.present(standardTextAlertController(theme: AlertControllerTheme(presentationData: strongSelf.presentationData), title: nil, text: i18n("Auth.UnofficialAppCodeTitle", strongSelf.presentationData.strings.baseLanguageCode), actions: [TextAlertAction(type: .defaultAction, title: i18n("Common.OpenTelegram", strongSelf.presentationData.strings.baseLanguageCode), action: {
-                            strongSelf.sharedContext.applicationBindings.openUrl("https://t.me/+42777")
-                        })]), in: .window(.root))
+                        AuthorizationSequenceController.presentDidNotGetCodeUI(sharedContext: strongSelf.sharedContext, controller: controller, presentationData: strongSelf.presentationData, phoneNumber: number, mnc: mnc)
                     }
                 } else {
                     controller?.inProgress = true
@@ -862,7 +856,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
             } else {
                 self.actionDisposable.set(
                     authorizeWithCode(accountManager: self.sharedContext.accountManager, account: self.account, code: .emailVerification(.appleToken(token)), termsOfService: nil, forcedPasswordSetupNotice: { value in
-                        guard let entry = CodableEntry(ApplicationSpecificCounterNotice(value: value)) else {
+                        guard let entry = EngineCodableEntry(ApplicationSpecificCounterNotice(value: value)) else {
                             return nil
                         }
                         return (ApplicationSpecificNotice.forcedPasswordSetupKey(), entry)
@@ -1002,7 +996,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
         controller.reset = { [weak self, weak controller] in
             if let strongSelf = self, let strongController = controller {
                 strongController.present(textAlertController(sharedContext: strongSelf.sharedContext, title: nil, text: suggestReset ? strongSelf.presentationData.strings.TwoStepAuth_RecoveryFailed : strongSelf.presentationData.strings.TwoStepAuth_RecoveryUnavailable, actions: [
-                    TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
+                    TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
                     TextAlertAction(type: .destructiveAction, title: strongSelf.presentationData.strings.Login_ResetAccountProtected_Reset, action: {
                         if let strongSelf = self, let strongController = controller {
                             strongController.inProgress = true
@@ -1089,7 +1083,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
             controller.reset = { [weak self, weak controller] in
                 if let strongSelf = self, let strongController = controller {
                     strongController.present(textAlertController(sharedContext: strongSelf.sharedContext, title: nil, text: strongSelf.presentationData.strings.TwoStepAuth_ResetAccountConfirmation, actions: [
-                        TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
+                        TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
                         TextAlertAction(type: .destructiveAction, title: strongSelf.presentationData.strings.Login_ResetAccountProtected_Reset, action: {
                             if let strongSelf = self, let strongController = controller {
                                 strongController.inProgress = true
@@ -1164,7 +1158,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                     let avatarVideo: Signal<UploadedPeerPhotoData?, NoError>?
                     if let avatarAsset = avatarAsset as? AVAsset {
                         let engine = strongSelf.engine
-                        avatarVideo = Signal<TelegramMediaResource?, NoError> { subscriber in
+                        avatarVideo = Signal<EngineMediaResource?, NoError> { subscriber in
                             let entityRenderer: LegacyPaintEntityRenderer? = avatarAdjustments.flatMap { adjustments in
                                 if let paintingData = adjustments.paintingData, paintingData.hasAnimation {
                                     return LegacyPaintEntityRenderer(postbox: nil, adjustments: adjustments)
@@ -1182,8 +1176,8 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                                     if stat(result.fileURL.path, &value) == 0 {
                                         if let data = try? Data(contentsOf: result.fileURL) {
                                             let resource = LocalFileMediaResource(fileId: Int64.random(in: Int64.min ... Int64.max))
-                                            engine.account.postbox.mediaBox.storeResourceData(resource.id, data: data, synchronous: true)
-                                            subscriber.putNext(resource)
+                                            engine.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: data, synchronous: true)
+                                            subscriber.putNext(EngineMediaResource(resource))
                                             
                                             EngineTempBox.shared.dispose(tempFile)
                                         }
@@ -1203,7 +1197,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                         }
                         |> mapToSignal { resource -> Signal<UploadedPeerPhotoData?, NoError> in
                             if let resource = resource {
-                                return engine.auth.uploadedPeerVideo(resource: EngineMediaResource(resource)) |> map(Optional.init)
+                                return engine.auth.uploadedPeerVideo(resource: resource) |> map(Optional.init)
                             } else {
                                 return .single(nil)
                             }
@@ -1213,7 +1207,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                     }
                     
                     strongSelf.actionDisposable.set((signUpWithName(accountManager: strongSelf.sharedContext.accountManager, account: strongSelf.account, firstName: firstName, lastName: lastName, avatarData: avatarData, avatarVideo: avatarVideo, videoStartTimestamp: videoStartTimestamp, disableJoinNotifications: !announceSignUp, forcedPasswordSetupNotice: { value in
-                        guard let entry = CodableEntry(ApplicationSpecificCounterNotice(value: value)) else {
+                        guard let entry = EngineCodableEntry(ApplicationSpecificCounterNotice(value: value)) else {
                             return nil
                         }
                         return (ApplicationSpecificNotice.forcedPasswordSetupKey(), entry)

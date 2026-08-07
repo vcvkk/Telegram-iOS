@@ -785,11 +785,11 @@ public func channelBannedMemberController(context: AccountContext, updatedPresen
                 updatedPresentationData: updatedPresentationData,
                 configuration: ChatTimerScreen.Configuration(
                     style: .default,
-                    picker: .dateTime, // MARK: exteraGram
+                    picker: .date,
                     currentValue: Int32(Date().timeIntervalSince1970),
                     minimumDate: Date(),
                     maximumDate: Date(timeIntervalSince1970: Double(Int32.max - 1)),
-                    pickerValueMapping: .rawTimestamp, // MARK: exteraGram
+                    pickerValueMapping: .roundDateToDaysUTC,
                     primaryActionTitle: { strings, _, _ in
                         strings.Wallpaper_Set
                     }
@@ -848,7 +848,7 @@ public func channelBannedMemberController(context: AccountContext, updatedPresen
             guard let peer else {
                 return
             }
-            if let controller = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: updatedPresentationData, peer: peer._asPeer(), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+            if let controller = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: updatedPresentationData, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
                 pushControllerImpl?(controller)
             }
         })

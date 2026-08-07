@@ -64,8 +64,6 @@ public enum PresentationResourceKey: Int32 {
     case itemListCloudFetchIcon
     case itemListCloseIconImage
     case itemListRemoveIconImage
-    case itemListMakeVisibleIcon
-    case itemListMakeInvisibleIcon
     case itemListEditThemeIcon
     case itemListCornersTop
     case itemListCornersBottom
@@ -325,10 +323,6 @@ public enum PresentationResourceKey: Int32 {
     case chatFreeMoreButtonIcon
     case chatFreeExpandButtonIcon
     case chatFreeCollapseButtonIcon
-    
-    // MARK: exteraGram
-    case chatTranslateButtonIcon
-    case chatUndoTranslateButtonIcon
     
     case chatKeyboardActionButtonMessageIcon
     case chatKeyboardActionButtonLinkIcon

@@ -1,6 +1,5 @@
 import Foundation
 import UIKit
-import Postbox
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
@@ -55,8 +54,7 @@ public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContent
                         return
                     } else {
                         if content.embedUrl == nil && (content.title != nil || content.text != nil) && content.story == nil {
-                            // MARK: exteraGram
-                            var shouldOpenUrl = false
+                            var shouldOpenUrl = true
                             if let file = content.file {
                                 if file.isVideo {
                                     shouldOpenUrl = false
@@ -226,7 +224,7 @@ public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContent
             var text: String?
             var entities: [MessageTextEntity]?
             var titleBadge: String?
-            var mediaAndFlags: ([Media], ChatMessageAttachedContentNodeMediaFlags)?
+            var mediaAndFlags: ([EngineRawMedia], ChatMessageAttachedContentNodeMediaFlags)?
             var badge: String?
             
             var actionIcon: ChatMessageAttachedContentActionIcon?
@@ -259,7 +257,7 @@ public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContent
                     entities = generateTextEntities(textValue, enabledTypes: entityTypes)
                 }
                 
-                var mainMedia: Media?
+                var mainMedia: EngineRawMedia?
 
                 var automaticPlayback = false
                 
@@ -271,19 +269,19 @@ public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContent
                     if case .full = automaticDownload {
                         automaticPlayback = true
                     } else {
-                        automaticPlayback = item.context.account.postbox.mediaBox.completedResourcePath(file.resource) != nil
+                        automaticPlayback = item.context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(file.resource.id)) != nil
                     }
                 }
                 
                 switch type {
-                    case .instagram, .twitter:
-                        if automaticPlayback {
-                            mainMedia = webpage.story ?? webpage.file ?? webpage.image
-                        } else {
-                            mainMedia = webpage.story ?? webpage.image ?? webpage.file
-                        }
-                    default:
+                case .instagram, .twitter:
+                    if automaticPlayback {
                         mainMedia = webpage.story ?? webpage.file ?? webpage.image
+                    } else {
+                        mainMedia = webpage.story ?? webpage.image ?? webpage.file
+                    }
+                default:
+                    mainMedia = webpage.story ?? webpage.file ?? webpage.image
                 }
                 
                 let themeMimeType = "application/x-tgtheme-ios"
@@ -523,6 +521,16 @@ public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContent
                             actionTitle = item.presentationData.strings.Chat_ContactChannel
                         case "telegram_newbot":
                             actionTitle = item.presentationData.strings.Chat_CreateBotLink
+                        case "telegram_aicomposetone":
+                            actionTitle = "VIEW STYLE"
+                        
+                            for attribute in webpage.attributes {
+                                if case let .aiTextStyle(aiTextStyle) = attribute {
+                                    if let file = item.message.associatedMedia[EngineMedia.Id(namespace: Namespaces.Media.CloudFile, id: aiTextStyle.emojiFileId)] {
+                                        mediaAndFlags = ([file], [.preferMediaInline])
+                                    }
+                                }
+                            }
                         default:
                             break
                     }
@@ -735,13 +743,13 @@ public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContent
         return ChatMessageBubbleContentTapAction(content: .none)
     }
     
-    override public func updateHiddenMedia(_ media: [Media]?) -> Bool {
+    override public func updateHiddenMedia(_ media: [EngineRawMedia]?) -> Bool {
         if let media = media {
             var updatedMedia = media
             if let current = self.webPage, case let .Loaded(content) = current.content {
                 for item in media {
                     if let webpage = item as? TelegramMediaWebpage, webpage.id == current.id {
-                        var mediaList: [Media] = [webpage]
+                        var mediaList: [EngineRawMedia] = [webpage]
                         if let image = content.image {
                             mediaList.append(image)
                         }
@@ -753,7 +761,7 @@ public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContent
                         }
                         updatedMedia = mediaList
                     } else if let id = item.id, content.file?.id == id || content.image?.id == id {
-                        var mediaList: [Media] = [current]
+                        var mediaList: [EngineRawMedia] = [current]
                         if let image = content.image {
                             mediaList.append(image)
                         }
@@ -773,7 +781,7 @@ public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContent
         }
     }
     
-    override public func transitionNode(messageId: MessageId, media: Media, adjustRect: Bool) -> (ASDisplayNode, CGRect, () -> (UIView?, UIView?))? {
+    override public func transitionNode(messageId: EngineMessage.Id, media: EngineRawMedia, adjustRect: Bool) -> (ASDisplayNode, CGRect, () -> (UIView?, UIView?))? {
         if self.item?.message.id != messageId {
             return nil
         }

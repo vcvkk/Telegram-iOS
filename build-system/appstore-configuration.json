@@ -1,7 +1,7 @@
 {
-	"bundle_id": "app.exteragram.ios",
-	"api_id": "21977786",
-	"api_hash": "e5e920b59e3bfc13101fd3f07d4883fd",
+	"bundle_id": "ph.telegra.Telegraph",
+	"api_id": "8",
+	"api_hash": "7245de8e747a0d6fbe11f7cc14fcc0bb",
 	"team_id": "C67CF9S4VU",
 	"app_center_id": "0",
 	"is_internal_build": "false",
@@ -9,7 +9,6 @@
 	"appstore_id": "686449807",
 	"app_specific_url_scheme": "tg",
 	"premium_iap_product_id": "org.telegram.telegramPremium.monthly",
-	"enable_siri": false,
-	"enable_icloud": false,
-	"eg_config": "{\"api_url\":\"https://api.exteragram.app/api\",\"webapp_url\":\"https://my.swiftgram.app\",\"bot_username\":\"exteraGramBot\",\"iaps\":[]}"
+	"enable_siri": true,
+	"enable_icloud": true
 }

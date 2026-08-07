@@ -1,4 +1,3 @@
-import EGSimpleSettings
 import Foundation
 import UIKit
 import Display
@@ -712,8 +711,8 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                 }
             }
             
-            if useLegacyCamera && !EGSimpleSettings.shared.disableGalleryCamera {
-                let enableAnimations = self.controller?.context.sharedContext.energyUsageSettings.fullTranslucency ?? true && !EGSimpleSettings.shared.disableGalleryCameraPreview
+            if useLegacyCamera {
+                let enableAnimations = self.controller?.context.sharedContext.energyUsageSettings.fullTranslucency ?? true
   
                 let cameraView = TGAttachmentCameraView(forSelfPortrait: false, videoModeByDefault: controller.bannedSendPhotos != nil && controller.bannedSendVideos == nil)!
                 cameraView.clipsToBounds = true
@@ -736,7 +735,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                 
                 self.gridNode.scrollView.addSubview(cameraView)
                 self.gridNode.addSubnode(self.cameraActivateAreaNode)
-            } else if useModernCamera, !Camera.isIpad, !EGSimpleSettings.shared.disableGalleryCamera {
+            } else if useModernCamera, !Camera.isIpad {
                 #if !targetEnvironment(simulator)
                 var cameraPosition: Camera.Position = .back
                 if case .assets(nil, .createAvatar) = controller.subject {
@@ -901,18 +900,14 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
             let isCameraActive = !self.isSuspended && !self.hasGallery && self.isCameraPreviewVisible
             if let cameraView = self.cameraView {
                 if isCameraActive {
-                    if !EGSimpleSettings.shared.disableGalleryCameraPreview {
-                        cameraView.resumePreview()
-                    }
+                    cameraView.resumePreview()
                 } else {
                     cameraView.pausePreview()
                 }
             } else if let camera = self.modernCamera, let cameraView = self.modernCameraView {
                 if isCameraActive {
-                    if !EGSimpleSettings.shared.disableGalleryCameraPreview {
-                        cameraView.isEnabled = true
-                        camera.startCapture()
-                    }
+                    cameraView.isEnabled = true
+                    camera.startCapture()
                 } else {
                     cameraView.isEnabled = false
                     camera.stopCapture()

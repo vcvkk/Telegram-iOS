@@ -7,7 +7,6 @@ import TelegramPresentationData
 import AccountContext
 import ContextUI
 import TelegramCore
-import Postbox
 import TextFormat
 import ReactionSelectionNode
 import ViewControllerComponent
@@ -52,6 +51,8 @@ public protocol ChatSendMessageContextScreenMediaPreview: AnyObject {
 
 public protocol ChatSendMessageContextScreenRichTextPreview: AnyObject {
     var view: UIView { get }
+    // Lays out the rich content for the given bubble width and theme, returning its content
+    // size. Called every layout pass; the implementation memoizes internally.
     func update(boundingWidth: CGFloat, presentationData: PresentationData, transition: ComponentTransition) -> CGSize
 }
 
@@ -78,7 +79,6 @@ extension ChatInputTextView: ChatSendMessageContextScreenTextInputSource {
 final class ChatSendMessageContextScreenComponent: Component {
     typealias EnvironmentType = ViewControllerComponentContainer.Environment
     
-    let egTranslationContext: (outgoingMessageTranslateToLang: String?, translate: (() -> Void)?, changeTranslationLanguage: (() -> ())?)
     let initialData: ChatSendMessageContextScreen.InitialData
     let context: AccountContext
     let updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?
@@ -99,9 +99,8 @@ final class ChatSendMessageContextScreenComponent: Component {
     let availableMessageEffects: AvailableMessageEffects?
     let isPremium: Bool
     let richTextPreview: ChatSendMessageContextScreenRichTextPreview?
-    // MARK: exteraGram
+
     init(
-        egTranslationContext: (outgoingMessageTranslateToLang: String?, translate: (() -> Void)?, changeTranslationLanguage: (() -> ())?) = (outgoingMessageTranslateToLang: nil, translate: nil, changeTranslationLanguage: nil),
         initialData: ChatSendMessageContextScreen.InitialData,
         context: AccountContext,
         updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?,
@@ -123,7 +122,6 @@ final class ChatSendMessageContextScreenComponent: Component {
         isPremium: Bool,
         richTextPreview: ChatSendMessageContextScreenRichTextPreview? = nil
     ) {
-        self.egTranslationContext = egTranslationContext
         self.initialData = initialData
         self.context = context
         self.updatedPresentationData = updatedPresentationData
@@ -677,78 +675,6 @@ final class ChatSendMessageContextScreenComponent: Component {
                 )))
             }
             
-            // MARK: exteraGram
-            if !isSecret {
-                if let outgoingMessageTranslateToLang = component.egTranslationContext.outgoingMessageTranslateToLang {
-                    var languageCode = presentationData.strings.baseLanguageCode
-                    let rawSuffix = "-raw"
-                    if languageCode.hasSuffix(rawSuffix) {
-                        languageCode = String(languageCode.dropLast(rawSuffix.count))
-                    }
-                   
-                    // Assuming, user want to send message in the same language the chat is
-                    let toLang = outgoingMessageTranslateToLang
-                    let key = "Translation.Language.\(toLang)"
-                    let translateTitle: String
-                    if let string = presentationData.strings.primaryComponent.dict[key] {
-                        translateTitle = presentationData.strings.Conversation_Translation_TranslateTo(string).string
-                    } else {
-                        let languageLocale = Locale(identifier: languageCode)
-                        let toLanguage = languageLocale.localizedString(forLanguageCode: toLang) ?? ""
-                        translateTitle = presentationData.strings.Conversation_Translation_TranslateToOther(toLanguage).string
-                    }
-                    
-                    items.append(.action(ContextMenuActionItem(
-                        id: AnyHashable("egTranslate"),
-                        text: translateTitle,
-                        icon: { theme in
-                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Translate"), color: theme.contextMenu.primaryColor)
-                        }, action: { [weak self] _, _ in
-                            guard let self, let component = self.component else {
-                                return
-                            }
-                            self.animateOutToEmpty = true
-                            
-                            component.egTranslationContext.translate?()
-                            self.environment?.controller()?.dismiss()
-                        }
-                    )))
-                   
-                    items.append(.action(ContextMenuActionItem(
-                        id: AnyHashable("egChangeTranslateLang"),
-                        text: presentationData.strings.Translate_ChangeLanguage,
-                        icon: { theme in
-                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Caption"), color: theme.contextMenu.primaryColor)
-                        }, action: { [weak self] _, _ in
-                            guard let self, let component = self.component else {
-                                return
-                            }
-                            self.animateOutToEmpty = true
-                            
-                            self.environment?.controller()?.dismiss()
-                            component.egTranslationContext.changeTranslationLanguage?()
-                        }
-                    )))
-                   
-                } else {
-                    items.append(.action(ContextMenuActionItem(
-                        id: AnyHashable("egChangeTranslateLang"),
-                        text: presentationData.strings.Conversation_Translation_TranslateToOther("...").string,
-                        icon: { theme in
-                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Caption"), color: theme.contextMenu.primaryColor)
-                        }, action: { [weak self] _, _ in
-                            guard let self, let component = self.component else {
-                                return
-                            }
-                            self.animateOutToEmpty = true
-                            
-                            self.environment?.controller()?.dismiss()
-                            component.egTranslationContext.changeTranslationLanguage?()
-                        }
-                    )))
-                }
-            }
-            
             if case .separator = items.last {
                 items.removeLast()
             }
@@ -879,10 +805,11 @@ final class ChatSendMessageContextScreenComponent: Component {
             if case .editMessage = component.params {
                 isEditMessage = true
             }
-            
-            // The bubble's right edge is pinned to the send button, so constrain the
-            // rich layout to the span between that edge and a fixed left margin
-            // instead of letting it use the full container width.
+
+            // The bubble's right edge is pinned to the send button (see readyMessageItemFrame).
+            // Constrain the rich layout to the span between that edge and a fixed left margin
+            // (independent of where the source text input sits) so it isn't laid out at the
+            // full container width.
             let richSendButtonWidth: CGFloat
             if component.sourceSendButton is ContextExtractedContentContainingView {
                 richSendButtonWidth = sourceSendButtonFrame.width
@@ -906,7 +833,7 @@ final class ChatSendMessageContextScreenComponent: Component {
                 mediaCaptionIsAbove: self.mediaCaptionIsAbove,
                 textInsets: messageTextInsets,
                 explicitBackgroundSize: explicitMessageBackgroundSize,
-                maxTextWidth: localSourceTextInputViewFrame.width,
+                maxTextWidth: component.richTextPreview != nil ? maxRichBubbleWidth : localSourceTextInputViewFrame.width,
                 maxTextHeight: 20000.0,
                 containerSize: messageItemViewContainerSize,
                 effect: self.presentationAnimationState.key == .animatedIn ? self.selectedMessageEffect : nil,
@@ -1088,7 +1015,7 @@ final class ChatSendMessageContextScreenComponent: Component {
                                 })
                             }
                             
-                            var customEffectResource: (FileMediaReference, MediaResource)?
+                            var customEffectResource: (FileMediaReference, TelegramMediaResource)?
                             if let effectAnimation = messageEffect.effectAnimation?._parse() {
                                 customEffectResource = (FileMediaReference.standalone(media: effectAnimation), effectAnimation.resource)
                             } else {
@@ -1106,7 +1033,7 @@ final class ChatSendMessageContextScreenComponent: Component {
                             loadEffectAnimationSignal = Signal { subscriber in
                                 let fetchDisposable = freeMediaFileResourceInteractiveFetched(account: context.account, userLocation: .other, fileReference: customEffectResourceFileReference, resource: customEffectResource).start()
                                 
-                                let dataDisposabke = (context.account.postbox.mediaBox.resourceStatus(customEffectResource)
+                                let dataDisposabke = (context.engine.resources.status(resource: EngineMediaResource(customEffectResource))
                                 |> filter { status in
                                     if status == .Local {
                                         return true
@@ -1169,7 +1096,7 @@ final class ChatSendMessageContextScreenComponent: Component {
                                 standaloneReactionAnimation.updateLayout(size: effectFrame.size)
                                 self.addSubnode(standaloneReactionAnimation)
                                 
-                                let pathPrefix = component.context.account.postbox.mediaBox.shortLivedResourceCachePathPrefix(customEffectResource.id)
+                                let pathPrefix = component.context.engine.resources.shortLivedResourceCachePathPrefix(id: EngineMediaResource.Id(customEffectResource.id))
                                 let source = AnimatedStickerResourceSource(account: component.context.account, resource: customEffectResource, fitzModifier: nil)
                                 standaloneReactionAnimation.setup(source: source, width: Int(effectSize.width * effectiveScale), height: Int(effectSize.height * effectiveScale), playbackMode: .once, mode: .direct(cachePathPrefix: pathPrefix))
                                 standaloneReactionAnimation.completed = { [weak self, weak standaloneReactionAnimation] _ in
@@ -1570,7 +1497,6 @@ public class ChatSendMessageContextScreen: ViewControllerComponentContainer, Cha
     }
     
     public init(
-        egTranslationContext: (outgoingMessageTranslateToLang: String?, translate: (() -> Void)?, changeTranslationLanguage: (() -> ())?) = (outgoingMessageTranslateToLang: nil, translate: nil, changeTranslationLanguage: nil),
         initialData: InitialData,
         context: AccountContext,
         updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?,
@@ -1593,11 +1519,10 @@ public class ChatSendMessageContextScreen: ViewControllerComponentContainer, Cha
         richTextPreview: ChatSendMessageContextScreenRichTextPreview? = nil
     ) {
         self.context = context
-        
+
         super.init(
             context: context,
             component: ChatSendMessageContextScreenComponent(
-                egTranslationContext: egTranslationContext,
                 initialData: initialData,
                 context: context,
                 updatedPresentationData: updatedPresentationData,

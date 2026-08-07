@@ -4,7 +4,6 @@ import AsyncDisplayKit
 import Display
 import TelegramCore
 import SwiftSignalKit
-import Postbox
 import TelegramPresentationData
 import TelegramUIPreferences
 import AvatarNode
@@ -17,13 +16,13 @@ final class MentionChatInputPanelItem: ListViewItem {
     fileprivate let revealed: Bool
     fileprivate let inverted: Bool
     fileprivate let peer: EnginePeer
-    fileprivate let peerSelected: (EnginePeer, Bool) -> Void
+    private let peerSelected: (EnginePeer) -> Void
     fileprivate let setPeerIdRevealed: (EnginePeer.Id?) -> Void
     fileprivate let removeRequested: (EnginePeer.Id) -> Void
-    
+
     let selectable: Bool = true
-    
-    public init(context: AccountContext, presentationData: ItemListPresentationData, inverted: Bool, peer: EnginePeer, revealed: Bool, setPeerIdRevealed: @escaping (PeerId?) -> Void, peerSelected: @escaping (EnginePeer, Bool) -> Void, removeRequested: @escaping (PeerId) -> Void) {
+
+    public init(context: AccountContext, presentationData: ItemListPresentationData, inverted: Bool, peer: EnginePeer, revealed: Bool, setPeerIdRevealed: @escaping (EnginePeer.Id?) -> Void, peerSelected: @escaping (EnginePeer) -> Void, removeRequested: @escaping (EnginePeer.Id) -> Void) {
         self.context = context
         self.presentationData = presentationData
         self.inverted = inverted
@@ -85,14 +84,14 @@ final class MentionChatInputPanelItem: ListViewItem {
         if self.revealed {
             self.setPeerIdRevealed(nil)
         } else {
-            self.peerSelected(self.peer, false)
+            self.peerSelected(self.peer)
         }
     }
 }
 
 private let avatarFont = avatarPlaceholderFont(size: 16.0)
 
-final class MentionChatInputPanelItemNode: ListViewItemNode, UIGestureRecognizerDelegate {
+final class MentionChatInputPanelItemNode: ListViewItemNode {
     static let itemHeight: CGFloat = 42.0
         
     private let avatarNode: AvatarNode
@@ -142,16 +141,7 @@ final class MentionChatInputPanelItemNode: ListViewItemNode, UIGestureRecognizer
         let recognizer = ItemListRevealOptionsGestureRecognizer(target: self, action: #selector(self.revealGesture(_:)))
         self.recognizer = recognizer
         recognizer.allowAnyDirection = false
-        // MARK: exteraGram
-        recognizer.delegate = self
-        //
         self.view.addGestureRecognizer(recognizer)
-        
-        // MARK: exteraGram
-        let longPressRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(self.longPressed(_:)))
-        longPressRecognizer.minimumPressDuration = 0.3
-        longPressRecognizer.delegate = self
-        self.view.addGestureRecognizer(longPressRecognizer)
     }
     
     override public func layoutForParams(_ params: ListViewItemLayoutParams, item: ListViewItem, previousItem: ListViewItem?, nextItem: ListViewItem?) {
@@ -230,8 +220,8 @@ final class MentionChatInputPanelItemNode: ListViewItemNode, UIGestureRecognizer
                     strongSelf.activateAreaNode.accessibilityValue = username
                     strongSelf.activateAreaNode.frame = CGRect(origin: .zero, size: nodeLayout.size)
                     
-                    if case let .user(user) = item.peer, let _ = user.botInfo {
-                        strongSelf.setRevealOptions([ItemListRevealOption(key: 0, title: item.presentationData.strings.Common_Delete, icon: .none, color: item.presentationData.theme.list.itemDisclosureActions.destructive.fillColor, iconColor: item.presentationData.theme.list.itemDisclosureActions.destructive.foregroundColor, textColor: item.presentationData.theme.list.itemDisclosureActions.destructive.foregroundColor)])
+                    if case let .user(peer) = item.peer, let _ = peer.botInfo {
+                        strongSelf.setRevealOptions([ItemListRevealOption(key: 0, title: item.presentationData.strings.Common_Delete, icon: .none, color: item.presentationData.theme.list.itemDisclosureActions.destructive.fillColor, iconColor: item.presentationData.theme.list.itemDisclosureActions.destructive.foregroundColor, textColor: item.presentationData.theme.list.itemSecondaryTextColor)])
                         strongSelf.setRevealOptionsOpened(item.revealed, animated: animation.isAnimated)
                     } else {
                         strongSelf.setRevealOptions([])
@@ -328,13 +318,11 @@ final class MentionChatInputPanelItemNode: ListViewItemNode, UIGestureRecognizer
     }
     
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        if gestureRecognizer is ItemListRevealOptionsGestureRecognizer && otherGestureRecognizer is UILongPressGestureRecognizer {
+        if let recognizer = self.recognizer, otherGestureRecognizer == recognizer {
             return true
+        } else {
+            return false
         }
-        if gestureRecognizer is UILongPressGestureRecognizer && otherGestureRecognizer is ItemListRevealOptionsGestureRecognizer {
-            return true
-        }
-        return false
     }
     
     @objc func revealGesture(_ recognizer: ItemListRevealOptionsGestureRecognizer) {
@@ -473,23 +461,5 @@ final class MentionChatInputPanelItemNode: ListViewItemNode, UIGestureRecognizer
             self.hapticFeedback = HapticFeedback()
         }
         self.hapticFeedback?.impact(.medium)
-    }
-}
-
-
-
-
-
-// MARK: exteraGram
-extension MentionChatInputPanelItemNode {
-    @objc private func longPressed(_ gestureRecognizer: UILongPressGestureRecognizer) {
-        switch gestureRecognizer.state {
-            case .began:
-                if let item = self.item {
-                    item.peerSelected(item.peer, true)
-                }
-            default:
-                break
-        }
     }
 }

@@ -117,8 +117,7 @@ static TGVideoEditAdjustments *TGMediaAssetsPatchedLivePhotoAdjustments(PGPhotoE
         }
     }
 
-    // MARK: exteraGram
-    TGVideoEditAdjustments *patchedAdjustments = [TGVideoEditAdjustments editAdjustmentsWithOriginalSize:videoAdjustments.originalSize cropRect:videoAdjustments.cropRect cropOrientation:videoAdjustments.cropOrientation cropRotation:videoAdjustments.cropRotation cropLockedAspectRatio:videoAdjustments.cropLockedAspectRatio cropMirrored:videoAdjustments.cropMirrored trimStartValue:videoAdjustments.trimStartValue trimEndValue:videoAdjustments.trimEndValue toolValues:videoAdjustments.toolValues paintingData:patchedPaintingData sendAsGif:videoAdjustments.sendAsGif sendAsTelescope:videoAdjustments.sendAsTelescope preset:videoAdjustments.preset];
+    TGVideoEditAdjustments *patchedAdjustments = [TGVideoEditAdjustments editAdjustmentsWithOriginalSize:videoAdjustments.originalSize cropRect:videoAdjustments.cropRect cropOrientation:videoAdjustments.cropOrientation cropRotation:videoAdjustments.cropRotation cropLockedAspectRatio:videoAdjustments.cropLockedAspectRatio cropMirrored:videoAdjustments.cropMirrored trimStartValue:videoAdjustments.trimStartValue trimEndValue:videoAdjustments.trimEndValue toolValues:videoAdjustments.toolValues paintingData:patchedPaintingData sendAsGif:videoAdjustments.sendAsGif preset:videoAdjustments.preset];
     if (patchedAdjustments == nil)
         return videoAdjustments;
 
@@ -579,7 +578,7 @@ static TGVideoEditAdjustments *TGMediaAssetsPatchedLivePhotoAdjustments(PGPhotoE
                     }
                     
                     id<TGMediaEditAdjustments> adjustments = [strongSelf->_editingContext adjustmentsForItem:asset];
-                    if ([adjustments isKindOfClass:[TGMediaVideoEditAdjustments class]] && (((TGMediaVideoEditAdjustments *)adjustments).sendAsGif || ((TGMediaVideoEditAdjustments *)adjustments).sendAsTelescope))
+                    if ([adjustments isKindOfClass:[TGMediaVideoEditAdjustments class]] && ((TGMediaVideoEditAdjustments *)adjustments).sendAsGif)
                     {
                         onlyGroupableMedia = false;
                         break;
@@ -1065,7 +1064,7 @@ static TGVideoEditAdjustments *TGMediaAssetsPatchedLivePhotoAdjustments(PGPhotoE
             id<TGMediaEditAdjustments> adjustments = [editingContext adjustmentsForItem:asset];
             if ([adjustments isKindOfClass:[TGVideoEditAdjustments class]]) {
                 TGVideoEditAdjustments *videoAdjustments = (TGVideoEditAdjustments *)adjustments;
-                if (videoAdjustments.sendAsGif || videoAdjustments.sendAsTelescope) {
+                if (videoAdjustments.sendAsGif) {
                     grouping = false;
                 }
             }
@@ -1635,7 +1634,7 @@ static TGVideoEditAdjustments *TGMediaAssetsPatchedLivePhotoAdjustments(PGPhotoE
             id<TGMediaEditAdjustments> adjustments = [editingContext adjustmentsForItem:asset];
             if ([adjustments isKindOfClass:[TGVideoEditAdjustments class]]) {
                 TGVideoEditAdjustments *videoAdjustments = (TGVideoEditAdjustments *)adjustments;
-                if (videoAdjustments.sendAsGif || videoAdjustments.sendAsTelescope) {
+                if (videoAdjustments.sendAsGif) {
                     grouping = false;
                 }
             }

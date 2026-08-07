@@ -1,10 +1,5 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
-egdeps = [
-    "//exteraGram/EGSimpleSettings:EGSimpleSettings" 
-]
-
-
 swift_library(
     name = "ChatMessageInteractiveFileNode",
     module_name = "ChatMessageInteractiveFileNode",
@@ -14,7 +9,7 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = egdeps + [
+    deps = [
         "//submodules/AsyncDisplayKit",
         "//submodules/Postbox",
         "//submodules/SSignalKit/SwiftSignalKit",

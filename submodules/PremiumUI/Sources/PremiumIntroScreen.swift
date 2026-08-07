@@ -1,4 +1,3 @@
-import EGStrings
 import Foundation
 import Foundation
 import UIKit
@@ -11,7 +10,6 @@ import TelegramPresentationData
 import PresentationDataUtils
 import ViewControllerComponent
 import AccountContext
-import SolidRoundedButtonComponent
 import ButtonComponent
 import MultilineTextComponent
 import MultilineTextWithEntitiesComponent
@@ -2254,7 +2252,7 @@ private final class PremiumIntroScreenContentComponent: CombinedComponent {
                             }
 
                             let isPremium = state?.isPremium == true
-                            var buttonText: String = "" // MARK: exteraGram
+                            let buttonText: String
                             if isPremium {
                                 buttonText = strings.Common_OK
                             } else {
@@ -2265,8 +2263,6 @@ private final class PremiumIntroScreenContentComponent: CombinedComponent {
                                 } else {
                                     buttonText = strings.Premium_SubscribeFor(state?.price ?? "–").string
                                 }
-                                // MARK: exteraGram
-                                buttonText = i18n("Common.OpenTelegram", strings.baseLanguageCode)
                             }
                             
                             var dismissImpl: (() -> Void)?
@@ -3224,14 +3220,7 @@ private final class PremiumIntroScreenComponent: CombinedComponent {
             }
             
             let presentationData = self.screenContext.presentationData
-
-            // MARK: exteraGram
-            if let context = self.screenContext.context {
-                let alertController = textAlertController(context: context, title: i18n("Common.OpenTelegram", presentationData.strings.baseLanguageCode), text: i18n("Common.UseTelegramForPremium", presentationData.strings.baseLanguageCode), actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})])
-                self.present(alertController)
-            }
             
-            /*
             if case let .gift(_, _, _, giftCode) = self.source, let giftCode, giftCode.usedDate == nil {
                 guard let context = self.screenContext.context else {
                     return
@@ -3422,7 +3411,7 @@ private final class PremiumIntroScreenComponent: CombinedComponent {
                     self.updateInProgress(false)
                     self.updated(transition: .immediate)
                 }
-            }*/
+            }
         }
         
         func updateIsFocused(_ isFocused: Bool) {
@@ -3449,7 +3438,7 @@ private final class PremiumIntroScreenComponent: CombinedComponent {
         let title = Child(MultilineTextComponent.self)
         let secondaryTitle = Child(MultilineTextWithEntitiesComponent.self)
         let bottomEdgeEffect = Child(EdgeEffectComponent.self)
-        let button = Child(SolidRoundedButtonComponent.self)
+        let button = Child(ButtonComponent.self)
         
         var updatedInstalled: Bool?
         
@@ -3825,7 +3814,7 @@ private final class PremiumIntroScreenComponent: CombinedComponent {
             }
             
             if !buttonIsHidden {
-                var buttonTitle: String = "" // MARK: exteraGram
+                let buttonTitle: String
                 var buttonSubtitle: String?
                 if case let .auth(price, days) = context.component.source {
                     buttonTitle = environment.strings.Premium_Week_SignUp(price).string
@@ -3840,7 +3829,13 @@ private final class PremiumIntroScreenComponent: CombinedComponent {
                 } else if isUnusedGift {
                     buttonTitle = environment.strings.Premium_Gift_ApplyLink
                 } else if state.isPremium == true && state.canUpgrade {
-                    buttonTitle = i18n("Common.OpenTelegram", environment.strings.baseLanguageCode)
+                    if state.isAnnual {
+                        buttonTitle = environment.strings.Premium_UpgradeForAnnual(state.price ?? "—").string
+                    } else if state.isBiannual {
+                        buttonTitle = environment.strings.Premium_UpgradeForBiannual(state.price ?? "—").string
+                    } else {
+                        buttonTitle = environment.strings.Premium_UpgradeFor(state.price ?? "—").string
+                    }
                 } else {
                     if state.isAnnual {
                         buttonTitle = environment.strings.Premium_SubscribeForAnnual(state.price ?? "—").string
@@ -3849,30 +3844,54 @@ private final class PremiumIntroScreenComponent: CombinedComponent {
                     } else {
                         buttonTitle = environment.strings.Premium_SubscribeFor(state.price ?? "–").string
                     }
-                    // MARK: exteraGram
-                    buttonTitle = i18n("Common.OpenTelegram", environment.strings.baseLanguageCode)
                 }
                 
                 let controller = environment.controller
+                let buttonGradientColors = [
+                    UIColor(rgb: 0x0077ff),
+                    UIColor(rgb: 0x6b93ff),
+                    UIColor(rgb: 0x8878ff),
+                    UIColor(rgb: 0xe46ace)
+                ]
+                let buttonContent: AnyComponent<Empty>
+                if let buttonSubtitle {
+                    buttonContent = AnyComponent(VStack([
+                        AnyComponentWithIdentity(id: AnyHashable(0), component: AnyComponent(Text(
+                            text: buttonTitle,
+                            font: Font.semibold(17.0),
+                            color: .white
+                        ))),
+                        AnyComponentWithIdentity(id: AnyHashable(1), component: AnyComponent(Text(
+                            text: buttonSubtitle,
+                            font: Font.medium(11.0),
+                            color: UIColor.white.withAlphaComponent(0.7)
+                        )))
+                    ], spacing: 1.0))
+                } else {
+                    buttonContent = AnyComponent(ButtonTextContentComponent(
+                        text: buttonTitle,
+                        badge: 0,
+                        textColor: .white,
+                        badgeBackground: .white,
+                        badgeForeground: buttonGradientColors[0]
+                    ))
+                }
                 let button = button.update(
-                    component: SolidRoundedButtonComponent(
-                        title: buttonTitle,
-                        subtitle: buttonSubtitle,
-                        theme: SolidRoundedButtonComponent.Theme(
-                            backgroundColor: UIColor(rgb: 0x8878ff),
-                            backgroundColors: [
-                                UIColor(rgb: 0x0077ff),
-                                UIColor(rgb: 0x6b93ff),
-                                UIColor(rgb: 0x8878ff),
-                                UIColor(rgb: 0xe46ace)
-                            ],
-                            foregroundColor: .white
+                    component: ButtonComponent(
+                        background: ButtonComponent.Background(
+                            style: .glass,
+                            color: UIColor(rgb: 0x8878ff),
+                            foreground: .white,
+                            pressedColor: UIColor(rgb: 0x8878ff).withMultipliedAlpha(0.8),
+                            cornerRadius: 26.0,
+                            isShimmering: true,
+                            gradient: ButtonComponent.Background.Gradient(colors: buttonGradientColors)
                         ),
-                        height: 52.0,
-                        cornerRadius: 26.0,
-                        gloss: true,
-                        glass: true,
-                        isLoading: state.inProgress,
+                        content: AnyComponentWithIdentity(
+                            id: AnyHashable("\(buttonTitle)-\(buttonSubtitle ?? "")"),
+                            component: buttonContent
+                        ),
+                        displaysProgress: state.inProgress,
                         action: {
                             if let controller = controller() as? PremiumIntroScreen, let customProceed = controller.customProceed {
                                 controller.dismiss()

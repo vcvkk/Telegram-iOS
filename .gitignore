@@ -1,9 +1,3 @@
-submodules/**/.build/*
-exteragram-scripts
-exteraGram/Playground/custom_bazel_path.bzl
-exteraGram/Playground/codesigning
-buildServer.json
-
 fastlane/README.md
 fastlane/report.xml
 fastlane/test_output/*
@@ -66,7 +60,6 @@ bazel-telegram-ios/*
 bazel-testlogs
 bazel-testlogs/*
 xcodeproj.bazelrc
-user.bazelrc
 */*.swp
 *.swp
 build-input/*
@@ -85,4 +78,9 @@ xcode-files
 .bsp/**
 .sourcekit-lsp/**
 /.claude/
+**/.claude/settings.local.json
+**/.vscode/launch.json
 /buildbox/*
+**/node_modules/
+tools/sim-watcher/dist/
+.mcp.json

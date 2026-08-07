@@ -37,12 +37,6 @@ NSString *const TGMessageViewFooterIdentifier = @"TGMessageViewFooter";
         self.replyPressed();
 }
 
-- (IBAction)replyWithoutPresetButtonPressedAction
-{
-    if (self.replyWithoutPresetPressed != nil)
-        self.replyWithoutPresetPressed();
-}
-
 - (IBAction)viewButtonPressedAction
 {
     if (self.viewPressed != nil)

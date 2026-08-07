@@ -1,12 +1,8 @@
-// MARK: exteraGram
-import EGSimpleSettings
-
 import Foundation
 import UIKit
 import AsyncDisplayKit
 import Display
 import TelegramCore
-import Postbox
 import SwiftSignalKit
 import TelegramPresentationData
 import MediaResources
@@ -34,10 +30,10 @@ public final class InstantVideoController: LegacyController, StandalonePresentab
     private var completed = false
     private var dismissed = false
     
-    override public init(presentation: LegacyControllerPresentation, theme: PresentationTheme?, strings: PresentationStrings? = nil, initialLayout: ContainerViewLayout? = nil, navigationBarStyle: NavigationBar.Style = .legacy) {
+    override public init(presentation: LegacyControllerPresentation, theme: PresentationTheme?, strings: PresentationStrings? = nil, initialLayout: ContainerViewLayout? = nil) {
         self.audioStatus = InstantVideoControllerRecordingStatus(micLevel: self.micLevelValue.get(), duration: self.durationValue.get())
-
-        super.init(presentation: presentation, theme: theme, strings: strings, initialLayout: initialLayout, navigationBarStyle: navigationBarStyle)
+        
+        super.init(presentation: presentation, theme: theme, initialLayout: initialLayout)
         
         self.hasSparseContainerView = true
         self.lockOrientation = true
@@ -136,7 +132,7 @@ public func legacyInputMicPalette(from theme: PresentationTheme) -> TGModernConv
     return TGModernConversationInputMicPallete(dark: theme.overallDarkAppearance, buttonColor: inputPanelTheme.actionControlFillColor, iconColor: inputPanelTheme.actionControlForegroundColor, backgroundColor: theme.rootController.navigationBar.opaqueBackgroundColor, borderColor: inputPanelTheme.panelSeparatorColor, lock: inputPanelTheme.panelControlAccentColor, textColor: inputPanelTheme.primaryTextColor, secondaryTextColor: inputPanelTheme.secondaryTextColor, recording: inputPanelTheme.mediaRecordingDotColor)
 }
 
-public func legacyInstantVideoController(theme: PresentationTheme, forStory: Bool, panelFrame: CGRect, context: AccountContext, peerId: PeerId, slowmodeState: ChatSlowmodeState?, hasSchedule: Bool, send: @escaping (InstantVideoController, EnqueueMessage?) -> Void, displaySlowmodeTooltip: @escaping (UIView, CGRect) -> Void, presentSchedulePicker: @escaping (@escaping (Int32, Bool) -> Void) -> Void) -> InstantVideoController {
+public func legacyInstantVideoController(theme: PresentationTheme, forStory: Bool, panelFrame: CGRect, context: AccountContext, peerId: EnginePeer.Id, slowmodeState: ChatSlowmodeState?, hasSchedule: Bool, send: @escaping (InstantVideoController, EnqueueMessage?) -> Void, displaySlowmodeTooltip: @escaping (UIView, CGRect) -> Void, presentSchedulePicker: @escaping (@escaping (Int32, Bool) -> Void) -> Void) -> InstantVideoController {
     let isSecretChat = peerId.namespace == Namespaces.Peer.SecretChat
     
     let legacyController = InstantVideoController(presentation: .custom, theme: theme)
@@ -167,7 +163,7 @@ public func legacyInstantVideoController(theme: PresentationTheme, forStory: Boo
                 let node = ChatSendButtonRadialStatusView(color: theme.chat.inputPanel.panelControlAccentColor)
                 node.slowmodeState = slowmodeState
                 return node
-            }, canSendSilently: !isSecretChat, canSchedule: hasSchedule, reminder: peerId == context.account.peerId, startWithRearCam: EGSimpleSettings.shared.startTelescopeWithRearCam)!
+            }, canSendSilently: !isSecretChat, canSchedule: hasSchedule, reminder: peerId == context.account.peerId)!
             controller.presentScheduleController = { done in
                 presentSchedulePicker { time, silentPosting in
                     done?(time, silentPosting)
@@ -192,7 +188,7 @@ public func legacyInstantVideoController(theme: PresentationTheme, forStory: Boo
                     let thumbnailSize = finalDimensions.aspectFitted(CGSize(width: 320.0, height: 320.0))
                     let thumbnailImage = TGScaleImageToPixelSize(previewImage, thumbnailSize)!
                     if let thumbnailData = thumbnailImage.jpegData(compressionQuality: 0.4) {
-                        context.account.postbox.mediaBox.storeResourceData(resource.id, data: thumbnailData)
+                        context.engine.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: thumbnailData)
                         previewRepresentations.append(TelegramMediaImageRepresentation(dimensions: PixelDimensions(thumbnailSize), resource: resource, progressiveSizes: [], immediateThumbnailData: nil, hasVideo: false, isPersonal: false))
                     }
                 }
@@ -206,8 +202,8 @@ public func legacyInstantVideoController(theme: PresentationTheme, forStory: Boo
                     }
                     
                     if let dict = adjustments.dictionary(), let data = try? NSKeyedArchiver.archivedData(withRootObject: dict, requiringSecureCoding: false) {
-                        let adjustmentsData = MemoryBuffer(data: data)
-                        let digest = MemoryBuffer(data: adjustmentsData.md5Digest())
+                        let adjustmentsData = EngineMemoryBuffer(data: data)
+                        let digest = EngineMemoryBuffer(data: adjustmentsData.md5Digest())
                         resourceAdjustments = VideoMediaResourceAdjustments(data: adjustmentsData, digest: digest, isStory: false)
                     }
                 }
@@ -219,22 +215,22 @@ public func legacyInstantVideoController(theme: PresentationTheme, forStory: Boo
                 let resource: TelegramMediaResource
                 if let liveUploadData = liveUploadData as? LegacyLiveUploadInterfaceResult, resourceAdjustments == nil, let data = try? Data(contentsOf: videoUrl) {
                     resource = LocalFileMediaResource(fileId: liveUploadData.id)
-                    context.account.postbox.mediaBox.storeResourceData(resource.id, data: data, synchronous: true)
+                    context.engine.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: data, synchronous: true)
                 } else {
                     resource = LocalFileVideoMediaResource(randomId: Int64.random(in: Int64.min ... Int64.max), path: videoUrl.path, adjustments: resourceAdjustments)
                 }
                 
                 if let previewImage = previewImage {
-                    let tempFile = TempBox.shared.tempFile(fileName: "file")
+                    let tempFile = EngineTempBox.shared.tempFile(fileName: "file")
                     defer {
-                        TempBox.shared.dispose(tempFile)
+                        EngineTempBox.shared.dispose(tempFile)
                     }
                     if let data = compressImageToJPEG(previewImage, quality: 0.7, tempFilePath: tempFile.path) {
                     context.account.postbox.mediaBox.storeCachedResourceRepresentation(resource, representation: CachedVideoFirstFrameRepresentation(), data: data)
                     }
                 }
                 
-                let media = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: Int64.random(in: Int64.min ... Int64.max)), partialReference: nil, resource: resource, previewRepresentations: previewRepresentations, videoThumbnails: [], immediateThumbnailData: nil, mimeType: "video/mp4", size: nil, attributes: [.FileName(fileName: "video.mp4"), .Video(duration: finalDuration, size: PixelDimensions(finalDimensions), flags: [.instantRoundVideo], preloadSize: nil, coverTime: nil, videoCodec: nil)], alternativeRepresentations: [])
+                let media = TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: Int64.random(in: Int64.min ... Int64.max)), partialReference: nil, resource: resource, previewRepresentations: previewRepresentations, videoThumbnails: [], immediateThumbnailData: nil, mimeType: "video/mp4", size: nil, attributes: [.FileName(fileName: "video.mp4"), .Video(duration: finalDuration, size: PixelDimensions(finalDimensions), flags: [.instantRoundVideo], preloadSize: nil, coverTime: nil, videoCodec: nil)], alternativeRepresentations: [])
                 var message: EnqueueMessage = .message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: media), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])
                 
                 let scheduleTime: Int32? = scheduleTimestamp > 0 ? scheduleTimestamp : nil

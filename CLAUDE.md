@@ -2,6 +2,16 @@
 
 This file provides guidance to AI assistants when working with code in this repository.
 
+> **Status: the tree was reset to upstream `release-12.9.2` verbatim.**
+> `exteraGram/`, every `EG*` module and every fork edit were removed on purpose;
+> the previous state is kept in full on the branch
+> `backup/12.9.2-bump-fbcf2554`. Everything below about the fork — the
+> `Peer`/`Message` divergence rule, `// MARK: exteraGram`, the version-bump
+> procedure — therefore describes a fork that is **not currently in this tree**.
+> It is retained because the tooling in `build-system/merge-tools/` still works
+> and because it is the record of what re-applying the fork will involve. Read it
+> as history and as a plan, not as a description of the current code.
+
 ## Build
 The app is built using Bazel.
 

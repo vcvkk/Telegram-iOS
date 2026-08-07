@@ -1,4 +1,3 @@
-import EGSimpleSettings
 import Foundation
 import UIKit
 import Display
@@ -490,7 +489,7 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
     public init(context: AccountContext, currentInputData: InputData, updatedInputData: Signal<InputData, NoError>, defaultToEmojiTab: Bool, opaqueTopPanelBackground: Bool = false, useOpaqueTheme: Bool = false, interaction: ChatEntityKeyboardInputNode.Interaction?, chatPeerId: PeerId?, stateContext: StateContext?, forceHasPremium: Bool = false, displayBottomPanel: Bool = true) {
         self.context = context
         self.currentInputData = currentInputData
-        self.defaultToEmojiTab = EGSimpleSettings.shared.forceEmojiTab ? true : defaultToEmojiTab
+        self.defaultToEmojiTab = defaultToEmojiTab
         self.opaqueTopPanelBackground = opaqueTopPanelBackground
         self.useOpaqueTheme = useOpaqueTheme
         self.stateContext = stateContext

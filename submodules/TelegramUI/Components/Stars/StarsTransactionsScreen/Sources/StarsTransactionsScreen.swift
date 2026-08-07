@@ -9,7 +9,6 @@ import ComponentDisplayAdapters
 import TelegramPresentationData
 import AccountContext
 import TelegramCore
-import Postbox
 import MultilineTextComponent
 import BalancedTextComponent
 import Markdown
@@ -634,7 +633,7 @@ final class StarsTransactionsScreenComponent: Component {
                 starTransition.setFrame(view: topBalanceIconView, frame: topBalanceIconFrame)
             }
 
-            contentHeight += 181.0
+            contentHeight += 197.0
             
             let descriptionSize = self.descriptionView.update(
                 transition: .immediate,
@@ -759,7 +758,7 @@ final class StarsTransactionsScreenComponent: Component {
                             currency: component.starsContext.ton ? .ton : .stars,
                             rate: nil,
                             actionTitle: component.starsContext.ton ? environment.strings.Ton_WithdrawViaFragment : (withdrawAvailable ? environment.strings.Stars_Intro_BuyShort : environment.strings.Stars_Intro_Buy),
-                            actionAvailable: false, /* MARK: exteraGram */ // (!premiumConfiguration.areStarsDisabled && !premiumConfiguration.isPremiumDisabled),
+                            actionAvailable: (!premiumConfiguration.areStarsDisabled && !premiumConfiguration.isPremiumDisabled),
                             actionIsEnabled: true,
                             actionIcon: component.starsContext.ton ? nil : PresentationResourcesItemList.itemListRoundTopupIcon(environment.theme),
                             action: { [weak self] in
@@ -1285,7 +1284,7 @@ public final class StarsTransactionsScreen: ViewControllerComponentContainer {
                     
                     var hasLeft = false
                     var isKicked = false
-                    if let channel = subscription.peer._asPeer() as? TelegramChannel {
+                    if case let .channel(channel) = subscription.peer {
                         switch channel.participationStatus {
                         case .left:
                             hasLeft = true
