@@ -40,6 +40,10 @@ apple_resource_bundle(
     ],
 )
 
+egdeps = [
+    "//exteraGram/EGAppGroupIdentifier:EGAppGroupIdentifier"
+]
+
 swift_library(
     name = "TelegramCallsUI",
     module_name = "TelegramCallsUI",
@@ -52,7 +56,7 @@ swift_library(
     data = [
         ":TelegramCallsUIBundle",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/SSignalKit/SSignalKit",
     	"//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/Display:Display",

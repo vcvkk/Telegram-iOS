@@ -1,15 +1,25 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//submodules/BuildConfig:BuildConfig",
+    "//exteraGram/EGSimpleSettings:EGSimpleSettings",
+    "//exteraGram/EGStrings:EGStrings"
+]
+
+egsrc = [
+    "//exteraGram/EGRecentSessionApiId:EGRecentSessionApiId",
+]
+
 swift_library(
     name = "SettingsUI",
     module_name = "SettingsUI",
-    srcs = glob([
+    srcs = egsrc + glob([
 		"Sources/**/*.swift",
     ]),
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",
@@ -54,7 +64,6 @@ swift_library(
         "//submodules/PeerAvatarGalleryUI:PeerAvatarGalleryUI",
         "//submodules/PhoneInputNode:PhoneInputNode",
         "//submodules/PhotoResources:PhotoResources",
-        "//submodules/StickerResources:StickerResources",
         "//submodules/ProgressNavigationButtonNode:ProgressNavigationButtonNode",
         "//submodules/RadialStatusNode:RadialStatusNode",
         "//submodules/SearchBarNode:SearchBarNode",
@@ -68,6 +77,7 @@ swift_library(
         "//submodules/TextFormat:TextFormat",
         "//submodules/MediaPlayer:UniversalMediaPlayer",
         "//submodules/UrlEscaping:UrlEscaping",
+        "//submodules/WebSearchUI:WebSearchUI",
         "//submodules/UrlHandling:UrlHandling",
         "//submodules/HexColor:HexColor",
         "//submodules/QrCode:QrCode",
@@ -128,7 +138,6 @@ swift_library(
         "//submodules/TelegramUI/Components/Settings/PasskeysScreen",
         "//submodules/TelegramUI/Components/FaceScanScreen",
         "//submodules/ComponentFlow",
-        "//submodules/Components/ResizableSheetComponent",
         "//submodules/Components/ComponentDisplayAdapters",
         "//submodules/Components/BundleIconComponent",
         "//submodules/TelegramUI/Components/ButtonComponent",
@@ -138,7 +147,6 @@ swift_library(
         "//submodules/TelegramUI/Components/EdgeEffect",
         "//submodules/TelegramUI/Components/AvatarEditorScreen",
         "//submodules/TelegramUI/Components/Settings/PeerSelectionScreen",
-        "//submodules/TelegramUI/Components/Settings/ChatbotSetupScreen",
         "//submodules/TelegramUI/Components/ListSectionComponent",
         "//submodules/TelegramUI/Components/ListActionItemComponent",
         "//submodules/Utils/DeviceModel",

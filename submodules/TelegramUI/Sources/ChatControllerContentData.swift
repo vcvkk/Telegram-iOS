@@ -1,3 +1,4 @@
+import EGSimpleSettings
 import Foundation
 import TelegramPresentationData
 import AccountContext
@@ -84,7 +85,7 @@ extension ChatControllerImpl {
         
         struct State {
             var peerView: PeerView?
-            var threadInfo: EngineMessageHistoryThread.Info?
+            var threadInfo: TelegramCore.EngineMessageHistoryThread.Info?
             var infoAvatar: InfoAvatar?
             var navigationUserInfo: PeerInfoNavigationSourceTag?
             var chatTitleContent: ChatTitleContent?
@@ -139,6 +140,10 @@ extension ChatControllerImpl {
             var voiceMessagesAvailable: Bool = true
             var requestsState: PeerInvitationImportersState?
             var dismissedInvitationRequests: [Int64]?
+
+            // MARK: exteraGram
+            var predictedChatLanguage: String?
+            
             var customEmojiAvailable: Bool = false
             var threadData: ChatPresentationInterfaceState.ThreadData?
             var forumTopicData: ChatPresentationInterfaceState.ThreadData?
@@ -147,7 +152,6 @@ extension ChatControllerImpl {
             var removePaidMessageFeeData: ChatPresentationInterfaceState.RemovePaidMessageFeeData?
             var viewForumAsMessages: Bool = false
             var hasTopics: Bool = false
-            var canStopIncomingStreamingMessage: Bool = false
             
             var preloadNextChatPeerId: EnginePeer.Id?
         }
@@ -169,6 +173,9 @@ extension ChatControllerImpl {
         private var premiumGiftSuggestionDisposable: Disposable?
         private var translationStateDisposable: Disposable?
         
+        // MARK: exteraGram
+        private var chatLanguagePredictionDisposable: Disposable?
+
         private let isPeerInfoReady = ValuePromise<Bool>(false, ignoreRepeated: true)
         private let isChatLocationInfoReady = ValuePromise<Bool>(false, ignoreRepeated: true)
         private let isCachedDataReady = ValuePromise<Bool>(false, ignoreRepeated: true)
@@ -610,7 +617,8 @@ extension ChatControllerImpl {
                         } else {
                             var customSubtitle: String?
                             if savedMessagesChatsTip {
-                                customSubtitle = strings.Chat_SavedMessagesStatusViewAsChats
+                                //TODO:localize
+                                customSubtitle = "Tap to view as chats"
                             }
                             
                             strongSelf.state.chatTitleContent = .peer(peerView: ChatTitleContent.PeerData(peerView: peerView), customTitle: nil, customSubtitle: customSubtitle, onlineMemberCount: onlineMemberCount, isScheduledMessages: isScheduledMessages, isMuted: nil, customMessageCount: nil, hidePeerStatus: false, isEnabled: hasPeerInfo)
@@ -650,11 +658,18 @@ extension ChatControllerImpl {
                     strongSelf.onUpdated?(previousState)
                 })
                 
-                let threadInfo: Signal<EngineMessageHistoryThread.Info?, NoError>
+                let threadInfo: Signal<TelegramCore.EngineMessageHistoryThread.Info?, NoError>
                 if let threadId = chatLocation.threadId {
-                    threadInfo = context.engine.data.subscribe(TelegramEngine.EngineData.Item.Messages.ThreadInfo(peerId: peerId, threadId: threadId))
-                    |> map { threadData -> EngineMessageHistoryThread.Info? in
-                        return threadData?.info
+                    let viewKey: PostboxViewKey = .messageHistoryThreadInfo(peerId: peerId, threadId: threadId)
+                    threadInfo = context.account.postbox.combinedView(keys: [viewKey])
+                    |> map { views -> TelegramCore.EngineMessageHistoryThread.Info? in
+                        guard let view = views.views[viewKey] as? MessageHistoryThreadInfoView else {
+                            return nil
+                        }
+                        guard let data = view.info?.data.get(MessageHistoryThreadData.self) else {
+                            return nil
+                        }
+                        return data.info
                     }
                     |> distinctUntilChanged
                 } else {
@@ -705,21 +720,6 @@ extension ChatControllerImpl {
                 }
                 
                 let globalPrivacySettings = context.engine.data.get(TelegramEngine.EngineData.Item.Configuration.GlobalPrivacy())
-                
-                let canStopIncomingStreamingMessage: Signal<Bool, NoError> = .single(false)
-                /*if let peerId = chatLocation.peerId {
-                    let key = PeerAndThreadId(peerId: peerId, threadId: chatLocation.threadId)
-                    canStopIncomingStreamingMessage = context.account.postbox.combinedView(keys: [PostboxViewKey.typingDrafts(key)])
-                    |> map { views -> Bool in
-                        guard let view = views.views[PostboxViewKey.typingDrafts(key)] as? TypingDraftsView else {
-                            return false
-                        }
-                        return view.typingDraft != nil
-                    }
-                    |> distinctUntilChanged
-                } else {
-                    canStopIncomingStreamingMessage = .single(false)
-                }*/
 
                 self.peerDisposable = combineLatest(
                     queue: Queue.mainQueue(),
@@ -736,9 +736,8 @@ extension ChatControllerImpl {
                     managingBot,
                     adMessage,
                     displayedPeerVerification,
-                    globalPrivacySettings,
-                    canStopIncomingStreamingMessage
-                ).startStrict(next: { [weak self] peerView, globalNotificationSettings, onlineMemberCount, hasScheduledMessages, hasTopics, pinnedCount, threadInfo, hasSearchTags, hasSavedChats, isPremiumRequiredForMessaging, managingBot, adMessage, displayedPeerVerification, globalPrivacySettings, canStopIncomingStreamingMessage in
+                    globalPrivacySettings
+                ).startStrict(next: { [weak self] peerView, globalNotificationSettings, onlineMemberCount, hasScheduledMessages, hasTopics, pinnedCount, threadInfo, hasSearchTags, hasSavedChats, isPremiumRequiredForMessaging, managingBot, adMessage, displayedPeerVerification, globalPrivacySettings in
                     guard let strongSelf = self else {
                         return
                     }
@@ -748,7 +747,6 @@ extension ChatControllerImpl {
                     if strongSelf.state.peerView === peerView
                         && strongSelf.state.hasScheduledMessages == hasScheduledMessages
                         && strongSelf.state.hasTopics == hasTopics
-                        && strongSelf.state.canStopIncomingStreamingMessage == canStopIncomingStreamingMessage
                         && strongSelf.state.threadInfo == threadInfo
                         && strongSelf.state.hasSearchTags == hasSearchTags
                         && strongSelf.state.hasSavedChats == hasSavedChats
@@ -760,7 +758,6 @@ extension ChatControllerImpl {
                     
                     strongSelf.state.hasScheduledMessages = hasScheduledMessages
                     strongSelf.state.hasTopics = hasTopics
-                    strongSelf.state.canStopIncomingStreamingMessage = canStopIncomingStreamingMessage
                     
                     var upgradedToPeerId: PeerId?
                     var movedToForumTopics = false
@@ -1072,7 +1069,6 @@ extension ChatControllerImpl {
                     strongSelf.state.explicitelyCanPinMessages = explicitelyCanPinMessages
                     strongSelf.state.hasScheduledMessages = hasScheduledMessages
                     strongSelf.state.hasTopics = hasTopics
-                    strongSelf.state.canStopIncomingStreamingMessage = canStopIncomingStreamingMessage
                     strongSelf.state.autoremoveTimeout = autoremoveTimeout
                     strongSelf.state.currentSendAsPeerId = currentSendAsPeerId
                     strongSelf.state.copyProtectionEnabled = copyProtectionEnabled
@@ -1103,7 +1099,7 @@ extension ChatControllerImpl {
                         } else {
                             isRegularChat = true
                         }
-                        if strongSelf.nextChannelToReadDisposable == nil, let peerId = chatLocation.peerId, let customChatNavigationStack {
+                        if strongSelf.nextChannelToReadDisposable == nil, let peerId = chatLocation.peerId, let customChatNavigationStack, !EGSimpleSettings.shared.disableScrollToNextChannel {
                             if let index = customChatNavigationStack.firstIndex(of: peerId), index != customChatNavigationStack.count - 1 {
                                 let nextPeerId = customChatNavigationStack[index + 1]
                                 strongSelf.nextChannelToReadDisposable = (combineLatest(queue: .mainQueue(),
@@ -1147,7 +1143,7 @@ extension ChatControllerImpl {
                                     }
                                 })
                             }
-                        } else if isRegularChat, strongSelf.nextChannelToReadDisposable == nil {
+                        } else if isRegularChat, strongSelf.nextChannelToReadDisposable == nil, !EGSimpleSettings.shared.disableScrollToNextChannel {
                             //TODO:loc optimize
                             let accountPeerId = context.account.peerId
                             strongSelf.nextChannelToReadDisposable = (combineLatest(queue: .mainQueue(),
@@ -1240,24 +1236,26 @@ extension ChatControllerImpl {
                     guard let replyThreadId = replyThreadId else {
                         return .single((message, nil, 0))
                     }
-                    return context.engine.data.subscribe(
-                        TelegramEngine.EngineData.Item.Messages.ThreadInfo(peerId: peerId, threadId: replyThreadId),
-                        TelegramEngine.EngineData.Item.Messages.MessageCount(peerId: peerId, threadId: replyThreadId, tag: MessageTags()),
-                        TelegramEngine.EngineData.Item.Messages.MessageCount(peerId: peerId, threadId: replyThreadId, tag: MessageTags(), namespace: Namespaces.Message.Local)
-                    )
-                    |> map { threadData, cloudCount, localCount -> (message: Message?, threadData: MessageHistoryThreadData?, messageCount: Int) in
+                    let viewKey: PostboxViewKey = .messageHistoryThreadInfo(peerId: peerId, threadId: replyThreadId)
+                    let countViewKey: PostboxViewKey = .historyTagSummaryView(tag: MessageTags(), peerId: peerId, threadId: replyThreadId, namespace: Namespaces.Message.Cloud, customTag: nil)
+                    let localCountViewKey: PostboxViewKey = .historyTagSummaryView(tag: MessageTags(), peerId: peerId, threadId: replyThreadId, namespace: Namespaces.Message.Local, customTag: nil)
+                    return context.account.postbox.combinedView(keys: [viewKey, countViewKey, localCountViewKey])
+                    |> map { views -> (message: Message?, threadData: MessageHistoryThreadData?, messageCount: Int) in
+                        guard let view = views.views[viewKey] as? MessageHistoryThreadInfoView else {
+                            return (message, nil, 0)
+                        }
                         var messageCount = 0
-                        if let count = cloudCount {
+                        if let summaryView = views.views[countViewKey] as? MessageHistoryTagSummaryView, let count = summaryView.count {
                             if replyThreadId == 1 {
-                                messageCount += count
+                                messageCount += Int(count)
                             } else {
-                                messageCount += max(count - 1, 0)
+                                messageCount += max(Int(count) - 1, 0)
                             }
                         }
-                        if let count = localCount {
-                            messageCount += count
+                        if let summaryView = views.views[localCountViewKey] as? MessageHistoryTagSummaryView, let count = summaryView.count {
+                            messageCount += Int(count)
                         }
-                        return (message, threadData, messageCount)
+                        return (message, view.info?.data.get(MessageHistoryThreadData.self), messageCount)
                     }
                 }
                 
@@ -1271,16 +1269,29 @@ extension ChatControllerImpl {
                 let savedMessagesPeer: Signal<(peer: EnginePeer?, messageCount: Int, presence: EnginePeer.Presence?, isMonoforumFeeRemoved: Bool)?, NoError>
                 if let savedMessagesPeerId {
                     let threadPeerId = savedMessagesPeerId
-
-                    savedMessagesPeer = context.engine.data.subscribe(
-                        TelegramEngine.EngineData.Item.Peer.MainPeer(id: threadPeerId),
-                        TelegramEngine.EngineData.Item.Peer.Presence(id: threadPeerId),
-                        TelegramEngine.EngineData.Item.Messages.MessageCount(peerId: peerId, threadId: savedMessagesPeerId.toInt64(), tag: MessageTags()),
-                        TelegramEngine.EngineData.Item.Messages.ThreadInfo(peerId: peerId, threadId: savedMessagesPeerId.toInt64())
-                    )
-                    |> map { peer, presence, count, threadInfo -> (peer: EnginePeer?, messageCount: Int, presence: EnginePeer.Presence?, isMonoforumFeeRemoved: Bool)? in
-                        let messageCount = count.flatMap(Int.init) ?? 0
-                        let isMonoforumFeeRemoved = threadInfo?.isMessageFeeRemoved ?? false
+                    let basicPeerKey: PostboxViewKey = .peer(peerId: threadPeerId, components: [])
+                    let countViewKey: PostboxViewKey = .historyTagSummaryView(tag: MessageTags(), peerId: peerId, threadId: savedMessagesPeerId.toInt64(), namespace: Namespaces.Message.Cloud, customTag: nil)
+                    let threadInfoKey: PostboxViewKey = .messageHistoryThreadInfo(peerId: peerId, threadId: savedMessagesPeerId.toInt64())
+                    
+                    savedMessagesPeer = context.account.postbox.combinedView(keys: [basicPeerKey, countViewKey, threadInfoKey])
+                    |> map { views -> (peer: EnginePeer?, messageCount: Int, presence: EnginePeer.Presence?, isMonoforumFeeRemoved: Bool)? in
+                        var peer: EnginePeer?
+                        var presence: EnginePeer.Presence?
+                        if let peerView = views.views[basicPeerKey] as? PeerView {
+                            peer = peerViewMainPeer(peerView).flatMap(EnginePeer.init)
+                            presence = peerView.peerPresences[threadPeerId].flatMap(EnginePeer.Presence.init)
+                        }
+                        
+                        var messageCount = 0
+                        if let summaryView = views.views[countViewKey] as? MessageHistoryTagSummaryView, let count = summaryView.count {
+                            messageCount += Int(count)
+                        }
+                        
+                        var isMonoforumFeeRemoved = false
+                        if let threadInfoView = views.views[threadInfoKey] as? MessageHistoryThreadInfoView, let threadInfo = threadInfoView.info?.data.get(MessageHistoryThreadData.self) {
+                            isMonoforumFeeRemoved = threadInfo.isMessageFeeRemoved
+                        }
+                        
                         return (peer, messageCount, presence, isMonoforumFeeRemoved)
                     }
                     |> distinctUntilChanged(isEqual: { lhs, rhs in
@@ -1403,21 +1414,6 @@ extension ChatControllerImpl {
                 
                 let globalPrivacySettings = context.engine.data.get(TelegramEngine.EngineData.Item.Configuration.GlobalPrivacy())
                 
-                let canStopIncomingStreamingMessage: Signal<Bool, NoError> = .single(false)
-                /*if let peerId = chatLocation.peerId {
-                    let key = PeerAndThreadId(peerId: peerId, threadId: chatLocation.threadId)
-                    canStopIncomingStreamingMessage = context.account.postbox.combinedView(keys: [PostboxViewKey.typingDrafts(key)])
-                    |> map { views -> Bool in
-                        guard let view = views.views[PostboxViewKey.typingDrafts(key)] as? TypingDraftsView else {
-                            return false
-                        }
-                        return view.typingDraft != nil
-                    }
-                    |> distinctUntilChanged
-                } else {
-                    canStopIncomingStreamingMessage = .single(false)
-                }*/
-                
                 self.peerDisposable = (combineLatest(queue: Queue.mainQueue(),
                     peerView,
                     messageAndTopic,
@@ -1428,10 +1424,9 @@ extension ChatControllerImpl {
                     hasSavedChats,
                     isPremiumRequiredForMessaging,
                     managingBot,
-                    globalPrivacySettings,
-                    canStopIncomingStreamingMessage
+                    globalPrivacySettings
                 )
-                |> deliverOnMainQueue).startStrict(next: { [weak self] peerView, messageAndTopic, savedMessagesPeer, onlineMemberCount, hasScheduledMessages, hasSearchTags, hasSavedChats, isPremiumRequiredForMessaging, managingBot, globalPrivacySettings, canStopIncomingStreamingMessage in
+                |> deliverOnMainQueue).startStrict(next: { [weak self] peerView, messageAndTopic, savedMessagesPeer, onlineMemberCount, hasScheduledMessages, hasSearchTags, hasSavedChats, isPremiumRequiredForMessaging, managingBot, globalPrivacySettings in
                     guard let strongSelf = self else {
                         return
                     }
@@ -1510,7 +1505,6 @@ extension ChatControllerImpl {
                     }
                     
                     strongSelf.state.hasTopics = true
-                    strongSelf.state.canStopIncomingStreamingMessage = canStopIncomingStreamingMessage
                     
                     if let savedMessagesPeerId {
                         var peerPresences: [PeerId: PeerPresence] = [:]
@@ -1791,7 +1785,7 @@ extension ChatControllerImpl {
                         strongSelf.state.alwaysShowGiftButton = alwaysShowGiftButton
                         strongSelf.state.disallowedGifts = disallowedGifts
                         
-                        if let replyThreadId, let channel = renderedPeer?.peer as? TelegramChannel, channel.isForumOrMonoForum, strongSelf.nextChannelToReadDisposable == nil {
+                        if let replyThreadId, let channel = renderedPeer?.peer as? TelegramChannel, channel.isForumOrMonoForum, strongSelf.nextChannelToReadDisposable == nil, !EGSimpleSettings.shared.disableScrollToNextTopic {
                             strongSelf.nextChannelToReadDisposable = (combineLatest(queue: .mainQueue(),
                             context.engine.peers.getNextUnreadForumTopic(peerId: channel.id, topicId: Int32(clamping: replyThreadId)),
                                 ApplicationSpecificNotice.getNextChatSuggestionTip(accountManager: context.sharedContext.accountManager)
@@ -1931,7 +1925,7 @@ extension ChatControllerImpl {
                             canBypassRestrictions = true
                         }
                         if !canBypassRestrictions, let channel = combinedInitialData.initialData?.peer as? TelegramChannel, channel.isRestrictedBySlowmode, let timeout = cachedData.slowModeTimeout {
-                            if let slowmodeUntilTimestamp = calculateSlowmodeActiveUntilTimestamp(untilTimestamp: cachedData.slowModeValidUntilTimestamp) {
+                            if let slowmodeUntilTimestamp = calculateSlowmodeActiveUntilTimestamp(account: context.account, untilTimestamp: cachedData.slowModeValidUntilTimestamp) {
                                 slowmodeState = ChatSlowmodeState(timeout: timeout, variant: .timestamp(slowmodeUntilTimestamp))
                             }
                         }
@@ -2121,9 +2115,13 @@ extension ChatControllerImpl {
                 let threadData: Signal<ChatPresentationInterfaceState.ThreadData?, NoError>
                 let forumTopicData: Signal<ChatPresentationInterfaceState.ThreadData?, NoError>
                 if let threadId = chatLocation.threadId {
-                    threadData = context.engine.data.subscribe(TelegramEngine.EngineData.Item.Messages.ThreadInfo(peerId: peerId, threadId: threadId))
-                    |> map { threadData -> ChatPresentationInterfaceState.ThreadData? in
-                        guard let data = threadData else {
+                    let viewKey: PostboxViewKey = .messageHistoryThreadInfo(peerId: peerId, threadId: threadId)
+                    threadData = context.account.postbox.combinedView(keys: [viewKey])
+                    |> map { views -> ChatPresentationInterfaceState.ThreadData? in
+                        guard let view = views.views[viewKey] as? MessageHistoryThreadInfoView else {
+                            return nil
+                        }
+                        guard let data = view.info?.data.get(MessageHistoryThreadData.self) else {
                             return nil
                         }
                         return ChatPresentationInterfaceState.ThreadData(title: data.info.title, icon: data.info.icon, iconColor: data.info.iconColor, isOwnedByMe: data.isOwnedByMe, isClosed: data.isClosed)
@@ -2134,9 +2132,13 @@ extension ChatControllerImpl {
                     forumTopicData = isForum
                     |> mapToSignal { isForum -> Signal<ChatPresentationInterfaceState.ThreadData?, NoError> in
                         if isForum {
-                            return context.engine.data.subscribe(TelegramEngine.EngineData.Item.Messages.ThreadInfo(peerId: peerId, threadId: 1))
-                            |> map { threadData -> ChatPresentationInterfaceState.ThreadData? in
-                                guard let data = threadData else {
+                            let viewKey: PostboxViewKey = .messageHistoryThreadInfo(peerId: peerId, threadId: 1)
+                            return context.account.postbox.combinedView(keys: [viewKey])
+                            |> map { views -> ChatPresentationInterfaceState.ThreadData? in
+                                guard let view = views.views[viewKey] as? MessageHistoryThreadInfoView else {
+                                    return nil
+                                }
+                                guard let data = view.info?.data.get(MessageHistoryThreadData.self) else {
                                     return nil
                                 }
                                 return ChatPresentationInterfaceState.ThreadData(title: data.info.title, icon: data.info.icon, iconColor: data.info.iconColor, isOwnedByMe: data.isOwnedByMe, isClosed: data.isClosed)
@@ -2197,7 +2199,7 @@ extension ChatControllerImpl {
                         if counterAndTimestamp.0 >= 3 {
                             maybeSuggestPremium = true
                         }
-                        if (isPremium || maybeSuggestPremium || hasAutoTranslate) && !isHidden {
+                        if (isPremium || maybeSuggestPremium || hasAutoTranslate || true /* MARK: exteraGram */) && !isHidden {
                             return chatTranslationState(context: context, peerId: peerId, threadId: chatLocation.threadId)
                             |> map { translationState -> ChatPresentationTranslationState? in
                                 if let translationState, !translationState.fromLang.isEmpty && (translationState.fromLang != baseLanguageCode || translationState.isEnabled) {
@@ -2221,6 +2223,27 @@ extension ChatControllerImpl {
                         strongSelf.state.translationState = chatTranslationState
                         
                         strongSelf.onUpdated?(previousState)
+                    })
+
+                    // MARK: exteraGram
+                    self.chatLanguagePredictionDisposable = (
+                        chatTranslationState(context: context, peerId: peerId, threadId: chatLocation.threadId, forcePredict: true)
+                        |> map { translationState -> ChatPresentationTranslationState? in
+                            if let translationState, !translationState.fromLang.isEmpty {
+                                return ChatPresentationTranslationState(isEnabled: translationState.isEnabled, fromLang: translationState.fromLang, toLang: translationState.toLang ?? baseLanguageCode)
+                            } else {
+                                return nil
+                            }
+                        }
+                        |> distinctUntilChanged
+                        |> deliverOnMainQueue).startStrict(next: { [weak self] translationState in
+                        if let strongSelf = self, let translationState = translationState, strongSelf.state.predictedChatLanguage == nil {
+                            let previousState = strongSelf.state
+                        
+                            strongSelf.state.predictedChatLanguage = translationState.fromLang
+                            
+                            strongSelf.onUpdated?(previousState)
+                        }
                     })
                 }
                 
@@ -2277,7 +2300,7 @@ extension ChatControllerImpl {
                 } else {
                     cachedData = .single((nil, [:]))
                 }
-                                
+                
                 self.cachedDataDisposable?.dispose()
                 self.cachedDataDisposable = combineLatest(queue: .mainQueue(),
                     cachedData,
@@ -2329,7 +2352,7 @@ extension ChatControllerImpl {
                             if let channel = strongSelf.state.renderedPeer?.peer as? TelegramChannel, channel.isRestrictedBySlowmode, let timeout = cachedData.slowModeTimeout {
                                 if hasPendingMessages {
                                     slowmodeState = ChatSlowmodeState(timeout: timeout, variant: .pendingMessages)
-                                } else if let slowmodeUntilTimestamp = calculateSlowmodeActiveUntilTimestamp(untilTimestamp: cachedData.slowModeValidUntilTimestamp) {
+                                } else if let slowmodeUntilTimestamp = calculateSlowmodeActiveUntilTimestamp(account: context.account, untilTimestamp: cachedData.slowModeValidUntilTimestamp) {
                                     slowmodeState = ChatSlowmodeState(timeout: timeout, variant: .timestamp(slowmodeUntilTimestamp))
                                 }
                             }
@@ -2484,6 +2507,8 @@ extension ChatControllerImpl {
             self.cachedDataDisposable?.dispose()
             self.premiumGiftSuggestionDisposable?.dispose()
             self.translationStateDisposable?.dispose()
+            // MARK: exteraGram
+            self.chatLanguagePredictionDisposable?.dispose()
             self.inviteRequestsDisposable?.dispose()
         }
     }

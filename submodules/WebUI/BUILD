@@ -1,5 +1,11 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGAPIWebSettings:EGAPIWebSettings",
+    "//exteraGram/EGConfig:EGConfig",
+    "//exteraGram/EGLogging:EGLogging"
+]
+
 swift_library(
     name = "WebUI",
     module_name = "WebUI",
@@ -9,7 +15,7 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
     	"//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",

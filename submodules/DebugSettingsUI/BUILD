@@ -1,5 +1,12 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGDebugUI:EGDebugUI",
+    "//exteraGram/EGLogging:EGLogging",
+    "//exteraGram/EGLoggingComposer:EGLoggingComposer",
+    "//exteraGram/EGSimpleSettings:EGSimpleSettings"
+]
+
 swift_library(
     name = "DebugSettingsUI",
     module_name = "DebugSettingsUI",
@@ -9,9 +16,10 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/Display:Display",
+        "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/MtProtoKit:MtProtoKit",
         "//submodules/TelegramPresentationData:TelegramPresentationData",

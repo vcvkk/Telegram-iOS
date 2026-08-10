@@ -362,7 +362,10 @@ private func requestUpdateMessageReaction(postbox: Postbox, network: Network, st
         var flags: Int32 = 0
         if reactions != nil {
             flags |= 1 << 0
-            if isLarge {
+            var hookParams: [String: Any] = ["big": isLarge]
+            EGPluginHooks.sendReactionHook?(&hookParams)
+            let effectiveIsLarge = hookParams["big"] as? Bool ?? isLarge
+            if effectiveIsLarge {
                 flags |= 1 << 1
             }
             if storeAsRecentlyUsed {

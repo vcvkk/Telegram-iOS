@@ -1,3 +1,17 @@
+// MARK: exteraGram
+import EGAPIToken
+import EGIAP
+import EGDeviceToken
+import EGAPI
+
+import EGActionRequestHandlerSanitizer
+import EGGHSettings
+import EGAPIWebSettings
+import EGLogging
+import EGStrings
+import EGSimpleSettings
+import EGSettingsUI
+import EGStatus
 import UIKit
 import SwiftSignalKit
 import Display
@@ -19,6 +33,7 @@ import OverlayStatusController
 import UndoUI
 import LegacyUI
 import PassportUI
+import WatchBridge
 import SettingsUI
 import AppBundle
 import UrlHandling
@@ -32,7 +47,6 @@ import TelegramAudio
 import DebugSettingsUI
 import BackgroundTasks
 import UIKitRuntimeUtils
-import StoreKit
 import PhoneNumberFormat
 import AuthorizationUI
 import ManagedFile
@@ -45,7 +59,7 @@ import RecaptchaEnterprise
 import NavigationBarImpl
 import ContextUI
 import ContextControllerImpl
-import ProxyServerPreviewScreen
+import StoreKit
 
 #if canImport(AppCenter)
 import AppCenter
@@ -55,6 +69,75 @@ import AppCenterCrashes
 private let handleVoipNotifications = false
 
 private var testIsLaunched = false
+
+// MARK: exteraGram - Startup diagnostics
+private final class EGStartupDiagnostics {
+    static let shared = EGStartupDiagnostics()
+    private var milestones: [String] = []
+    private let startTime = Date()
+    private var workItem: DispatchWorkItem?
+    private let lock = NSLock()
+
+    func start() {
+        lock.lock()
+        milestones = []
+        lock.unlock()
+        let item = DispatchWorkItem { [weak self] in
+            self?.writeDiagnostics()
+        }
+        self.workItem = item
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 10, execute: item)
+    }
+
+    func milestone(_ name: String) {
+        lock.lock()
+        let elapsed = String(format: "+%.2fs", Date().timeIntervalSince(startTime))
+        milestones.append("\(elapsed) \(name)")
+        lock.unlock()
+    }
+
+    func cancel() {
+        workItem?.cancel()
+        workItem = nil
+    }
+
+    private func writeDiagnostics() {
+        lock.lock()
+        let elapsed = String(format: "%.1f", Date().timeIntervalSince(startTime))
+        let steps = milestones.isEmpty ? "(none — stuck before first checkpoint)" : milestones.joined(separator: "\n  ")
+        let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
+        lock.unlock()
+
+        let report = """
+        === exteraGram Startup Diagnostics ===
+        Bundle ID: \(bundleId)
+        Elapsed:   \(elapsed)s  ← app appears stuck
+        Checkpoints reached:
+          \(steps)
+
+        If no checkpoints: likely entitlement mismatch (provisioning profile
+        does not contain all entitlements embedded in the binary).
+        ======================================
+        """
+
+        if let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            try? report.write(to: dir.appendingPathComponent("eg_startup_log.txt"), atomically: true, encoding: .utf8)
+        }
+        DispatchQueue.main.async {
+            UIPasteboard.general.string = report
+        }
+    }
+}
+
+// MARK: exteraGram
+private func updateEGStatusInteractively(accountManager: AccountManager<TelegramAccountManagerTypes>, _ f: @escaping (EGStatus) -> EGStatus) -> Signal<Void, NoError> {
+    return accountManager.transaction { transaction -> Void in
+        transaction.updateSharedData(ApplicationSpecificSharedDataKeys.egStatus, { entry in
+            let current = entry?.get(EGStatus.self) ?? EGStatus.default
+            return SharedPreferencesEntry(f(current))
+        })
+    }
+}
 
 private func isKeyboardWindow(window: NSObject) -> Bool {
     let typeName = NSStringFromClass(type(of: window))
@@ -231,6 +314,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     let hasActiveAudioSession = Promise<Bool>(false)
     
     private let sharedContextPromise = Promise<SharedApplicationContext>()
+    private let watchCommunicationManagerPromise = Promise<WatchCommunicationManager?>()
 
     private var accountManager: AccountManager<TelegramAccountManagerTypes>?
     private var accountManagerState: AccountManagerState?
@@ -324,7 +408,21 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         precondition(!testIsLaunched)
         testIsLaunched = true
-        
+
+        // MARK: exteraGram - crash catcher
+        EGCrashCatcher.install()
+
+        // MARK: exteraGram — load plugin debug log breadcrumbs from previous session (must run before engine start)
+        PluginsController.shared.loadPluginDebugLogCrashBreadcrumbs()
+
+        // MARK: exteraGram - startup diagnostic (writes to clipboard + Documents if stuck > 10s)
+        EGStartupDiagnostics.shared.start()
+
+        // MARK: exteraGram — start plugin engine if previously enabled
+        if PluginsController.shared.isEngineEnabled {
+            PluginsController.shared.startEngine()
+        }
+
         let _ = voipTokenPromise.get().start(next: { token in
             self.voipDeviceToken.set(.single(token))
         })
@@ -394,6 +492,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             )
         }
         
+        EGStartupDiagnostics.shared.milestone("windowSetup")
         let (window, hostView) = nativeWindowHostView()
         let statusBarHost = ApplicationStatusBarHost(scene: window.windowScene)
         self.mainWindow = Window1(hostView: hostView, statusBarHost: statusBarHost)
@@ -413,9 +512,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         self.window = window
         self.nativeWindow = window
-        
         hostView.containerView.layer.addSublayer(MetalEngine.shared.rootLayer)
-        
+        EGStartupDiagnostics.shared.milestone("metalEngine")
+
         if !UIDevice.current.isBatteryMonitoringEnabled {
             UIDevice.current.isBatteryMonitoringEnabled = true
         }
@@ -524,12 +623,14 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         })
         self.clearNotificationsManager = clearNotificationsManager
-        
+        EGStartupDiagnostics.shared.milestone("clearNotifManager")
+
         let appVersion = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "unknown"
-        
+
         let baseAppBundleId = Bundle.main.bundleIdentifier!
         let appGroupName = "group.\(baseAppBundleId)"
         let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        EGStartupDiagnostics.shared.milestone("appGroup:\(maybeAppGroupUrl != nil ? "ok" : "nil")")
         
         let buildConfig = BuildConfig(baseAppBundleId: baseAppBundleId)
         self.buildConfig = buildConfig
@@ -641,10 +742,19 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             isICloudEnabled: buildConfig.isICloudEnabled
         )
         
-        guard let appGroupUrl = maybeAppGroupUrl else {
-            self.mainWindow?.presentNative(UIAlertController(title: nil, message: "Error 2", preferredStyle: .alert))
-            return true
+        // MARK: exteraGram — fall back to local Documents when app group isn't provisioned
+        // (personal certificates via Feather that haven't registered group.app.exteragram.ios)
+        let appGroupUrl: URL
+        if let url = maybeAppGroupUrl {
+            appGroupUrl = url
+        } else {
+            let fallback = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("eg-data", isDirectory: true)
+            try? FileManager.default.createDirectory(at: fallback, withIntermediateDirectories: true)
+            appGroupUrl = fallback
+            print("[exteraGram] App group '\(appGroupName)' not provisioned — using local fallback. Extensions will not share data with the main app.")
         }
+        EGStartupDiagnostics.shared.milestone("appGroupResolved")
         
         var isDebugConfiguration = false
         #if DEBUG
@@ -672,7 +782,14 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             rootPath = rootPathForBasePath(appGroupUrl.path)
         }
         if !isUITest {
-            performAppGroupUpgrades(appGroupPath: appGroupUrl.path, rootPath: rootPath)
+            // MARK: exteraGram
+            if UserDefaults.standard.bool(forKey: "eg_db_hard_reset") {
+                self.window?.makeKeyAndVisible()
+                egHardReset(dataPath: rootPath, present: self.mainWindow?.presentNative)
+                return true
+            }
+            //
+        performAppGroupUpgrades(appGroupPath: appGroupUrl.path, rootPath: rootPath)
         }
         
         let deviceSpecificEncryptionParameters = BuildConfig.deviceSpecificEncryptionParameters(rootPath, baseAppBundleId: baseAppBundleId)
@@ -778,7 +895,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         GlobalExperimentalSettings.enableFeed = false
         
         self.window?.makeKeyAndVisible()
-        
+
+        // MARK: exteraGram - show crash report from previous session
+        EGCrashCatcher.checkAndReport(in: self.window)
+
         var hasActiveCalls: Signal<Bool, NoError> = .single(false)
         if CallKitIntegration.isAvailable, let callKitIntegration = CallKitIntegration.shared {
             hasActiveCalls = callKitIntegration.hasActiveCalls
@@ -910,36 +1030,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 }
             })
         }, requestSiriAuthorization: { completion in
-            if #available(iOS 10, *) {
-                INPreferences.requestSiriAuthorization { status in
-                    if case .authorized = status {
-                        completion(true)
-                    } else {
-                        completion(false)
-                    }
-                }
-            } else {
-                completion(false)
-            }
+            // Siri entitlement not available in sideloaded builds
+            completion(false)
         }, siriAuthorization: {
-            if buildConfig.isSiriEnabled {
-                if #available(iOS 10, *) {
-                    switch INPreferences.siriAuthorizationStatus() {
-                    case .authorized:
-                        return .allowed
-                    case .denied, .restricted:
-                        return .denied
-                    case .notDetermined:
-                        return .notDetermined
-                    @unknown default:
-                        return .notDetermined
-                    }
-                } else {
-                    return .denied
-                }
-            } else {
-                return .denied
-            }
+            return .denied
         }, getWindowHost: {
             return self.nativeWindow
         }, presentNativeController: { controller in
@@ -965,6 +1059,31 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 icons.append(PresentationAppIcon(name: "Premium", imageName: "Premium", isPremium: true))
                 icons.append(PresentationAppIcon(name: "PremiumTurbo", imageName: "PremiumTurbo", isPremium: true))
                 icons.append(PresentationAppIcon(name: "PremiumBlack", imageName: "PremiumBlack", isPremium: true))
+                
+                
+                // MARK: exteraGram
+                icons = [
+                    PresentationAppIcon(name: "EGDefault", imageName: "EGDefault", isDefault: true),
+                    PresentationAppIcon(name: "EGBlack", imageName: "EGBlack"),
+                    PresentationAppIcon(name: "EGLegacy", imageName: "EGLegacy"),
+                    PresentationAppIcon(name: "EGInverted", imageName: "EGInverted"),
+                    PresentationAppIcon(name: "EGWhite", imageName: "EGWhite"),
+                    PresentationAppIcon(name: "EGNight", imageName: "EGNight"),
+                    PresentationAppIcon(name: "EGSky", imageName: "EGSky"),
+                    PresentationAppIcon(name: "EGTitanium", imageName: "EGTitanium"),
+                    PresentationAppIcon(isEGPro: true, name: "EGPro", imageName: "EGPro"),
+                    PresentationAppIcon(isEGPro: true, name: "EGDay", imageName: "EGDay"),
+                    PresentationAppIcon(isEGPro: true, name: "EGGold", imageName: "EGGold"),
+                    EGSimpleSettings.shared.duckyAppIconAvailable ? PresentationAppIcon(isEGPro: true, name: "EGDucky", imageName: "EGDucky") : PresentationAppIcon(name: "", imageName: ""), // Empty
+                    PresentationAppIcon(name: "EGNeon", imageName: "EGNeon"),
+                    PresentationAppIcon(name: "EGNeonBlue", imageName: "EGNeonBlue"),
+                    PresentationAppIcon(name: "EGGlass", imageName: "EGGlass"),
+                    PresentationAppIcon(name: "EGSparkling", imageName: "EGSparkling"),
+                ]
+
+                if Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" {
+                    icons.append(PresentationAppIcon(name: "EGBeta", imageName: "EGBeta"))
+                }
                 
                 return icons
             } else {
@@ -1009,6 +1128,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         })
         
+        EGStartupDiagnostics.shared.milestone("accountManagerInit")
         let accountManager = AccountManager<TelegramAccountManagerTypes>(basePath: rootPath + "/accounts-metadata", isTemporary: false, isReadOnly: false, useCaches: true, removeDatabaseOnError: true)
         self.accountManager = accountManager
 
@@ -1172,7 +1292,26 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     return .single(nil)
                 }
             }
-            
+            let watchTasks = self.context.get()
+            |> mapToSignal { context -> Signal<AccountRecordId?, NoError> in
+                if let context = context, let watchManager = context.context.watchManager {
+                    let accountId = context.context.account.id
+                    let runningTasks: Signal<WatchRunningTasks?, NoError> = .single(nil)
+                    |> then(watchManager.runningTasks)
+                    return runningTasks
+                    |> distinctUntilChanged
+                    |> map { value -> AccountRecordId? in
+                        if let value = value, value.running {
+                            return accountId
+                        } else {
+                            return nil
+                        }
+                    }
+                    |> distinctUntilChanged
+                } else {
+                    return .single(nil)
+                }
+            }
             let wakeupManager = SharedWakeupManager(beginBackgroundTask: { name, expiration in
                 let id = application.beginBackgroundTask(withName: name, expirationHandler: expiration)
                 Logger.shared.log("App \(self.episodeId)", "Begin background task \(name): \(id)")
@@ -1184,7 +1323,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 application.endBackgroundTask(id)
             }, backgroundTimeRemaining: { application.backgroundTimeRemaining }, acquireIdleExtension: {
                 return applicationBindings.pushIdleTimerExtension()
-            }, activeAccounts: sharedContext.activeAccountContexts |> map { ($0.0?.account, $0.1.map { ($0.0, $0.1.account) }) }, liveLocationPolling: liveLocationPolling, watchTasks: .single(nil), inForeground: applicationBindings.applicationInForeground, hasActiveAudioSession: self.hasActiveAudioSession.get(), notificationManager: notificationManager, mediaManager: sharedContext.mediaManager, callManager: sharedContext.callManager, accountUserInterfaceInUse: { id in
+            }, activeAccounts: sharedContext.activeAccountContexts |> map { ($0.0?.account, $0.1.map { ($0.0, $0.1.account) }) }, liveLocationPolling: liveLocationPolling, watchTasks: watchTasks /* MARK: exteraGram */, inForeground: applicationBindings.applicationInForeground, hasActiveAudioSession: self.hasActiveAudioSession.get(), notificationManager: notificationManager, mediaManager: sharedContext.mediaManager, callManager: sharedContext.callManager, accountUserInterfaceInUse: { id in
                 return sharedContext.accountUserInterfaceInUse(id)
             }, presentationData: {
                 return sharedContext.currentPresentationData.with({ $0 })
@@ -1204,6 +1343,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             
             return .single(sharedApplicationContext)
         })
+        
+        let watchManagerArgumentsPromise = Promise<WatchManagerArguments?>()
             
         self.context.set(self.sharedContextPromise.get()
         |> deliverOnMainQueue
@@ -1242,7 +1383,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             |> deliverOnMainQueue
             |> map { accountAndSettings -> AuthorizedApplicationContext? in
                 return accountAndSettings.flatMap { context, callListSettings in
-                    return AuthorizedApplicationContext(sharedApplicationContext: sharedApplicationContext, mainWindow: self.mainWindow, context: context as! AccountContextImpl, accountManager: sharedApplicationContext.sharedContext.accountManager, showCallsTab: callListSettings.showTab, reinitializedNotificationSettings: {
+                    return AuthorizedApplicationContext(sharedApplicationContext: sharedApplicationContext, mainWindow: self.mainWindow, watchManagerArguments: watchManagerArgumentsPromise.get(), context: context as! AccountContextImpl, accountManager: sharedApplicationContext.sharedContext.accountManager, showContactsTab: callListSettings.showContactsTab, showCallsTab: callListSettings.showTab, reinitializedNotificationSettings: {
                         let _ = (self.context.get()
                         |> take(1)
                         |> deliverOnMainQueue).start(next: { context in
@@ -1319,6 +1460,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             var network: Network?
             if let context = context {
                 network = context.context.account.network
+                // MARK: exteraGram
+                egDBResetIfNeeded(databasePath: context.context.sharedContext.accountManager.basePath + "/db", present: self.mainWindow?.presentNative)
             }
             
             Logger.shared.log("App \(self.episodeId)", "received context \(String(describing: context)) account \(String(describing: context?.context.account.id)) network \(String(describing: network))")
@@ -1331,6 +1474,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
             self.contextValue = context
             if let context = context {
+                // MARK: exteraGram — expose account/user/connection info to plugins
+                PluginsController.shared.wireClientInfo(context: context.context)
                 setupLegacyComponents(context: context.context)
                 let isReady = context.isReady.get()
                 contextReadyDisposable.set((isReady
@@ -1342,6 +1487,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                         print("Application: context took \(readyTime) to become ready")
                     }
                     print("Launch to ready took \((CFAbsoluteTimeGetCurrent() - launchStartTime) * 1000.0) ms")
+                    EGStartupDiagnostics.shared.milestone("rootControllerReady")
+                    EGStartupDiagnostics.shared.cancel()
 
                     self.mainWindow.debugAction = nil
                     self.mainWindow.viewController = context.rootController
@@ -1364,6 +1511,13 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     self.registerForNotifications(context: context.context, authorize: authorizeNotifications)
                     
                     self.resetIntentsIfNeeded(context: context.context)
+                    
+                    // MARK: exteraGram
+                    updateEGWebSettingsInteractivelly(context: context.context)
+                    updateEGGHSettingsInteractivelly(context: context.context)
+                    let _ = (context.context.sharedContext.presentationData.start(next: { presentationData in
+                        EGLocalizationManager.shared.downloadLocale(presentationData.strings.baseLanguageCode)
+                    }))
                 }))
             } else {
                 self.mainWindow.viewController = nil
@@ -1433,6 +1587,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 authContextReadyDisposable.set(nil)
             }
         }))
+        
+        
+
 
 
         let logoutDataSignal: Signal<(AccountManager, Set<PeerId>), NoError> = self.sharedContextPromise.get()
@@ -1467,6 +1624,20 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 return updated
             }).start()
         }))
+        
+        self.watchCommunicationManagerPromise.set(watchCommunicationManager(context: self.context.get() |> flatMap { WatchCommunicationManagerContext(context: $0.context) }, allowBackgroundTimeExtension: { timeout in
+            let _ = (self.sharedContextPromise.get()
+            |> take(1)).start(next: { sharedContext in
+                sharedContext.wakeupManager.allowBackgroundTimeExtension(timeout: timeout)
+            })
+        }))
+        let _ = self.watchCommunicationManagerPromise.get().start(next: { manager in
+            if let manager = manager {
+                watchManagerArgumentsPromise.set(.single(manager.arguments))
+            } else {
+                watchManagerArgumentsPromise.set(.single(nil))
+            }
+        })
         
         self.resetBadge()
         
@@ -1514,7 +1685,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         if let url = launchOptions?[.url] {
             if let url = url as? URL, url.scheme == "tg" || url.scheme == buildConfig.appSpecificUrlScheme {
-                self.openUrlWhenReady(url: url, external: true)
+                self.openUrlWhenReady(url: egActionRequestHandlerSanitizer(url), external: true)
             } else if let urlString = url as? String, urlString.lowercased().hasPrefix("tg:") || urlString.lowercased().hasPrefix("\(buildConfig.appSpecificUrlScheme):"), let url = URL(string: urlString) {
                 self.openUrlWhenReady(url: url, external: true)
             }
@@ -1688,7 +1859,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 }))
             }
         })
-                
+        
         return true
     }
     
@@ -1989,6 +2160,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func runForegroundTasks() {
+        
+        
+        var egTasksLaunched: Bool = false
+        
         let _ = (self.sharedContextPromise.get()
         |> take(1)
         |> deliverOnMainQueue).start(next: { sharedApplicationContext in
@@ -1996,6 +2171,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
              |> take(1)
              |> deliverOnMainQueue).start(next: { activeAccounts in
                 for (_, context, _) in activeAccounts.accounts {
+                    // MARK: exteraGram
+                    if !egTasksLaunched {
+                        updateEGWebSettingsInteractivelly(context: context)
+                        updateEGGHSettingsInteractivelly(context: context)
+                        egTasksLaunched = true
+                    }
                     (context.downloadedMediaStoreManager as? DownloadedMediaStoreManagerImpl)?.runTasks()
                 }
             })
@@ -2033,6 +2214,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     
     func applicationWillTerminate(_ application: UIApplication) {
         Logger.shared.log("App \(self.episodeId)", "terminating")
+        // MARK: exteraGram — mark clean exit so next launch skips crash breadcrumbs
+        PluginsController.shared.markPluginDebugLogCleanExit()
     }
     
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
@@ -2511,6 +2694,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         }
         |> deliverOnMainQueue).start(next: { sharedContext, context, authContext in
+            let url = egActionRequestHandlerSanitizer(url)
             if let authContext = authContext, let confirmationCode = parseConfirmationCodeUrl(sharedContext: sharedContext, url: url) {
                 authContext.rootController.applyConfirmationCode(confirmationCode)
             } else if let context = context {
@@ -2519,7 +2703,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 if let proxyData = parseProxyUrl(sharedContext: sharedContext, url: url) {
                     authContext.rootController.view.endEditing(true)
                     let presentationData = authContext.sharedContext.currentPresentationData.with { $0 }
-                    let controller = ProxyServerPreviewScreen(sharedContext: authContext.sharedContext, network: authContext.account.network, updatedPresentationData: (presentationData, authContext.sharedContext.presentationData), server: proxyData)
+                    let controller = ProxyServerActionSheetController(sharedContext: authContext.sharedContext, presentationData: presentationData, accountManager: authContext.sharedContext.accountManager, postbox: authContext.account.postbox, network: authContext.account.network, server: proxyData, updatedPresentationData: nil)
                     authContext.rootController.currentWindow?.present(controller, on: PresentationSurfaceLevel.root, blockInteraction: false, completion: {})
                 } else if let secureIdData = parseSecureIdUrl(url) {
                     let presentationData = authContext.sharedContext.currentPresentationData.with { $0 }
@@ -3327,5 +3511,181 @@ final class UpdateSettings: Codable, Equatable {
     
     static func ==(lhs: UpdateSettings, rhs: UpdateSettings) -> Bool {
         return lhs.url == rhs.url
+    }
+}
+
+// MARK: exteraGram
+@available(iOS 13.0, *)
+extension AppDelegate {
+
+    func setupIAP() {
+        NotificationCenter.default.addObserver(forName: .EGIAPHelperPurchaseNotification, object: nil, queue: nil) { [weak self] notification in
+            EGLogger.shared.log("EGIAP", "Got EGIAPHelperPurchaseNotification")
+            guard let strongSelf = self else { return }
+            if let transactions = notification.object as? [SKPaymentTransaction] {
+                let _ = (strongSelf.context.get()
+                |> take(1)
+                |> deliverOnMainQueue).start(next: { [weak strongSelf] context in
+                    guard let veryStrongSelf = strongSelf else {
+                        EGLogger.shared.log("EGIAP", "Finishing transactions \(transactions.map({ $0.transactionIdentifier ?? "nil" }).joined(separator: ", "))")
+                        let defaultPaymentQueue = SKPaymentQueue.default()
+                        for transaction in transactions {
+                            defaultPaymentQueue.finishTransaction(transaction)
+                        }
+                        return
+                    }
+                    guard let context = context else {
+                        EGLogger.shared.log("EGIAP", "Empty app context (how?)")
+                        
+                        EGLogger.shared.log("EGIAP", "Finishing transactions \(transactions.map({ $0.transactionIdentifier ?? "nil" }).joined(separator: ", "))")
+                        let defaultPaymentQueue = SKPaymentQueue.default()
+                        for transaction in transactions {
+                            defaultPaymentQueue.finishTransaction(transaction)
+                        }
+                        return
+                    }
+                    EGLogger.shared.log("EGIAP", "Got context for EGIAPHelperPurchaseNotification")
+                    let _ = Task {
+                        await veryStrongSelf.sendReceiptForVerification(primaryContext: context.context)
+                        await veryStrongSelf.fetchEGStatus(primaryContext: context.context)
+                        
+                        EGLogger.shared.log("EGIAP", "Finishing transactions \(transactions.map({ $0.transactionIdentifier ?? "nil" }).joined(separator: ", "))")
+                        let defaultPaymentQueue = SKPaymentQueue.default()
+                        for transaction in transactions {
+                            defaultPaymentQueue.finishTransaction(transaction)
+                        }
+                    }
+                })
+            } else {
+                EGLogger.shared.log("EGIAP", "Wrong object in EGIAPHelperPurchaseNotification")
+                #if DEBUG
+                preconditionFailure("Wrong object in EGIAPHelperPurchaseNotification")
+                #endif
+            }
+        }
+    }
+    
+    func getPrimaryContext(anyContext context: AccountContext, fallbackToCurrent: Bool = false) async -> AccountContext {
+        var primaryUserId: Int64 = Int64(EGSimpleSettings.shared.primaryUserId) ?? 0
+        if primaryUserId == 0 {
+            primaryUserId = context.account.peerId.id._internalGetInt64Value()
+        }
+
+        var primaryContext = try? await getContextForUserId(context: context, userId: primaryUserId).awaitable()
+        if let primaryContext = primaryContext {
+            EGLogger.shared.log("EGIAP", "Got primary context for user id: \(primaryContext.account.peerId.id._internalGetInt64Value())")
+            return primaryContext
+        } else {
+            primaryContext = context
+            let newPrimaryUserId = context.account.peerId.id._internalGetInt64Value()
+            EGLogger.shared.log("EGIAP", "Primary context for user id \(primaryUserId) is nil! Falling back to current context with user id: \(newPrimaryUserId)")
+            return context
+        }
+    }
+    
+    func sendReceiptForVerification(primaryContext: AccountContext) async {
+        guard let receiptData = getPurchaceReceiptData() else {
+            return
+        }
+        
+        let encodedReceiptData = receiptData.base64EncodedData(options: [])
+
+        var deviceToken: String?
+        var apiToken: String?
+        do {
+            async let deviceTokenTask = getDeviceToken().awaitable()
+            async let apiTokenTask = getEGApiToken(context: primaryContext).awaitable()
+            
+            (deviceToken, apiToken) = try await (deviceTokenTask, apiTokenTask)
+        } catch {
+            EGLogger.shared.log("EGIAP", "Error getting device token or API token: \(error)")
+            return
+        }
+
+        if let deviceToken, let apiToken {
+            do {
+                let _ = try await postEGReceipt(token: apiToken,
+                                                deviceToken: deviceToken,
+                                                encodedReceiptData: encodedReceiptData).awaitable()
+            } catch let error as SignalCompleted {
+                let _ = error
+            } catch {
+                EGLogger.shared.log("EGIAP", "Error: \(error)")
+            }
+        }
+    }
+    
+    func fetchEGStatus(primaryContext: AccountContext) async {
+        // TODO(exteragram): Stuck on getting shouldKeepConnection
+        // Perhaps, we can drop on some timeout?
+//        let currentShouldKeepConnection = await (primaryContext.account.network.shouldKeepConnection.get() |> take(1) |> deliverOnMainQueue).awaitable()
+        guard !primaryContext.account.testingEnvironment else {
+            return
+        }
+        let currentShouldKeepConnection = false
+        let userId = primaryContext.account.peerId.id._internalGetInt64Value()
+//        EGLogger.shared.log("EGIAP", "User id \(userId) currently keeps connection: \(currentShouldKeepConnection)")
+        if !currentShouldKeepConnection {
+            EGLogger.shared.log("EGIAP", "Asking user id \(userId) to keep connection: true")
+            primaryContext.account.network.shouldKeepConnection.set(.single(true))
+        }
+        // MARK: exteraGram
+        let egIqtpQueryString = makeIqtpQuery("s")
+        //
+        let iqtpResponse = try? await egIqtpQuery(engine: primaryContext.engine, query: egIqtpQueryString).awaitable()
+        guard let iqtpResponse = iqtpResponse else {
+            EGLogger.shared.log("EGIAP", "IQTP response is nil!")
+//            if !currentShouldKeepConnection {
+//                EGLogger.shared.log("EGIAP", "Setting user id \(userId) keep connection back to false")
+//                primaryContext.account.network.shouldKeepConnection.set(.single(false))
+//            }
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .EGIAPHelperValidationErrorNotification, object: nil, userInfo: ["error": "PayWall.ValidationError.TryAgain"])
+            }
+            return
+        }
+        EGLogger.shared.log("EGIAP", "Got IQTP response: \(iqtpResponse)")
+        let _ = try? await updateEGStatusInteractively(accountManager: primaryContext.sharedContext.accountManager, { value in
+            var value = value
+
+            let newStatus: Int64
+            if let status = Int64(iqtpResponse.value) {
+                newStatus = status
+            } else {
+                EGLogger.shared.log("EGIAP", "Can't parse IQTP response into status!")
+                newStatus = value.status // unparseable
+            }
+            
+            let userId = primaryContext.account.peerId.id._internalGetInt64Value()
+            if value.status != newStatus {
+                EGLogger.shared.log("EGIAP", "Updating \(userId) status \(value.status) -> \(newStatus)")
+                if newStatus > 1 {
+                    let stringUserId = String(userId)
+                    if EGSimpleSettings.shared.primaryUserId != stringUserId {
+                        EGLogger.shared.log("EGIAP", "Setting new primary user id: \(userId)")
+                        EGSimpleSettings.shared.primaryUserId = stringUserId
+                    }
+                } else {
+                    EGLogger.shared.log("EGIAP", "Status expired")
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(name: .EGIAPHelperValidationErrorNotification, object: nil, userInfo: ["error": "PayWall.ValidationError.Expired"])
+                    }
+                }
+                value.status = newStatus
+            } else {
+                EGLogger.shared.log("EGIAP", "Status \(value.status) for \(userId) hasn't changed")
+                if newStatus < 2 {
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(name: .EGIAPHelperValidationErrorNotification, object: nil, userInfo: ["error": "PayWall.ValidationError.TryAgain"])
+                    }
+                }
+            }
+            return value
+        }).awaitable()
+
+//        if !currentShouldKeepConnection {
+//            EGLogger.shared.log("EGIAP", "Setting user id \(userId) keep connection back to false")
+//            primaryContext.account.network.shouldKeepConnection.set(.single(false))
+//        }
     }
 }

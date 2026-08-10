@@ -48,6 +48,10 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+egdeps = [
+    "//exteraGram/EGStrings:EGStrings"
+]
+
 swift_library(
     name = "PremiumUI",
     module_name = "PremiumUI",
@@ -60,7 +64,7 @@ swift_library(
     data = [
         ":PremiumUIBundle",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",

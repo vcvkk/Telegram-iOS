@@ -40,19 +40,27 @@ apple_resource_bundle(
     ],
 )
 
+egdeps = [
+    "//exteraGram/EGSimpleSettings:EGSimpleSettings",
+]
+
+egsrcs = [
+    "//exteraGram/EGNY:EGNY"
+]
+
 swift_library(
     name = "WallpaperBackgroundNode",
     module_name = "WallpaperBackgroundNode",
     srcs = glob([
         "Sources/**/*.swift",
-    ]),
+    ]) + egsrcs,
     copts = [
         "-warnings-as-errors",
     ],
     data = [
         ":WallpaperBackgroundNodeBundle",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",
         "//submodules/GradientBackground:GradientBackground",

@@ -1,3 +1,6 @@
+// MARK: exteraGram
+import EGSimpleSettings
+
 import Foundation
 import Postbox
 import TelegramApi
@@ -504,8 +507,8 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             }
             
             let useTempAuthKeys: Bool = true
-            
-            let context = MTContext(serialization: serialization, encryptionProvider: arguments.encryptionProvider, apiEnvironment: apiEnvironment, isTestingEnvironment: testingEnvironment, useTempAuthKeys: useTempAuthKeys)
+            let forceLocalDNS: Bool = EGSimpleSettings.shared.localDNSForProxyHost
+            let context = MTContext(serialization: serialization, encryptionProvider: arguments.encryptionProvider, apiEnvironment: apiEnvironment, isTestingEnvironment: testingEnvironment, useTempAuthKeys: useTempAuthKeys, forceLocalDNS: forceLocalDNS)
             
             if let networkSettings = networkSettings {
                 let useNetworkFramework: Bool
@@ -1314,10 +1317,7 @@ class Keychain: NSObject, MTKeychain {
 }
 #if os(iOS)
 func makeCloudDataContext(encryptionProvider: EncryptionProvider) -> CloudDataContext? {
-    if #available(iOS 10.0, *) {
-        return CloudDataContextImpl(encryptionProvider: encryptionProvider)
-    } else {
-        return nil
-    }
+    // CloudKit requires iCloud entitlements which are unavailable in sideloaded builds.
+    return nil
 }
 #endif

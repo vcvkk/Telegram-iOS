@@ -1,0 +1,312 @@
+__id__          = "tomato_bom"
+__name__        = "🍅 Tomato Bom"
+__os__          = "ios"
+__version__     = "1.7"
+__author__      = "@oodze"
+__description__ = "Throw tomatoes at anyone! **Tap** to splat · **Hold** for machine-gun · **Double-tap** to close."
+__requirements__ = "Pillow"
+
+import _ios_bridge as bridge
+import threading
+import time
+import os
+import ssl
+import urllib.request
+
+# ── pure-Python LCG (no C deps) ────────────────────────────────────────────────
+_rng = [0xA3B2C1D0]
+
+def _rand():
+    _rng[0] = (_rng[0] * 1664525 + 1013904223) & 0xFFFFFFFF
+    return _rng[0] / 0x100000000
+
+def _uniform(a, b):
+    return a + _rand() * (b - a)
+
+# ── settings ────────────────────────────────────────────────────────────────────
+def _tomato_size():
+    return float(bridge.get_plugin_setting(__id__, "tomato_size", 650.0))
+
+def _sound_volume():
+    return float(bridge.get_plugin_setting(__id__, "sound_volume", 0.7))
+
+def _fire_interval():
+    return float(bridge.get_plugin_setting(__id__, "fire_interval", 0.12))
+
+# ── asset URLs (original Android sources) ──────────────────────────────────────
+_GIF_URL   = "https://gitflic.ru/project/fdijdkjl/kjhkjh/blob/raw?file=ezgif-4d2382b4323e220f.gif&inline=false&commit=b10d0e981c42998ed9180edda184d1852cd7362c"
+_SOUND_URL = "https://gitflic.ru/project/fdijdkjl/kjhkjh/blob/raw?file=c5855692202fecf58526e46da71c34d3.mp3&inline=false&commit=b10d0e981c42998ed9180edda184d1852cd7362c"
+
+# ── runtime state ──────────────────────────────────────────────────────────────
+_overlay_id        = None
+_audio_id          = -1
+_rapid_active      = False
+_last_tap_time     = 0.0
+_current_x         = 0.0
+_current_y         = 0.0
+_last_sound_t      = 0.0
+_touch_down        = False
+
+# Cached asset paths (set after first successful download)
+_gif_path   = None
+_sound_path = None
+
+# ── asset management ───────────────────────────────────────────────────────────
+
+def _download_file(url, dest):
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
+    })
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+            status = getattr(r, "status", None)
+            data = r.read()
+        bridge.log("tomato_bom", "GET {} → status={} bytes={}".format(url, status, len(data)))
+        if not data:
+            bridge.log("tomato_bom", "download failed: empty body")
+            return False
+        if data.lstrip()[:1] == b'<':
+            bridge.log("tomato_bom", "download failed: HTML body, first32={!r}".format(data[:32]))
+            return False
+        with open(dest, 'wb') as f:
+            f.write(data)
+        bridge.log("tomato_bom", "saved {} bytes → {}".format(len(data), dest))
+        return True
+    except Exception as e:
+        bridge.log("tomato_bom", "download exception: {}".format(e))
+        return False
+
+
+def _make_splat_png(path):
+    try:
+        from PIL import Image, ImageDraw, ImageFilter
+        sz = 512
+        img = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        cx, cy = sz // 2, sz // 2
+        for _ in range(18):
+            r = _uniform(45, 160)
+            dx = _uniform(-130, 130)
+            dy = _uniform(-130, 130)
+            a = int(_uniform(185, 255))
+            draw.ellipse([cx+dx-r, cy+dy-r, cx+dx+r, cy+dy+r],
+                         fill=(int(_uniform(165, 220)), int(_uniform(10, 55)), int(_uniform(10, 45)), a))
+        for _ in range(7):
+            r = _uniform(7, 17)
+            dx = _uniform(-75, 75)
+            dy = _uniform(-75, 75)
+            draw.ellipse([cx+dx-r, cy+dy-r, cx+dx+r, cy+dy+r], fill=(75, 40, 10, 210))
+        img = img.filter(ImageFilter.GaussianBlur(radius=4))
+        img.save(path, "PNG")
+        bridge.log("tomato_bom", "splat PNG generated: {}".format(path))
+        return True
+    except Exception as e:
+        bridge.log("tomato_bom", "Pillow splat error: {}".format(e))
+        return False
+
+
+def _ensure_assets():
+    global _gif_path, _sound_path
+    data_dir = bridge.get_plugin_data_dir(__id__)
+    gif_dest     = data_dir + "/splat.gif"
+    png_fallback = data_dir + "/splat.png"
+    _sound_path  = data_dir + "/splat.mp3"
+
+    if os.path.exists(gif_dest):
+        _gif_path = gif_dest
+        bridge.log("tomato_bom", "splat GIF cached")
+    else:
+        bridge.log("tomato_bom", "no cached GIF — trying download")
+        if _download_file(_GIF_URL, gif_dest):
+            _gif_path = gif_dest
+            _gif_duration = None  # invalidate cached duration for the new file
+            bridge.log("tomato_bom", "splat GIF downloaded OK")
+            if os.path.exists(png_fallback):
+                try: os.remove(png_fallback)
+                except: pass
+        else:
+            bridge.log("tomato_bom", "download failed — using PNG fallback")
+            if not os.path.exists(png_fallback):
+                _make_splat_png(png_fallback)
+            if os.path.exists(png_fallback):
+                _gif_path = png_fallback
+            else:
+                bridge.log("tomato_bom", "Pillow also unavailable — giving up")
+                return False
+
+    if not os.path.exists(_sound_path):
+        _download_file(_SOUND_URL, _sound_path)
+
+    bridge.log("tomato_bom", "assets ready: splat={}".format(_gif_path))
+    return os.path.exists(_gif_path)
+
+# ── helpers ────────────────────────────────────────────────────────────────────
+
+def _play_sound():
+    global _last_sound_t
+    if _audio_id < 0:
+        return
+    now = time.time()
+    if now - _last_sound_t < 0.05:
+        return
+    _last_sound_t = now
+    bridge.audio("play", _audio_id, _sound_volume(), 1.0)
+
+# Cached GIF duration in seconds (computed once via Pillow after assets are ready).
+_gif_duration = None
+
+def _compute_gif_duration():
+    """Return total animation duration in seconds, or a fallback if Pillow unavailable."""
+    global _gif_duration
+    if _gif_duration is not None:
+        return _gif_duration
+    try:
+        from PIL import Image
+        img = Image.open(_gif_path)
+        total_ms = 0
+        for f in range(img.n_frames):
+            img.seek(f)
+            total_ms += img.info.get("duration", 100)
+        _gif_duration = total_ms / 1000.0
+    except Exception as e:
+        bridge.log("tomato_bom", "gif duration fallback ({}): using 1.5s".format(e))
+        _gif_duration = 1.5
+    bridge.log("tomato_bom", "gif duration: {:.3f}s".format(_gif_duration))
+    return _gif_duration
+
+def _spawn_tomato(x, y):
+    if _overlay_id is None or not _gif_path or not os.path.exists(_gif_path):
+        return
+    # Play once (repeat_count=1), then remove when the animation naturally ends.
+    vid = bridge.add_image_view(_overlay_id, _gif_path, x, y, _tomato_size(), 1)
+    _play_sound()
+    threading.Timer(_compute_gif_duration(), lambda v=vid: bridge.remove_view(v)).start()
+
+def _rapid_loop():
+    """Machine-gun loop: sleeps first then fires, matching Android behaviour."""
+    global _rapid_active
+    while _rapid_active and _touch_down:
+        time.sleep(_fire_interval())
+        if not _rapid_active or not _touch_down:
+            break
+        x = _current_x + _uniform(-33.0, 33.0)
+        y = _current_y + _uniform(-33.0, 33.0)
+        bridge.run_on_main_thread(lambda lx=x, ly=y: _spawn_tomato(lx, ly))
+    _rapid_active = False
+
+# ── raw touch handler ──────────────────────────────────────────────────────────
+# action: 0=down, 1=up/cancel, 2=move
+# Called from ObjC EGOverlayContentView on main thread.
+
+def _on_touch(action, x, y):
+    global _last_tap_time, _current_x, _current_y
+    global _rapid_active, _overlay_id, _touch_down
+
+    if action == 0:  # DOWN
+        _touch_down = True
+        _current_x = x
+        _current_y = y
+        now = time.time()
+
+        # Double-tap (< 0.3 s since last DOWN) → close overlay and stop all sounds.
+        if now - _last_tap_time < 0.3:
+            _rapid_active = False
+            _touch_down = False
+            oid = _overlay_id
+            _overlay_id = None
+            _last_tap_time = 0.0
+            bridge.audio("stop", -1)
+            if oid is not None:
+                bridge.dismiss_overlay(oid)
+            return
+
+        _last_tap_time = now
+
+        # Spawn immediately at touch position, same as the original Android version.
+        _spawn_tomato(x, y)
+        bridge.haptic_feedback("light")
+
+        # Start machine-gun immediately on hold (no long-press delay, matches Android)
+        if not _rapid_active:
+            _rapid_active = True
+            threading.Thread(target=_rapid_loop, daemon=True).start()
+
+    elif action == 2:  # MOVE
+        _current_x = x
+        _current_y = y
+
+    elif action == 1:  # UP / CANCEL
+        _touch_down = False
+        if _rapid_active:
+            _rapid_active = False
+            bridge.haptic_feedback("medium")
+
+# ── activation ─────────────────────────────────────────────────────────────────
+
+def _activate():
+    global _overlay_id
+    if _overlay_id is not None:
+        return
+
+    def _async_activate():
+        global _overlay_id, _audio_id
+        if not _ensure_assets():
+            bridge.run_on_main_thread(lambda: bridge.show_bulletin(
+                "🍅 Tomato Bom", "Failed to download assets. Check your connection."))
+            return
+        if _audio_id < 0 and _sound_path and os.path.exists(_sound_path):
+            _audio_id = bridge.audio("load", _sound_path)
+        # Pre-warm GIF duration on this background thread so the first call from the
+        # main thread (_spawn_tomato) doesn't block the UI with Pillow frame-reading.
+        _compute_gif_duration()
+        bridge.run_on_main_thread(_create_overlay)
+
+    threading.Thread(target=_async_activate, daemon=True).start()
+
+def _create_overlay():
+    global _overlay_id, _rapid_active, _last_tap_time, _touch_down
+    if _overlay_id is not None:
+        return
+    _rapid_active  = False
+    _last_tap_time = 0.0
+    _touch_down    = False
+    oid = bridge.create_overlay(0.0)
+    _overlay_id = oid
+    bridge.add_touch_handler(oid, _on_touch)
+    bridge.preload_splat(_gif_path)
+    bridge.show_bulletin("🍅 Tomato Bom", "Tap · Hold for rapid fire · Double-tap to close")
+
+# ── menu item handler ──────────────────────────────────────────────────────────
+
+def _on_menu_tap(params):
+    if params.get("plugin_id") == __id__ and params.get("item_id") == "open":
+        bridge.run_on_main_thread(_activate)
+
+# ── plugin lifecycle ───────────────────────────────────────────────────────────
+
+def on_load(plugin):
+    try:
+        from PIL import Image
+        bridge.log("tomato_bom", "Pillow {} ready".format(Image.__version__))
+    except ImportError as e:
+        bridge.log("tomato_bom", "Pillow not available: {}".format(e))
+    bridge.register_plugin_entry(__id__, "chatlist",     "open", "🍅 Tomato Bom")
+    bridge.log("tomato_bom", "registered chatlist entry")
+    bridge.register_plugin_entry(__id__, "context_menu", "open", "🍅 Tomato Bom")
+    bridge.log("tomato_bom", "registered context_menu entry")
+    bridge.register_plugin_entry(__id__, "profile",      "open", "🍅 Tomato Bom")
+    bridge.log("tomato_bom", "registered profile entry")
+    bridge.add_tl_hook("plugin.menu_item_tapped", _on_menu_tap)
+    bridge.log("tomato_bom", "on_load complete")
+
+def on_unload(plugin):
+    global _overlay_id, _rapid_active, _audio_id
+    _rapid_active = False
+    _touch_down = False
+    if _overlay_id is not None:
+        bridge.dismiss_overlay(_overlay_id)
+        _overlay_id = None
+    _audio_id = -1

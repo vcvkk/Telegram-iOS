@@ -24,9 +24,6 @@ func pollCloudMediaToInputMedia(_ media: Media) -> Api.InputMedia? {
         } else {
             return .inputMediaGeoPoint(.init(geoPoint: geoPoint))
         }
-    } else if let webpage = media as? TelegramMediaWebpage, let url = webpage.content.url {
-        let flags: Int32 = 1 << 2
-        return .inputMediaWebPage(.init(flags: flags, url: url))
     }
     return nil
 }
@@ -130,14 +127,17 @@ public enum AddPollOptionError {
 }
 
 func _internal_addPollOption(account: Account, messageId: MessageId, text: String, entities: [MessageTextEntity], mediaReference: AnyMediaReference?) -> Signal<Never, AddPollOptionError> {
-    return account.postbox.loadedPeerWithId(messageId.peerId)
-    |> take(1)
+    return account.postbox.transaction { transaction -> (Peer?, Bool) in
+        // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+        return (transaction.getPeer(messageId.peerId), transaction.getPeer(account.peerId)?.isPremium ?? false)
+    }
     |> castError(AddPollOptionError.self)
-    |> mapToSignal { peer in
-        if let inputPeer = apiInputPeer(peer) {
+    |> mapToSignal { peerAndPremium in
+        let (maybePeer, isPremium) = peerAndPremium
+        if let peer = maybePeer, let inputPeer = apiInputPeer(peer) {
             let inputMedia = mediaReference.flatMap { pollCloudMediaToInputMedia($0.media) }
             let flags: Int32 = inputMedia != nil ? (1 << 0) : 0
-            let apiAnswer: Api.PollAnswer = .inputPollAnswer(.init(flags: flags, text: .textWithEntities(.init(text: text, entities: apiEntitiesFromMessageTextEntities(entities, associatedPeers: SimpleDictionary()))), media: inputMedia))
+            let apiAnswer: Api.PollAnswer = .inputPollAnswer(.init(flags: flags, text: .textWithEntities(.init(text: text, entities: apiEntitiesFromMessageTextEntities(entities, associatedPeers: SimpleDictionary(), isPremium: isPremium))), media: inputMedia))
             return account.network.request(Api.functions.messages.addPollAnswer(peer: inputPeer, msgId: messageId.id, answer: apiAnswer))
             |> mapError { _ -> AddPollOptionError in
                 return .generic
@@ -185,22 +185,24 @@ func _internal_deletePollOption(account: Account, messageId: MessageId, opaqueId
 }
 
 func _internal_requestClosePoll(postbox: Postbox, network: Network, stateManager: AccountStateManager, messageId: MessageId) -> Signal<Void, NoError> {
-    return postbox.transaction { transaction -> (TelegramMediaPoll, Api.InputPeer)? in
+    return postbox.transaction { transaction -> (TelegramMediaPoll, Api.InputPeer, Bool)? in
         guard let inputPeer = transaction.getPeer(messageId.peerId).flatMap(apiInputPeer) else {
             return nil
         }
         guard let message = transaction.getMessage(messageId) else {
             return nil
         }
+        // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+        let isPremium = transaction.getPeer(stateManager.accountPeerId)?.isPremium ?? false
         for media in message.media {
             if let poll = media as? TelegramMediaPoll {
-                return (poll, inputPeer)
+                return (poll, inputPeer, isPremium)
             }
         }
         return nil
     }
     |> mapToSignal { pollAndInputPeer -> Signal<Void, NoError> in
-        guard let (poll, inputPeer) = pollAndInputPeer, poll.pollId.namespace == Namespaces.Media.CloudPoll else {
+        guard let (poll, inputPeer, isPremium) = pollAndInputPeer, poll.pollId.namespace == Namespaces.Media.CloudPoll else {
             return .complete()
         }
         var flags: Int32 = 0
@@ -228,7 +230,7 @@ func _internal_requestClosePoll(postbox: Postbox, network: Network, stateManager
         var correctAnswersIndices: [Int32]?
         if let correctAnswersValue = poll.correctAnswers {
             pollMediaFlags |= 1 << 0
-            
+
             var indices: [Int32] = []
             for i in 0 ..< poll.options.count {
                 if correctAnswersValue.contains(where: { poll.options[i].opaqueIdentifier == $0 }) {
@@ -269,11 +271,11 @@ func _internal_requestClosePoll(postbox: Postbox, network: Network, stateManager
         var mappedSolutionEntities: [Api.MessageEntity]?
         if let solution = poll.results.solution {
             mappedSolution = solution.text
-            mappedSolutionEntities = apiTextAttributeEntities(TextEntitiesMessageAttribute(entities: solution.entities), associatedPeers: SimpleDictionary())
+            mappedSolutionEntities = apiTextAttributeEntities(TextEntitiesMessageAttribute(entities: solution.entities), associatedPeers: SimpleDictionary(), isPremium: isPremium)
             pollMediaFlags |= 1 << 1
         }
-        
-        return network.request(Api.functions.messages.editMessage(flags: flags, peer: inputPeer, id: messageId.id, message: nil, media: .inputMediaPoll(.init(flags: pollMediaFlags, poll: .poll(.init(id: poll.pollId.id, flags: pollFlags, question: .textWithEntities(.init(text: poll.text, entities: apiEntitiesFromMessageTextEntities(poll.textEntities, associatedPeers: SimpleDictionary()))), answers: poll.options.map({ $0.apiOption }), closePeriod: poll.deadlineTimeout, closeDate: poll.deadlineDate, countriesIso2: poll.countries, hash: 0)), correctAnswers: correctAnswersIndices, attachedMedia: nil, solution: mappedSolution, solutionEntities: mappedSolutionEntities, solutionMedia: nil)), replyMarkup: nil, entities: nil, scheduleDate: nil, scheduleRepeatPeriod: nil, quickReplyShortcutId: nil, richMessage: nil))
+
+        return network.request(Api.functions.messages.editMessage(flags: flags, peer: inputPeer, id: messageId.id, message: nil, media: .inputMediaPoll(.init(flags: pollMediaFlags, poll: .poll(.init(id: poll.pollId.id, flags: pollFlags, question: .textWithEntities(.init(text: poll.text, entities: apiEntitiesFromMessageTextEntities(poll.textEntities, associatedPeers: SimpleDictionary(), isPremium: isPremium))), answers: poll.options.map({ $0.apiOption }), closePeriod: poll.deadlineTimeout, closeDate: poll.deadlineDate, countriesIso2: poll.countries, hash: 0)), correctAnswers: correctAnswersIndices, attachedMedia: nil, solution: mappedSolution, solutionEntities: mappedSolutionEntities, solutionMedia: nil)), replyMarkup: nil, entities: nil, scheduleDate: nil, scheduleRepeatPeriod: nil, quickReplyShortcutId: nil, richMessage: nil))
         |> map(Optional.init)
         |> `catch` { _ -> Signal<Api.Updates?, NoError> in
             return .single(nil)

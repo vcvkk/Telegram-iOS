@@ -1,5 +1,11 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGSimpleSettings:EGSimpleSettings",
+    "//exteraGram/EGIAP:EGIAP",
+    "//exteraGram/EGStatus:EGStatus",
+]
+
 swift_library(
     name = "AccountContext",
     module_name = "AccountContext",
@@ -9,7 +15,7 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/TelegramAudio:TelegramAudio",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/TemporaryCachedPeerDataManager:TemporaryCachedPeerDataManager",

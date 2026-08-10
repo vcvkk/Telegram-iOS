@@ -13,6 +13,7 @@ swift_library(
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/AsyncDisplayKit",
         "//submodules/Display",
+        "//submodules/Postbox",
         "//submodules/TelegramCore",
         "//submodules/PresentationDataUtils",
         "//submodules/TelegramPresentationData",
@@ -21,6 +22,7 @@ swift_library(
         "//submodules/AvatarNode",
         "//submodules/ContextUI",
         "//submodules/AccountContext",
+        "//exteraGram/EGBadges:EGBadges",
     ],
     visibility = [
         "//visibility:public",

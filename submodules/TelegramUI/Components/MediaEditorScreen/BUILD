@@ -1,5 +1,9 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGSimpleSettings:EGSimpleSettings"
+]
+
 swift_library(
     name = "MediaEditorScreen",
     module_name = "MediaEditorScreen",
@@ -9,7 +13,7 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",
         "//submodules/Postbox:Postbox",
@@ -64,6 +68,7 @@ swift_library(
         "//submodules/TelegramUI/Components/ListSectionComponent",
         "//submodules/WebsiteType",
         "//submodules/UrlEscaping",
+        "//submodules/DeviceLocationManager",
         "//submodules/TelegramUI/Components/SaveProgressScreen",
         "//submodules/TelegramUI/Components/MediaAssetsContext",
         "//submodules/CheckNode",
@@ -71,7 +76,6 @@ swift_library(
         "//submodules/TelegramUI/Components/AttachmentFileController",
         "//submodules/SaveToCameraRoll",
         "//submodules/TelegramUI/Components/ContextControllerImpl",
-        "//submodules/TelegramUI/Components/SliderComponent",
     ],
     visibility = [
         "//visibility:public",

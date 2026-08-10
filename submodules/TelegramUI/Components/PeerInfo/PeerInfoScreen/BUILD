@@ -1,5 +1,17 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGSettingsUI:EGSettingsUI",
+    "//exteraGram/EGStrings:EGStrings",
+    "//exteraGram/EGSimpleSettings:EGSimpleSettings",
+    "//exteraGram/EGBadges:EGBadges",
+
+    "//exteraGram/EGRegDate:EGRegDate",
+    "//exteraGram/EGRegDateScheme:EGRegDateScheme",
+    "//exteraGram/EGDebugUI:EGDebugUI",
+]
+
+
 swift_library(
     name = "PeerInfoScreen",
     module_name = "PeerInfoScreen",
@@ -9,7 +21,7 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/AccountContext",
         "//submodules/AccountUtils",
         "//submodules/ActionSheetPeerItem",
@@ -31,7 +43,6 @@ swift_library(
         "//submodules/ChatListUI",
         "//submodules/TelegramUI/Components/Chat/ChatMessageItemView",
         "//submodules/ChatPresentationInterfaceState",
-        "//submodules/TelegramUI/Components/ChatScheduleTimeController",
         "//submodules/TelegramUI/Components/ChatTimerScreen",
         "//submodules/TelegramUI/Components/ChatTitleView",
         "//submodules/Components/ComponentDisplayAdapters",
@@ -82,6 +93,7 @@ swift_library(
         "//submodules/TelegramUI/Components/PeerInfo/PeerInfoStoryGridScreen",
         "//submodules/PeerInfoUI",
         "//submodules/TelegramUI/Components/PeerInfo/PeerInfoVisualMediaPaneNode",
+        "//submodules/TelegramUI/Components/TextProcessingScreen",
         "//submodules/TelegramUI/Components/Settings/PeerNameColorScreen",
         "//submodules/PeerPresenceStatusManager",
         "//submodules/TelegramUI/Components/PeerReportScreen",
@@ -122,6 +134,7 @@ swift_library(
         "//submodules/TranslateUI",
         "//submodules/UndoUI",
         "//submodules/MediaPlayer:UniversalMediaPlayer",
+        "//submodules/WebSearchUI",
         "//submodules/WebUI",
         "//submodules/TelegramUI/Components/MultiScaleTextNode",
         "//submodules/GridMessageSelectionNode",
@@ -142,7 +155,6 @@ swift_library(
         "//submodules/TelegramUI/Components/Settings/PeerNameColorItem",
         "//submodules/TelegramUI/Components/PlainButtonComponent",
         "//submodules/TelegramUI/Components/TextLoadingEffect",
-        "//submodules/TelegramUI/Components/TextProcessingScreen",
         "//submodules/TelegramUI/Components/Settings/BirthdayPickerScreen",
         "//submodules/TelegramUI/Components/Settings/PeerSelectionScreen",
         "//submodules/TelegramUI/Components/ButtonComponent",

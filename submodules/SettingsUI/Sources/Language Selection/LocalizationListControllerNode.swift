@@ -1,7 +1,9 @@
+import EGStrings
 import Foundation
 import UIKit
 import Display
 import AsyncDisplayKit
+import Postbox
 import TelegramCore
 import SwiftSignalKit
 import TelegramPresentationData
@@ -460,7 +462,7 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
         default:
             break
         }
-        
+        chatTranslationAvailable = true; translateButtonAvailable = true // MARK: exteraGram
         let previousState = Atomic<LocalizationListState?>(value: nil)
         let previousEntriesHolder = Atomic<([LanguageListEntry], PresentationTheme, PresentationStrings)?>(value: nil)
         self.listDisposable = combineLatest(
@@ -477,6 +479,7 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
                 return
             }
             
+            // MARK: exteraGram
             let isPremium = peer?.isPremium ?? false
                         
             var entries: [LanguageListEntry] = []
@@ -491,7 +494,7 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
             var ignoredLanguages: [String] = []
             if let translationSettings = sharedData.entries[ApplicationSpecificSharedDataKeys.translationSettings]?.get(TranslationSettings.self) {
                 showTranslate = translationSettings.showTranslate
-                translateChats = isPremium ? translationSettings.translateChats : false
+                translateChats = translationSettings.translateChats
                 if let languages = translationSettings.ignoredLanguages {
                     ignoredLanguages = languages
                 } else {
@@ -512,7 +515,7 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
                     }
                 }
             } else {
-                translateChats = isPremium
+                translateChats = isPremium || true
                 if let activeLanguage = activeLanguageCode, supportedTranslationLanguages.contains(activeLanguage) {
                     ignoredLanguages = [activeLanguage]
                 }
@@ -533,7 +536,7 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
                         entries.append(.translate(text: presentationData.strings.Localization_ShowTranslate, value: showTranslate))
                     }
                     if chatTranslationAvailable {
-                        entries.append(.translateEntire(text: presentationData.strings.Localization_TranslateEntireChat, value: translateChats, locked: !isPremium))
+                        entries.append(.translateEntire(text: presentationData.strings.Localization_TranslateEntireChat, value: translateChats, locked: !(isPremium || true)))
                     }
                     
                     var value = ""
@@ -584,6 +587,17 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
                 } else {
                     entries.append(.localizationTitle(text: presentationData.strings.Localization_InterfaceLanguage.uppercased(), section: LanguageListSection.official.rawValue))
                 }
+                
+                // MARK: Swiftrgam
+                for info in EGLocalizations {
+                    if existingIds.contains(info.languageCode) {
+                        continue
+                    }
+                    existingIds.insert(info.languageCode)
+                    entries.append(.localization(index: entries.count, info: info, type: .official, selected: info.languageCode == activeLanguageCode, activity: applyingCode == info.languageCode, revealed: revealedCode == info.languageCode, editing: false))
+                }
+                //
+                
                 for info in localizationListState.availableOfficialLocalizations {
                     if existingIds.contains(info.languageCode) {
                         continue
@@ -677,7 +691,7 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
         
         var listInsets = layout.insets(options: [.input])
         listInsets.top += navigationBarHeight
-        if layout.size.width >= 320.0 {
+        if layout.size.width >= 375.0 {
             let inset = max(16.0, floor((layout.size.width - 674.0) / 2.0))
             listInsets.left += inset
             listInsets.right += inset
@@ -769,6 +783,13 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
                     self?.applyingCode.set(.single(nil))
                 
                     self?.context.engine.messages.refreshAttachMenuBots()
+                    
+                    // MARK: exteraGram
+                    // TODO(exteragram): consider moving to downloadAndApplyLocalization for an app-wide strings update
+                    if let baseLanguageCode = info.baseLanguageCode {
+                        EGLocalizationManager.shared.downloadLocale(baseLanguageCode)
+                    }
+
                 }))
         }
         if info.isOfficial {

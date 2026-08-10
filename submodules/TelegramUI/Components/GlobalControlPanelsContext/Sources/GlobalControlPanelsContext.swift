@@ -68,6 +68,7 @@ public final class GlobalControlPanelsContext {
     
     public enum ChatListNotice: Equatable {
         case clearStorage(sizeFraction: Double)
+        case egUrl(id: String, title: String, text: String?, url: String, needAuth: Bool, permanent: Bool)
         case setupPassword
         case premiumUpgrade(discount: Int32)
         case premiumAnnualDiscount(discount: Int32)
@@ -76,7 +77,6 @@ public final class GlobalControlPanelsContext {
         case setupBirthday
         case birthdayPremiumGift(peers: [EnginePeer], birthdays: [EnginePeer.Id: TelegramBirthday])
         case reviewLogin(newSessionReview: NewSessionReview, totalCount: Int)
-        case reviewBotConnection(newBotConnectionReview: NewBotConnectionReview, botUsername: String, totalCount: Int)
         case premiumGrace
         case starsSubscriptionLowBalance(amount: StarsAmount, peers: [EnginePeer])
         case setupPhoto(EnginePeer)
@@ -317,9 +317,9 @@ public final class GlobalControlPanelsContext {
             if chatListNotices {
                 let twoStepData: Signal<TwoStepVerificationConfiguration?, NoError> = .single(nil) |> then(context.engine.auth.twoStepVerificationConfiguration() |> map(Optional.init))
                 
-                let accountFreezeConfiguration = (context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.appConfiguration))
+                let accountFreezeConfiguration = (context.account.postbox.preferencesView(keys: [PreferencesKeys.appConfiguration])
                                                   |> map { view -> AppConfiguration in
-                    let appConfiguration: AppConfiguration = view?.get(AppConfiguration.self) ?? AppConfiguration.defaultValue
+                    let appConfiguration: AppConfiguration = view.values[PreferencesKeys.appConfiguration]?.get(AppConfiguration.self) ?? AppConfiguration.defaultValue
                     return appConfiguration
                 }
                 |> distinctUntilChanged
@@ -330,11 +330,11 @@ public final class GlobalControlPanelsContext {
                 let starsSubscriptionsContextPromise = Promise<StarsSubscriptionsContext?>(nil)
                 
                 let suggestedChatListNoticeSignal: Signal<ChatListNotice?, NoError> = combineLatest(
+                    getEGProvidedSuggestions(account: context.account),
                     context.engine.notices.getServerProvidedSuggestions(),
                     context.engine.notices.getServerDismissedSuggestions(),
                     twoStepData,
                     newSessionReviews(postbox: context.account.postbox),
-                    newBotConnectionReviews(postbox: context.account.postbox),
                     context.engine.data.subscribe(
                         TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId),
                         TelegramEngine.EngineData.Item.Peer.Birthday(id: context.account.peerId)
@@ -343,23 +343,20 @@ public final class GlobalControlPanelsContext {
                     starsSubscriptionsContextPromise.get(),
                     accountFreezeConfiguration
                 )
-                |> mapToSignal { suggestions, dismissedSuggestions, configuration, newSessionReviews, newBotConnectionReviews, data, birthdays, starsSubscriptionsContext, accountFreezeConfiguration -> Signal<ChatListNotice?, NoError> in
+                |> mapToSignal { egSuggestionsData, suggestions, dismissedSuggestions, configuration, newSessionReviews, data, birthdays, starsSubscriptionsContext, accountFreezeConfiguration -> Signal<ChatListNotice?, NoError> in
                     let (accountPeer, birthday) = data
                     
+
+                    // MARK: exteraGram
+                    if let egSuggestionsData = egSuggestionsData, let dictionary = try? JSONSerialization.jsonObject(with: egSuggestionsData, options: []), let egSuggestions = dictionary as? [[String: Any]], let egSuggestion = egSuggestions.first, let egSuggestionId = egSuggestion["id"] as? String {
+                        if let egSuggestionType = egSuggestion["type"] as? String, egSuggestionType == "EG_URL", let egSuggestionTitle = egSuggestion["title"] as? String, let egSuggestionUrl = egSuggestion["url"] as? String {
+                            return .single(.egUrl(id: egSuggestionId, title: egSuggestionTitle, text: egSuggestion["text"] as? String, url: egSuggestionUrl, needAuth: egSuggestion["need_auth"] as? Bool ?? false, permanent: egSuggestion["permanent"] as? Bool ?? false))
+                            
+                        }
+                    }
+                    //
                     if let newSessionReview = newSessionReviews.first {
                         return .single(.reviewLogin(newSessionReview: newSessionReview, totalCount: newSessionReviews.count))
-                    }
-                    if let newBotConnectionReview = newBotConnectionReviews.first {
-                        return context.engine.data.get(
-                            TelegramEngine.EngineData.Item.Peer.Peer(id: newBotConnectionReview.botId)
-                        )
-                        |> map { peer -> ChatListNotice? in
-                            return .reviewBotConnection(
-                                newBotConnectionReview: newBotConnectionReview,
-                                botUsername: peer?.addressName ?? "",
-                                totalCount: newBotConnectionReviews.count
-                            )
-                        }
                     }
                     if suggestions.contains(.setupPassword), let configuration {
                         var notSet = false
@@ -415,8 +412,12 @@ public final class GlobalControlPanelsContext {
                     } else if suggestions.contains(.gracePremium) {
                         return .single(.premiumGrace)
                     } else if suggestions.contains(.xmasPremiumGift) {
+                        // MARK: exteraGram
+                        if ({ return true }()) { return .single(nil) }
                         return .single(.xmasPremiumGift)
                     } else if suggestions.contains(.annualPremium) || suggestions.contains(.upgradePremium) || suggestions.contains(.restorePremium), let inAppPurchaseManager = context.inAppPurchaseManager {
+                        // MARK: exteraGram
+                        if ({ return true }()) { return .single(nil) }
                         return inAppPurchaseManager.availableProducts
                         |> map { products -> ChatListNotice? in
                             if products.count > 1 {
@@ -489,6 +490,7 @@ public final class GlobalControlPanelsContext {
                         self.notifyStateUpdated()
                     }
                 })
+                
             }
             
             if let callManager = context.sharedContext.callManager, let peerId = groupCalls {

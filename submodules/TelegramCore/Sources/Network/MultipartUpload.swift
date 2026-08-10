@@ -1,3 +1,4 @@
+import EGSimpleSettings
 import Foundation
 import Postbox
 import TelegramApi
@@ -479,7 +480,8 @@ func multipartUpload(network: Network, postbox: Postbox, source: MultipartUpload
                 }
             }
             
-            let manager = MultipartUploadManager(headerSize: headerSize, data: dataSignal, encryptionKey: encryptionKey, hintFileSize: hintFileSize, hintFileIsLarge: hintFileIsLarge, forceNoBigParts: forceNoBigParts, useLargerParts: useLargerParts, increaseParallelParts: increaseParallelParts, uploadPart: { part in
+            // TODO(exteragram): Change other variables for uploadSpeedBoost
+            let manager = MultipartUploadManager(headerSize: headerSize, data: dataSignal, encryptionKey: encryptionKey, hintFileSize: hintFileSize, hintFileIsLarge: hintFileIsLarge, forceNoBigParts: forceNoBigParts, useLargerParts: useLargerParts || EGSimpleSettings.shared.uploadSpeedBoost, increaseParallelParts: increaseParallelParts || EGSimpleSettings.shared.uploadSpeedBoost, uploadPart: { part in
                 switch uploadInterface {
                 case let .download(download):
                     return download.uploadPart(fileId: part.fileId, index: part.index, data: part.data, asBigPart: part.bigPart, bigTotalParts: part.bigTotalParts, useCompression: useCompression, onFloodWaitError: onFloodWaitError)

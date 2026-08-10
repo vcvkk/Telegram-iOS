@@ -892,14 +892,14 @@ private final class SparseItemGridBindingImpl: SparseItemGridBinding, ListShimme
                 }
 
                 let message = item.message
-                var hasSpoiler = message.attributes.contains(where: { $0 is MediaSpoilerMessageAttribute }) && !self.revealedSpoilerMessageIds.contains(message.id)
+                var hasSpoiler = !EGPluginHooks.suppressedAttributeTypes.contains("MediaSpoilerMessageAttribute") && message.attributes.contains(where: { $0 is MediaSpoilerMessageAttribute }) && !self.revealedSpoilerMessageIds.contains(message.id)
                 if message.isSensitiveContent(platform: "ios") {
                     hasSpoiler = true
                 }
                 layer.updateHasSpoiler(hasSpoiler: hasSpoiler)
                 
                 var selectedMedia: Media?
-                for media in message.effectiveMedia {
+                for media in message.media {
                     if let image = media as? TelegramMediaImage {
                         selectedMedia = image
                         break
@@ -1777,7 +1777,7 @@ public final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode,
         let _ = updateVisualMediaStoredState(engine: self.context.engine, peerId: self.peerId, messageTag: self.stateTag, state: VisualMediaStoredState(zoomLevel: level.rawValue)).start()
     }
     
-    public func ensureMessageIsVisible(id: EngineMessage.Id) {
+    public func ensureMessageIsVisible(id: MessageId) {
     }
     
     private func requestHistoryAroundVisiblePosition(synchronous: Bool, reloadAtTop: Bool) {

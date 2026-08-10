@@ -1,16 +1,19 @@
+import EGStrings
 import Foundation
 import UIKit
 import Display
 import ComponentFlow
 import SwiftSignalKit
 import TelegramCore
+import Postbox
 import TelegramPresentationData
 import PresentationDataUtils
 import ViewControllerComponent
 import AccountContext
+import SolidRoundedButtonComponent
 import MultilineTextComponent
 import BundleIconComponent
-import ButtonComponent
+import SolidRoundedButtonComponent
 import BlurredBackgroundComponent
 import Markdown
 import InAppPurchaseManager
@@ -152,13 +155,13 @@ private final class PremiumGiftScreenContentComponent: CombinedComponent {
             
             let _ = updatePremiumPromoConfigurationOnce(account: context.account).start()
             
-            let stickersKey: EngineRawPostboxViewKey = .orderedItemList(id: Namespaces.OrderedItemList.CloudPremiumStickers)
+            let stickersKey: PostboxViewKey = .orderedItemList(id: Namespaces.OrderedItemList.CloudPremiumStickers)
             self.stickersDisposable = (self.context.account.postbox.combinedView(keys: [stickersKey])
             |> deliverOnMainQueue).start(next: { [weak self] views in
                 guard let strongSelf = self else {
                     return
                 }
-                if let view = views.views[stickersKey] as? EngineRawOrderedItemListView {
+                if let view = views.views[stickersKey] as? OrderedItemListView {
                     for item in view.items {
                         if let mediaItem = item.contents.get(RecentMediaItem.self) {
                             let file = mediaItem.media._parse()
@@ -884,6 +887,12 @@ private final class PremiumGiftScreenComponent: CombinedComponent {
         }
         
         func buy() {
+            // MARK: exteraGram
+            let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+            let alertController = textAlertController(context: self.context, title: i18n("Common.OpenTelegram", presentationData.strings.baseLanguageCode), text: i18n("Common.UseTelegramForPremium", presentationData.strings.baseLanguageCode), actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})])
+            self.present(alertController)
+            /*
+            
             guard let inAppPurchaseManager = self.context.inAppPurchaseManager, !self.inProgress else {
                 return
             }
@@ -981,6 +990,7 @@ private final class PremiumGiftScreenComponent: CombinedComponent {
                     }
                 }
             })
+            */
         }
         
         func updateIsFocused(_ isFocused: Bool) {
@@ -1015,7 +1025,7 @@ private final class PremiumGiftScreenComponent: CombinedComponent {
         let secondaryTitle = Child(MultilineTextComponent.self)
         let bottomPanel = Child(BlurredBackgroundComponent.self)
         let bottomSeparator = Child(Rectangle.self)
-        let button = Child(ButtonComponent.self)
+        let button = Child(SolidRoundedButtonComponent.self)
         
         return { context in
             let environment = context.environment[EnvironmentType.self].value
@@ -1233,38 +1243,28 @@ private final class PremiumGiftScreenComponent: CombinedComponent {
                     buttonText = environment.strings.Premium_Gift_GiftSubscription(price ?? "—").string
                 }
                 
-                let buttonGradientColors = [
-                    UIColor(rgb: 0x0077ff),
-                    UIColor(rgb: 0x6b93ff),
-                    UIColor(rgb: 0x8878ff),
-                    UIColor(rgb: 0xe46ace)
-                ]
                 let button = button.update(
-                    component: ButtonComponent(
-                        background: ButtonComponent.Background(
-                            style: .glass,
-                            color: buttonGradientColors[0],
-                            foreground: .white,
-                            pressedColor: buttonGradientColors[0],
-                            isShimmering: gloss,
-                            gradient: ButtonComponent.Background.Gradient(colors: buttonGradientColors)
+                    component: SolidRoundedButtonComponent(
+                        title: buttonText,
+                        theme: SolidRoundedButtonComponent.Theme(
+                            backgroundColor: UIColor(rgb: 0x8878ff),
+                            backgroundColors: [
+                                UIColor(rgb: 0x0077ff),
+                                UIColor(rgb: 0x6b93ff),
+                                UIColor(rgb: 0x8878ff),
+                                UIColor(rgb: 0xe46ace)
+                            ],
+                            foregroundColor: .white
                         ),
-                        content: AnyComponentWithIdentity(
-                            id: AnyHashable(buttonText),
-                            component: AnyComponent(ButtonTextContentComponent(
-                                text: buttonText,
-                                badge: 0,
-                                textColor: .white,
-                                badgeBackground: .white,
-                                badgeForeground: buttonGradientColors[0]
-                            ))
-                        ),
-                        displaysProgress: state.inProgress,
+                        height: 50.0,
+                        cornerRadius: 11.0,
+                        gloss: gloss,
+                        isLoading: state.inProgress,
                         action: {
                             state.buy()
                         }
                     ),
-                    availableSize: CGSize(width: context.availableSize.width - sideInset * 2.0 - environment.safeInsets.left - environment.safeInsets.right, height: 52.0),
+                    availableSize: CGSize(width: context.availableSize.width - sideInset * 2.0 - environment.safeInsets.left - environment.safeInsets.right, height: 50.0),
                     transition: context.transition)
                              
                 let bottomPanel = bottomPanel.update(

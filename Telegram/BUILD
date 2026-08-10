@@ -4,6 +4,9 @@ load("@bazel_skylib//rules:common_settings.bzl",
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
 
+# MARK: exteraGram — ad-hoc signing of CPython .so extension modules
+load("//exteraGram/EGPluginEngine:sign_extensions.bzl", "sign_ios_extensions")
+
 load("@build_bazel_rules_apple//apple:ios.bzl",
     "ios_application",
     "ios_extension",
@@ -15,6 +18,12 @@ load("@build_bazel_rules_apple//apple:ios.bzl",
 load(
     "@build_bazel_rules_apple//apple/testing/default_runner:ios_test_runner.bzl",
     "ios_test_runner",
+)
+
+# MARK: exteraGram
+load("@build_bazel_rules_apple//apple:watchos.bzl",
+    "watchos_application",
+    "watchos_extension",
 )
 
 load("@build_bazel_rules_apple//apple:resources.bzl",
@@ -34,10 +43,6 @@ load(
 )
 
 load("@build_bazel_rules_apple//apple:apple.bzl", "local_provisioning_profile")
-
-load("//Telegram:prebuilt_watchos.bzl",
-    "apple_prebuilt_watchos_application",
-)
 
 load("//build-system/bazel-utils:plist_fragment.bzl",
     "plist_fragment",
@@ -101,19 +106,6 @@ config_setting(
     },
 )
 
-bool_flag(
-    name = "embedWatchApp",
-    build_setting_default = False,
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "embedWatchAppSetting",
-    flag_values = {
-        ":embedWatchApp": "True",
-    },
-)
-
 config_setting(
     name = "projectIncludeReleaseSetting",
     flag_values = {
@@ -158,9 +150,14 @@ genrule(
         "GeneratedPresentationStrings/Sources/PresentationStrings.m",
         "GeneratedPresentationStrings/Resources/PresentationStrings.data",
     ],
+    # MARK: exteraGram
+    visibility = [
+        "//visibility:public",
+    ],
 )
 
 minimum_os_version = "13.0"
+minimum_watchos_version="7.0" # MARK: exteraGram
 
 notificationServiceExtensionVersion = "v1"
 
@@ -269,9 +266,20 @@ filegroup(
     name = "AppStringResources",
     srcs = [
         "Telegram-iOS/en.lproj/Localizable.strings",
+        "//exteraGram/EGStrings:EGLocalizableStrings",
     ] + [
         "{}.lproj/Localizable.strings".format(language) for language in empty_languages
     ],
+    # MARK: exteraGram
+    visibility = ["//visibility:public",],
+)
+
+# MARK: exteraGram
+filegroup(
+    name = "WatchAppStringResources",
+    srcs = glob([
+        "Telegram-iOS/*.lproj/Localizable.strings",
+    ], exclude = ["Telegram-iOS/*.lproj/**/.*"]) + ["//exteraGram/EGStrings:EGLocalizableStrings"],
 )
 
 filegroup(
@@ -296,42 +304,34 @@ filegroup(
 )
 
 filegroup(
-    name = "AppIcons",
-    srcs = glob([
-        "Telegram-iOS/AppIcons.xcassets/**/*",
-    ], exclude = ["Telegram-iOS/AppIcons.xcassets/**/.*"]),
-)
-
-filegroup(
     name = "DefaultAppIcon",
     srcs = glob([
         "Telegram-iOS/DefaultAppIcon.xcassets/**/*",
     ], exclude = ["Telegram-iOS/DefaultAppIcon.xcassets/**/.*"]),
 )
 
-filegroup(
-    name = "DefaultIcon",
-    srcs = glob([
-        "Telegram-iOS/AppIcons.xcassets/BlueIcon.appiconset/*.png",
-    ]),
-)
-
+# MARK: exteraGram alternative icons
 alternate_icon_folders = [
-    "BlackIcon",
-    "BlackClassicIcon",
-    "BlackFilledIcon",
-    "BlueIcon",
-    "BlueClassicIcon",
-    "BlueFilledIcon",
-    "WhiteFilledIcon",
-    "New1",
-    "New2",
-    "Premium",
-    "PremiumBlack",
-    "PremiumTurbo",
+    "EGDefault",
+    "EGBlack",
+    "EGLegacy",
+    "EGInverted",
+    "EGWhite",
+    "EGNight",
+    "EGSky",
+    "EGTitanium",
+    "EGNeon",
+    "EGNeonBlue",
+    "EGGlass",
+    "EGSparkling",
+    "EGBeta",
+    "EGPro",
+    "EGGold",
+    "EGDucky",
+    "EGDay"
 ]
 
-composer_icon_folders = ["Telegram"]
+composer_icon_folders = ["exteraGram"]
 
 [
     filegroup(
@@ -366,13 +366,25 @@ objc_library(
     ],
 )
 
+EGRESOURCES = [
+    "//exteraGram/EGSettingsUI:EGUIAssets",
+    "//exteraGram/EGPayWall:EGPayWallAssets",
+    "//exteraGram/EGAppBadgeAssets:EGAppBadgeAssets",
+    "//exteraGram/EGNY:EGNYAssets",
+    # Python 3.14 standard library — single zip to avoid rules_apple __init__.py conflicts.
+    # EGPluginRuntime extracts this zip to Library/Caches/ at first launch.
+    "@python_apple_support//:PythonStdlibZip",
+    "//exteraGram/EGPluginEngine:PythonSDK",
+    "//exteraGram/EGPluginEngine:SamplePlugins",
+]
+
 swift_library(
     name = "Lib",
     module_name = "Lib",
     srcs = glob([
         "Telegram-iOS/Application.swift",
     ]),
-    data = [
+    data = EGRESOURCES + [
         ":Icons",
         ":AppResources",
         ":AppIntentVocabularyResources",
@@ -434,6 +446,16 @@ plist_fragment(
                 <string>tonsite</string>
             </array>
         </dict>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>CFBundleURLName</key>
+            <string>{telegram_bundle_id}.custom</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>eg</string>
+            </array>
+        </dict>
     </array>
     """.format(
         telegram_bundle_id = telegram_bundle_id,
@@ -492,7 +514,7 @@ official_carplay_fragment = """
 <key>com.apple.developer.carplay-messaging</key>
 <true/>
 """
-carplay_fragment = official_carplay_fragment if telegram_bundle_id in official_bundle_ids else ""
+carplay_fragment = official_carplay_fragment # MARK: exteraGram if telegram_bundle_id in official_bundle_ids else ""
 
 icloud_fragment = "" if not telegram_enable_icloud else """
 <key>com.apple.developer.icloud-services</key>
@@ -520,6 +542,8 @@ associated_domains_fragment = "" if telegram_bundle_id not in official_bundle_id
     <string>applinks:telegram.me</string>
     <string>applinks:t.me</string>
     <string>applinks:*.t.me</string>
+    <string>applinks:exteragram.app</string>
+    <string>webcredentials:exteragram.app</string>
     <string>webcredentials:t.me</string>
     <string>webcredentials:telegram.org</string>
 </array>
@@ -551,13 +575,13 @@ official_communication_notifications_fragment = """
 <key>com.apple.developer.usernotifications.communication</key>
 <true/>
 """
-communication_notifications_fragment = official_communication_notifications_fragment if telegram_bundle_id in official_bundle_ids else ""
+communication_notifications_fragment = official_communication_notifications_fragment # if telegram_bundle_id in official_bundle_ids else ""
 
 official_notification_filtering_fragment = """
 <key>com.apple.developer.usernotifications.filtering</key>
 <true/>
 """
-notification_filtering_fragment = official_notification_filtering_fragment if telegram_bundle_id == "ph.telegra.Telegraph" else ""
+notification_filtering_fragment = official_notification_filtering_fragment if telegram_bundle_id in official_bundle_ids else ""
 
 store_signin_fragment = """
 <key>com.apple.developer.applesignin</key>
@@ -571,7 +595,7 @@ official_background_gpu_fragment = """
 <key>com.apple.developer.background-tasks.continued-processing.gpu</key>
 <true/>
 """
-background_gpu_fragment = official_background_gpu_fragment if telegram_bundle_id == "ph.telegra.Telegraph" else ""
+background_gpu_fragment = official_background_gpu_fragment if telegram_bundle_id in official_bundle_ids else ""
 
 plist_fragment(
     name = "TelegramEntitlements",
@@ -590,6 +614,63 @@ plist_fragment(
         signin_fragment,
         background_gpu_fragment,
     ])
+)
+
+# MARK: exteraGram
+filegroup(
+    name = "TelegramWatchExtensionResources",
+    srcs = glob([
+        "Watch/Extension/Resources/**/*",
+    ], exclude = ["Watch/Extension/Resources/**/.*"]),
+)
+
+filegroup(
+    name = "TelegramWatchAppResources",
+    srcs = glob([
+        "Watch/Extension/Resources/**/*.png",
+    ], exclude = ["Watch/Extension/Resources/**/.*"]),
+)
+
+filegroup(
+    name = "TelegramWatchAppAssets",
+    srcs = glob([
+        "Watch/App/Assets.xcassets/**/*",
+    ], exclude = ["Watch/App/Assets.xcassets/**/.*"]),
+)
+
+filegroup(
+    name = "TelegramWatchAppInterface",
+    srcs = glob([
+        "Watch/App/Base.lproj/Interface.storyboard",
+    ]),
+)
+
+objc_library(
+    name = "TelegramWatchLib",
+    srcs = glob([
+        "Watch/Extension/**/*.m",
+        "Watch/Bridge/**/*.m",
+        "Watch/WatchCommonWatch/**/*.m",
+        "Watch/App/**/*.m",
+        "Watch/Extension/**/*.h",
+        "Watch/Bridge/**/*.h",
+        "Watch/WatchCommonWatch/**/*.h",
+    ]),
+    copts = [
+        "-DTARGET_OS_WATCH=1",
+        "-ITelegram/Watch",
+        "-ITelegram/Watch/Extension",
+        "-ITelegram/Watch/Bridge",
+        "-ITelegram/Watch/App",
+    ],
+    sdk_frameworks = [
+        "WatchKit",
+        "WatchConnectivity",
+        "ClockKit",
+        "UserNotifications",
+        "CoreLocation",
+        "CoreGraphics",
+    ],
 )
 
 genrule(
@@ -629,9 +710,86 @@ plist_fragment(
     template =
     """
     <key>CFBundleDisplayName</key>
-    <string>Telegram</string>
+    <string>exteraGram</string>
     """
 )
+
+# MARK: exteraGram
+plist_fragment(
+    name = "WatchAppCompanionInfoPlist",
+    extension = "plist",
+    template =
+    """
+    <key>WKCompanionAppBundleIdentifier</key>
+    <string>{telegram_bundle_id}</string>
+    """.format(
+        telegram_bundle_id = telegram_bundle_id,
+    )
+)
+
+plist_fragment(
+    name = "WatchAppInfoPlist",
+    extension = "plist",
+    template =
+    """
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleIdentifier</key>
+    <string>{telegram_bundle_id}.watchkitapp</string>
+    <key>CFBundleName</key>
+    <string>exteraGram</string>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    </array>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>WKApplication</key>
+    <true/>
+    <key>WKCompanionAppBundleIdentifier</key>
+    <string>{telegram_bundle_id}</string>
+    <key>PrincipalClass</key>
+    <string>TGExtensionDelegate</string>
+    """.format(
+        telegram_bundle_id = telegram_bundle_id,
+    )
+)
+
+watchos_application(
+    name = "TelegramWatchApp",
+    bundle_id = "{telegram_bundle_id}.watchkitapp".format(
+        telegram_bundle_id = telegram_bundle_id,
+    ),
+    bundle_name = "exteraGramWatch",
+    infoplists = [
+        ":WatchAppInfoPlist",
+        ":VersionInfoPlist",
+        ":BuildNumberInfoPlist",
+        ":AppNameInfoPlist",
+        ":WatchAppCompanionInfoPlist",
+    ],
+    minimum_os_version = minimum_watchos_version,
+    provisioning_profile = select({
+        ":disableProvisioningProfilesSetting": None,
+        "//conditions:default": ":Telegram_xcode_profile" if telegram_use_xcode_managed_codesigning else "@build_configuration//provisioning:WatchApp.mobileprovision",
+    }),
+    resources = [
+        ":TelegramWatchAppResources",
+        ":TelegramWatchAppAssets",
+        ":TelegramWatchExtensionResources",
+    ],
+    storyboards = [
+        ":TelegramWatchAppInterface",
+    ],
+    strings = [
+        ":WatchAppStringResources",
+    ],
+    deps = [
+        ":TelegramWatchLib",
+    ],
+)
+#
 
 plist_fragment(
     name = "MtProtoKitInfoPlist",
@@ -867,6 +1025,14 @@ genrule(
     cmd_bash =
 """
     echo 'for f in $$1/*.framework; do binary_name=`echo $$(basename $$f) | sed -e "s/\\\\.framework//"`; strip -ST $$f/$$binary_name; done;' > $(location StripFramework.sh)
+    # MARK: exteraGram
+    echo 'find "$$1" -type f \\( -perm +111 -o -name "*.dylib" \\) | while read -r bin; do \
+        if otool -L "$$bin" | grep -q "/usr/lib/swift/libswift_Concurrency.dylib"; then \
+            echo "Patching concurrency backport in: $$bin"; \
+            chmod +w "$$(dirname $$bin)/"; \
+            install_name_tool -change /usr/lib/swift/libswift_Concurrency.dylib @rpath/libswift_Concurrency.dylib "$$bin"; \
+        fi; \
+    done;' >> $(location StripFramework.sh)
     echo '' >> $(location StripFramework.sh)
 """,
     outs = [
@@ -962,7 +1128,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.Share</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>exteraGram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1054,7 +1220,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.NotificationContent</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>exteraGram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1161,7 +1327,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.Widget</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>exteraGram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1274,7 +1440,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.SiriIntents</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>exteraGram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1395,6 +1561,147 @@ ios_extension(
     ],
 )
 
+# MARK: exteraGram
+# TODO(exteragram): Localize CFBundleDisplayName
+plist_fragment(
+    name = "EGActionRequestHandlerInfoPlist",
+    extension = "plist",
+    template = 
+    """
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleIdentifier</key>
+    <string>{telegram_bundle_id}.EGActionRequestHandler</string>
+    <key>CFBundleName</key>
+    <string>exteraGram</string>
+    <key>CFBundleDisplayName</key>
+    <string>Open in exteraGram</string>
+    <key>CFBundlePackageType</key>
+    <string>XPC!</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>NSExtensionActivationRule</key>
+			<dict>
+				<key>NSExtensionActivationSupportsFileWithMaxCount</key>
+				<integer>0</integer>
+				<key>NSExtensionActivationSupportsImageWithMaxCount</key>
+				<integer>0</integer>
+				<key>NSExtensionActivationSupportsMovieWithMaxCount</key>
+				<integer>0</integer>
+				<key>NSExtensionActivationSupportsText</key>
+				<false/>
+				<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+				<integer>1</integer>
+			</dict>
+			<key>NSExtensionJavaScriptPreprocessingFile</key>
+			<string>Action</string>
+			<key>NSExtensionServiceAllowsFinderPreviewItem</key>
+			<true/>
+			<key>NSExtensionServiceAllowsTouchBarItem</key>
+			<true/>
+			<key>NSExtensionServiceFinderPreviewIconName</key>
+			<string>NSActionTemplate</string>
+			<key>NSExtensionServiceTouchBarBezelColorName</key>
+			<string>TouchBarBezel</string>
+			<key>NSExtensionServiceTouchBarIconName</key>
+			<string>NSActionTemplate</string>
+		</dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.services</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>EGActionRequestHandler</string>
+	</dict>
+    """.format(
+        telegram_bundle_id = telegram_bundle_id,
+    )
+)
+
+# TODO(exteragram): Proper icon
+filegroup(
+    name = "EGActionRequestHandlerAssets",
+    srcs = glob(["EGActionRequestHandler/Media.xcassets/**"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "EGActionRequestHandlerScript",
+    srcs = ["EGActionRequestHandler/Action.js"],
+    visibility = ["//visibility:public"],
+)
+
+swift_library(
+    name = "EGActionRequestHandlerLib",
+    module_name = "EGActionRequestHandlerLib",
+    srcs = glob([
+        "EGActionRequestHandler/**/*.swift",
+    ]),
+    copts = [
+        "-warnings-as-errors",
+    ],
+    data = [
+        ":EGActionRequestHandlerAssets",
+        ":EGActionRequestHandlerScript"
+    ],
+    deps = [
+        "//submodules/UrlEscaping:UrlEscaping"
+    ],
+)
+
+genrule(
+    name = "SetMinOsVersionSGActionRequestHandler",
+    cmd_bash =
+"""
+    name=EGActionRequestHandler.appex
+    cat $(location PatchMinOSVersion.source.sh) | sed -e "s/<<<MIN_OS_VERSION>>>/14\\.0/g" | sed -e "s/<<<NAME>>>/$$name/g" > $(location SetMinOsVersionSGActionRequestHandler.sh)
+""",
+    srcs = [
+        "PatchMinOSVersion.source.sh",
+    ],
+    outs = [
+        "SetMinOsVersionSGActionRequestHandler.sh",
+    ],
+    executable = True,
+    visibility = [
+        "//visibility:public",
+    ]
+)
+
+ios_extension(
+    name = "EGActionRequestHandler",
+    bundle_id = "{telegram_bundle_id}.EGActionRequestHandler".format(
+        telegram_bundle_id = telegram_bundle_id,
+    ),
+    families = [
+        "iphone",
+        "ipad",
+    ],
+    infoplists = [
+        ":EGActionRequestHandlerInfoPlist",
+        ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
+        ":BuildNumberInfoPlist",
+        # ":AppNameInfoPlist",
+    ],
+    minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
+    ipa_post_processor = ":SetMinOsVersionSGActionRequestHandler",
+    #provides_main = True,
+    provisioning_profile = select({
+        ":disableProvisioningProfilesSetting": None,
+        "//conditions:default": "@build_configuration//provisioning:EGActionRequestHandler.mobileprovision",
+    }),
+    deps = [
+        ":EGActionRequestHandlerLib",
+    ],
+    frameworks = [
+    ],
+    visibility = [
+        "//visibility:public",
+    ]
+)
+#
+
 plist_fragment(
     name = "BroadcastUploadInfoPlist",
     extension = "plist",
@@ -1405,7 +1712,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.BroadcastUpload</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>exteraGram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1499,7 +1806,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.NotificationService</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>exteraGram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1568,11 +1875,11 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Telegram</string>
+    <string>exteraGram</string>
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>exteraGram</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleSignature</key>
@@ -1587,8 +1894,6 @@ plist_fragment(
         <string>here-location</string>
         <string>yandexmaps</string>
         <string>yandexnavi</string>
-        <string>yandextaxi</string>
-        <string>yangoride</string>
         <string>comgooglemaps</string>
         <string>youtube</string>
         <string>twitter</string>
@@ -1630,17 +1935,17 @@ plist_fragment(
     <key>NSCameraUsageDescription</key>
     <string>We need this so that you can take and share photos and videos.</string>
     <key>NSContactsUsageDescription</key>
-    <string>Telegram stores your contacts heavily encrypted in the cloud to let you connect with your friends across all your devices.</string>
+    <string>exteraGram stores your contacts heavily encrypted in the Telegram cloud to let you connect with your friends across all your devices.</string>
     <key>NSFaceIDUsageDescription</key>
     <string>You can use Face ID to unlock the app.</string>
     <key>NSLocationAlwaysUsageDescription</key>
-    <string>When you send your location to your friends, Telegram needs access to show them a map. You also need this to send locations from an Apple Watch.</string>
+    <string>When you send your location to your friends, exteraGram needs access to show them a map. You also need this to send locations from an Apple Watch.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>When you send your location to your friends, Telegram needs access to show them a map.</string>
+    <string>When you send your location to your friends, exteraGram needs access to show them a map.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>We need this so that you can record and share voice messages and videos with sound.</string>
     <key>NSMotionUsageDescription</key>
-    <string>When you send your location to your friends, Telegram needs access to show them a map.</string>
+    <string>When you send your location to your friends, exteraGram needs access to show them a map.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>We need this so that you can share photos and videos from your photo library.</string>
     <key>NSPhotoLibraryUsageDescription</key>
@@ -1656,6 +1961,7 @@ plist_fragment(
     </array>
     <key>UIAppFonts</key>
     <array>
+        <string>SFCompactRounded-Semibold.otf</string>
         <string>AremacFS-Regular.otf</string>
         <string>AremacFS-Semibold.otf</string>
     </array>
@@ -1745,21 +2051,110 @@ xcode_provisioning_profile(
    provisioning_profile = ":Telegram_local_profile",
 )
 
-apple_prebuilt_watchos_application(
-    name = "TelegramWatchApp",
-    # Watch bundle id tracks the host config ("<host>.watchkitapp"). The rule passes it
-    # to xcodebuild as PRODUCT_BUNDLE_IDENTIFIER (baked + signed); the watch Info.plist
-    # derives WKCompanionAppBundleIdentifier from it via $(PRODUCT_BUNDLE_IDENTIFIER:base),
-    # so the embedded watch app is correct for any host (ph.telegra.Telegraph,
-    # org.telegram.TelegramInternal, ...) with no post-build plist patching.
-    bundle_id = "{telegram_bundle_id}.watchkitapp".format(
+# ---------------------------------------------------------------------------
+# PythonExtensions.framework — CPython .so modules signed inside the bundle
+# ---------------------------------------------------------------------------
+
+plist_fragment(
+    name = "PythonExtensionsInfoPlist",
+    extension = "plist",
+    template =
+    """
+    <key>CFBundleIdentifier</key>
+    <string>{telegram_bundle_id}.PythonExtensions</string>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleName</key>
+    <string>PythonExtensions</string>
+    <key>CFBundlePackageType</key>
+    <string>FMWK</string>
+    """.format(
+        telegram_bundle_id = telegram_bundle_id,
+    )
+)
+
+# Ad-hoc sign each .so so that Feather (and other iOS signing tools) detect
+# them as signed Mach-O and replace the signature with the developer certificate.
+# Without any signature the tools treat .so files as plain data resources and
+# skip them, leaving them "completely unsigned" → AMFI blocks dlopen at runtime.
+sign_ios_extensions(
+    name = "PythonDynloadSosSigned",
+    srcs = ["@python_apple_support//:PythonDynloadSos"],
+)
+
+ios_framework(
+    name = "PythonExtensionsFramework",
+    bundle_name = "PythonExtensions",
+    bundle_id = "{telegram_bundle_id}.PythonExtensions".format(
         telegram_bundle_id = telegram_bundle_id,
     ),
-    tags = ["manual"],
+    families = ["iphone", "ipad"],
+    minimum_os_version = minimum_os_version,
+    infoplists = [
+        ":PythonExtensionsInfoPlist",
+        ":BuildNumberInfoPlist",
+        ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
+    ],
+    deps = [
+        "//exteraGram/EGPluginEngine:EGPythonExtensionsStub",
+    ],
+    resources = [
+        ":PythonDynloadSosSigned",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# BeewarePackages.framework — pre-built beeware iOS arm64 C-extension packages
+# Packages: Pillow, aiohttp, numpy, cffi, cryptography, yarl, brotli, bcrypt,
+#           kiwisolver, contourpy, plus pure-Python: aiosignal, async_timeout,
+#           attrs, multidict, frozenlist, pycparser.
+# Added to sys.path in EGIOSBridge.m so plugins can `import PIL`, `import aiohttp` etc.
+# ---------------------------------------------------------------------------
+
+plist_fragment(
+    name = "BeewarePackagesInfoPlist",
+    extension = "plist",
+    template =
+    """
+    <key>CFBundleIdentifier</key>
+    <string>{telegram_bundle_id}.BeewarePackages</string>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleName</key>
+    <string>BeewarePackages</string>
+    <key>CFBundlePackageType</key>
+    <string>FMWK</string>
+    """.format(
+        telegram_bundle_id = telegram_bundle_id,
+    )
+)
+
+ios_framework(
+    name = "BeewarePackagesFramework",
+    bundle_name = "BeewarePackages",
+    bundle_id = "{telegram_bundle_id}.BeewarePackages".format(
+        telegram_bundle_id = telegram_bundle_id,
+    ),
+    families = ["iphone", "ipad"],
+    minimum_os_version = minimum_os_version,
+    infoplists = [
+        ":BeewarePackagesInfoPlist",
+        ":BuildNumberInfoPlist",
+        ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
+    ],
+    deps = [
+        "//exteraGram/EGPluginEngine:EGBeewarePackagesStub",
+    ],
+    resources = [
+        "//exteraGram/EGPluginEngine/Python/BeewarePackages:BeewarePackagesResources",
+        "//exteraGram/EGPluginEngine/Python/BeewarePackages:BeewarePackagesSignedExts",
+    ],
 )
 
 ios_application(
-    name = "Telegram",
+    name = "exteraGram",
     bundle_id = "{telegram_bundle_id}".format(
         telegram_bundle_id = telegram_bundle_id,
     ),
@@ -1791,13 +2186,18 @@ ios_application(
         ":PostboxFramework",
         ":TelegramCoreFramework",
         ":TelegramUIFramework",
+        ":PythonExtensionsFramework",
+        ":BeewarePackagesFramework",
     ],
     strings = [
         ":AppStringResources",
     ],
+    # MARK: exteraGram
+    settings_bundle = "//exteraGram/EGSettingsBundle:EGSettingsBundle",
     extensions = select({
         ":disableExtensionsSetting": [],
         "//conditions:default": [
+            # ":EGActionRequestHandler", # UX sucks https://t.me/exteragramchat/7335
             ":ShareExtension",
             ":NotificationContentExtension",
             ":NotificationServiceExtension" + notificationServiceExtensionVersion,
@@ -1806,13 +2206,7 @@ ios_application(
             ":BroadcastUploadExtension",
         ],
     }),
-    # Embed the in-repo tgwatch watch app (Telegram/WatchApp) under Watch/ only when
-    # --//Telegram:embedWatchApp is set (Make.py sets it for device configs when
-    # --embedWatchApp is passed). Off by default, so simulator/dev builds are unaffected.
-    watch_application = select({
-        ":embedWatchAppSetting": ":TelegramWatchApp",
-        "//conditions:default": None,
-    }),
+    watch_application = ":TelegramWatchApp", # MARK: exteraGram
     deps = [
         ":Main",
         ":Lib",
@@ -1823,10 +2217,10 @@ ios_application(
 xcodeproj(
     name = "Telegram_xcodeproj",
     bazel_path = telegram_bazel_path,
-    project_name = "Telegram",
+    project_name = "exteraGram",
     tags = ["manual"],
     top_level_targets = [
-        top_level_target(":Telegram", target_environments = ["device", "simulator"]),
+        top_level_target(":exteraGram", target_environments = ["device", "simulator"]),
         ":iOSAppUITestSuite",
     ],
     xcode_configurations = {

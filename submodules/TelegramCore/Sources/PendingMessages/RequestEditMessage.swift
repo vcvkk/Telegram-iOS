@@ -28,6 +28,12 @@ public enum RequestEditMessageError {
 }
 
 func _internal_requestEditMessage(account: Account, messageId: MessageId, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, richText: RichTextMessageAttribute?, inlineStickers: [MediaId: Media], webpagePreviewAttribute: WebpagePreviewMessageAttribute?, disableUrlPreview: Bool, scheduleInfoAttribute: OutgoingScheduleInfoMessageAttribute?, invertMediaAttribute: InvertMediaMessageAttribute?) -> Signal<RequestEditMessageResult, RequestEditMessageError> {
+    var hookParams: [String: Any] = [
+        "peer_id": messageId.peerId.id._internalGetInt64Value(),
+        "message_id": messageId.id,
+        "text": text,
+    ]
+    EGPluginHooks.editMessageHook?(&hookParams)
     return requestEditMessage(accountPeerId: account.peerId, postbox: account.postbox, network: account.network, stateManager: account.stateManager, transformOutgoingMessageMedia: account.transformOutgoingMessageMedia, messageMediaPreuploadManager: account.messageMediaPreuploadManager, mediaReferenceRevalidationContext: account.mediaReferenceRevalidationContext, messageId: messageId, text: text, media: media, entities: entities, richText: richText, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, disableUrlPreview: disableUrlPreview, scheduleInfoAttribute: scheduleInfoAttribute, invertMediaAttribute: invertMediaAttribute)
 }
 
@@ -76,8 +82,14 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
             if todo.flags.contains(.othersCanComplete) {
                 flags |= 1 << 1
             }
-            let inputTodo = Api.InputMedia.inputMediaTodo(.init(todo: .todoList(.init(flags: flags, title: .textWithEntities(.init(text: todo.text, entities: apiEntitiesFromMessageTextEntities(todo.textEntities, associatedPeers: SimpleDictionary()))), list: todo.items.map { $0.apiItem }))))
-            uploadedMedia = .single(.content(PendingMessageUploadedContentAndReuploadInfo(content: .media(inputTodo, text), reuploadInfo: nil, cacheReferenceKey: nil)))
+            // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+            uploadedMedia = postbox.transaction { transaction -> Bool in
+                return transaction.getPeer(accountPeerId)?.isPremium ?? false
+            }
+            |> map { isPremium -> PendingMessageUploadedContentResult? in
+                let inputTodo = Api.InputMedia.inputMediaTodo(.init(todo: .todoList(.init(flags: flags, title: .textWithEntities(.init(text: todo.text, entities: apiEntitiesFromMessageTextEntities(todo.textEntities, associatedPeers: SimpleDictionary(), isPremium: isPremium))), list: todo.items.map { $0.apiItem }))))
+                return .content(PendingMessageUploadedContentAndReuploadInfo(content: .media(inputTodo, text), reuploadInfo: nil, cacheReferenceKey: nil))
+            }
         }
         else if let uploadSignal = generateUploadSignal(forceReupload) {
             uploadedMedia = .single(.progress(PendingMessageUploadedContentProgress(progress: 0.027)))
@@ -112,9 +124,9 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                 pendingMediaContent = content.content
             }
         }
-        return postbox.transaction { transaction -> (Peer?, Message?, SimpleDictionary<PeerId, Peer>) in
+        return postbox.transaction { transaction -> (Peer?, Message?, SimpleDictionary<PeerId, Peer>, Bool) in
             guard let message = transaction.getMessage(messageId) else {
-                return (nil, nil, SimpleDictionary())
+                return (nil, nil, SimpleDictionary(), false)
             }
             
             for (_, file) in inlineStickers {
@@ -130,7 +142,7 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                             if let _ = scheduleInfoAttribute {
                                 break
                             } else {
-                                return (nil, nil, SimpleDictionary())
+                                return (nil, nil, SimpleDictionary(), false)
                             }
                     }
                 }
@@ -145,16 +157,18 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                     }
                 }
             }
-            return (transaction.getPeer(messageId.peerId), message, peers)
+            // exteraGram: non-premium users send custom emoji as fake premium emoji TextUrl
+            let isPremium = transaction.getPeer(accountPeerId)?.isPremium ?? false
+            return (transaction.getPeer(messageId.peerId), message, peers, isPremium)
         }
         |> mapError { _ -> RequestEditMessageInternalError in }
-        |> mapToSignal { peer, message, associatedPeers -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> in
-            if let peer, let message, let inputPeer = apiInputPeer(peer) {
+        |> mapToSignal { peer, message, associatedPeers, isPremium -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> in
+            if let peer = peer, let message = message, let inputPeer = apiInputPeer(peer) {
                 var flags: Int32 = 1 << 11
-                
+
                 var apiEntities: [Api.MessageEntity]?
-                if let entities {
-                    apiEntities = apiTextAttributeEntities(entities, associatedPeers: associatedPeers)
+                if let entities = entities {
+                    apiEntities = apiTextAttributeEntities(entities, associatedPeers: associatedPeers, isPremium: isPremium)
                     flags |= Int32(1 << 3)
                 }
                 

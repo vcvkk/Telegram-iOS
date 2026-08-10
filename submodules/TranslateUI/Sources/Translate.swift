@@ -86,7 +86,6 @@ public var supportedTranslationLanguages = [
     "fa",
     "pl",
     "pt",
-    "pt-BR",
     "pa",
     "ro",
     "ru",
@@ -133,7 +132,7 @@ public var popularTranslationLanguages = [
     "it",
     "ja",
     "ko",
-    "pt-BR",
+    "pt",
     "ru",
     "es",
     "uk"
@@ -186,7 +185,7 @@ public func canTranslateChats(context: AccountContext) -> Bool {
     default:
         break
     }
-    return chatTranslationAvailable
+    return chatTranslationAvailable || true // MARK: exteraGram
 }
 
 public func canTranslateText(context: AccountContext, text: String, showTranslate: Bool, showTranslateIfTopical: Bool = false, ignoredLanguages: [String]?) -> (canTranslate: Bool, language: String?) {
@@ -206,7 +205,7 @@ public func canTranslateText(context: AccountContext, text: String, showTranslat
     default:
         break
     }
-    
+    translateButtonAvailable = true // MARK: exteraGram
     let showTranslate = showTranslate && translateButtonAvailable
         
     if #available(iOS 12.0, *) {

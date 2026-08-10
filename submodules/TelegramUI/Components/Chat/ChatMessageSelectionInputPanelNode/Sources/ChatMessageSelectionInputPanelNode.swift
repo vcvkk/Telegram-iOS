@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import AsyncDisplayKit
 import Display
+import Postbox
 import TelegramCore
 import SwiftSignalKit
 import TelegramPresentationData
@@ -123,6 +124,17 @@ private final class GlassButtonView: UIView {
         }
     }
     
+    // MARK: exteraGram
+    var image: UIImage? {
+        didSet {
+            self.iconView.image = image?.withRenderingMode(.alwaysTemplate)
+            if let params = self.params {
+                self.updateImpl(params: params, transition: .immediate)
+            }
+        }
+    }
+    //
+    
     override init(frame: CGRect) {
         self.backgroundView = GlassBackgroundView()
         
@@ -135,6 +147,21 @@ private final class GlassButtonView: UIView {
         super.init(frame: frame)
         
         self.addSubview(self.backgroundView)
+        
+        if #available(iOS 26.0, *) {
+        } else {
+            self.button.highligthedChanged = { [weak self] highlighted in
+                guard let self else {
+                    return
+                }
+                if highlighted && self.isEnabled && !self.isImplicitlyDisabled {
+                    self.backgroundView.contentView.alpha = 0.6
+                } else {
+                    self.backgroundView.contentView.alpha = 1.0
+                    self.backgroundView.contentView.layer.animateAlpha(from: 0.6, to: 1.0, duration: 0.2)
+                }
+            }
+        }
     }
     
     required init?(coder: NSCoder) {
@@ -161,8 +188,7 @@ private final class GlassButtonView: UIView {
         transition.setFrame(view: self.button, frame: CGRect(origin: CGPoint(), size: params.size))
         
         transition.setFrame(view: self.backgroundView, frame: CGRect(origin: CGPoint(), size: params.size))
-        self.backgroundView.update(size: params.size, cornerRadius: min(params.size.width, params.size.height) * 0.5, isDark: params.theme.overallDarkAppearance, tintColor: .init(kind: params.preferClearGlass ? .clear : .panel), isInteractive: true, transition: transition)
-        self.backgroundView.isUserInteractionEnabled = isEnabled
+        self.backgroundView.update(size: params.size, cornerRadius: min(params.size.width, params.size.height) * 0.5, isDark: params.theme.overallDarkAppearance, tintColor: .init(kind: params.preferClearGlass ? .clear : .panel), isInteractive: isEnabled, transition: transition)
         
         self.iconView.alpha = isEnabled ? 1.0 : 0.5
         self.iconView.tintMask.alpha = self.iconView.alpha
@@ -181,13 +207,18 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     private let deleteButton: GlassButtonView
     private let reportButton: GlassButtonView
     private let forwardButton: GlassButtonView
+    // MARK: exteraGram
+    private let cloudButton: GlassButtonView
+    private let forwardHideNamesButton: GlassButtonView
+    private let quoteButton: GlassButtonView
+    //
     private let shareButton: GlassButtonView
     private let tagButton: GlassButtonView
     private let tagEditButton: GlassButtonView
     
     private let reactionOverlayContainer: ChatMessageSelectionInputPanelNodeViewForOverlayContent
     
-    private var validLayout: (width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, bottomInset: CGFloat, additionalSideInsets: UIEdgeInsets, maxHeight: CGFloat, maxOverlayHeight: CGFloat, metrics: LayoutMetrics, isSecondary: Bool, isMediaInputExpanded: Bool, deviceMetrics: DeviceMetrics)?
+    private var validLayout: (width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, bottomInset: CGFloat, additionalSideInsets: UIEdgeInsets, maxHeight: CGFloat, maxOverlayHeight: CGFloat, metrics: LayoutMetrics, deviceMetrics: DeviceMetrics, isSecondary: Bool, isMediaInputExpanded: Bool)?
     private var presentationInterfaceState: ChatPresentationInterfaceState?
     private var actions: ChatAvailableMessageActions?
     
@@ -196,7 +227,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     
     private let canDeleteMessagesDisposable = MetaDisposable()
     
-    public var selectedMessages = Set<EngineMessage.Id>() {
+    public var selectedMessages = Set<MessageId>() {
         didSet {
             if oldValue != self.selectedMessages {
                 self.updateActions()
@@ -224,6 +255,23 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.forwardButton.icon = "Chat/Input/Accessory Panels/MessageSelectionForward"
         self.forwardButton.isAccessibilityElement = true
         self.forwardButton.accessibilityLabel = strings.VoiceOver_MessageContextForward
+
+        // MARK: exteraGram
+        self.cloudButton = GlassButtonView()
+        self.cloudButton.icon = "SaveToCloud"
+        self.cloudButton.isAccessibilityElement = true
+        self.cloudButton.accessibilityLabel = "Save To Cloud"
+
+        self.forwardHideNamesButton = GlassButtonView()
+        self.forwardHideNamesButton.image = generateTintedImage(image: UIImage(bundleImageName: "Avatar/AnonymousSenderIcon"), color: theme.chat.inputPanel.panelControlAccentColor, customSize: CGSize(width: 28.0, height: 28.0))
+        self.forwardHideNamesButton.isAccessibilityElement = true
+        self.forwardHideNamesButton.accessibilityLabel = "Hide Sender Name"
+
+        self.quoteButton = GlassButtonView()
+        self.quoteButton.image = UIImage(systemName: "quote.bubble")
+        self.quoteButton.isAccessibilityElement = true
+        self.quoteButton.accessibilityLabel = "Quote"
+        //
         
         self.shareButton = GlassButtonView()
         self.shareButton.icon = "Chat/Input/Accessory Panels/MessageSelectionAction"
@@ -247,6 +295,9 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.view.addSubview(self.deleteButton)
         self.view.addSubview(self.reportButton)
         self.view.addSubview(self.forwardButton)
+        self.view.addSubview(self.cloudButton) // MARK: exteraGram
+        self.view.addSubview(self.forwardHideNamesButton) // MARK: exteraGram
+        self.view.addSubview(self.quoteButton) // MARK: exteraGram
         self.view.addSubview(self.shareButton)
         self.view.addSubview(self.tagButton)
         self.view.addSubview(self.tagEditButton)
@@ -255,10 +306,20 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         
         self.forwardButton.isImplicitlyDisabled = true
         self.shareButton.isImplicitlyDisabled = true
+        // MARK: exteraGram
+        self.cloudButton.isImplicitlyDisabled = true
+        self.forwardHideNamesButton.isImplicitlyDisabled = true
+        self.quoteButton.isImplicitlyDisabled = true
+        //
         
         self.deleteButton.button.addTarget(self, action: #selector(self.deleteButtonPressed), for: .touchUpInside)
         self.reportButton.button.addTarget(self, action: #selector(self.reportButtonPressed), for: .touchUpInside)
         self.forwardButton.button.addTarget(self, action: #selector(self.forwardButtonPressed), for: .touchUpInside)
+        // MARK: exteraGram
+        self.cloudButton.button.addTarget(self, action: #selector(self.cloudButtonPressed), for: .touchUpInside)
+        self.forwardHideNamesButton.button.addTarget(self, action: #selector(self.forwardHideNamesButtonPressed), for: .touchUpInside)
+        self.quoteButton.button.addTarget(self, action: #selector(self.quoteButtonPressed), for: .touchUpInside)
+        //
         self.shareButton.button.addTarget(self, action: #selector(self.shareButtonPressed), for: .touchUpInside)
         self.tagButton.button.addTarget(self, action: #selector(self.tagButtonPressed), for: .touchUpInside)
         self.tagEditButton.button.addTarget(self, action: #selector(self.tagButtonPressed), for: .touchUpInside)
@@ -270,10 +331,15 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     
     private func updateActions() {
         self.forwardButton.isEnabled = self.selectedMessages.count != 0
+        // MARK: exteraGram
+        self.cloudButton.isEnabled = self.forwardButton.isEnabled
+        self.forwardHideNamesButton.isEnabled = self.forwardButton.isEnabled
+        self.quoteButton.isEnabled = self.forwardButton.isEnabled
+        //
         
         if self.selectedMessages.isEmpty {
             self.actions = nil
-            if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded, deviceMetrics) = self.validLayout, let interfaceState = self.presentationInterfaceState {
+            if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, deviceMetrics, isSecondary, isMediaInputExpanded) = self.validLayout, let interfaceState = self.presentationInterfaceState {
                 let _ = self.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: .immediate, interfaceState: interfaceState, metrics: metrics, deviceMetrics: deviceMetrics, isMediaInputExpanded: isMediaInputExpanded)
             }
             self.canDeleteMessagesDisposable.set(nil)
@@ -282,7 +348,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             |> deliverOnMainQueue).startStrict(next: { [weak self] actions in
                 if let strongSelf = self {
                     strongSelf.actions = actions
-                    if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight: maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded, deviceMetrics) = strongSelf.validLayout, let interfaceState = strongSelf.presentationInterfaceState {
+                    if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight: maxOverlayHeight, metrics, deviceMetrics, isSecondary, isMediaInputExpanded) = strongSelf.validLayout, let interfaceState = strongSelf.presentationInterfaceState {
                         let _ = strongSelf.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: .immediate, interfaceState: interfaceState, metrics: metrics, deviceMetrics: deviceMetrics, isMediaInputExpanded: isMediaInputExpanded)
                     }
                 }
@@ -297,7 +363,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     }
     
     @objc private func deleteButtonPressed() {
-        self.interfaceInteraction?.deleteSelectedMessages(self.deleteButton)
+        self.interfaceInteraction?.deleteSelectedMessages()
     }
     
     @objc private func reportButtonPressed() {
@@ -311,10 +377,38 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         if let actions = self.actions, actions.isCopyProtected {
             self.interfaceInteraction?.displayCopyProtectionTip(self.forwardButton, false)
         } else if !self.forwardButton.isImplicitlyDisabled {
-            self.interfaceInteraction?.forwardSelectedMessages()
+            self.interfaceInteraction?.forwardSelectedMessages(nil)
         }
     }
     
+    // MARK: exteraGram
+    @objc private func cloudButtonPressed() {
+        if let _ = self.presentationInterfaceState?.renderedPeer?.peer as? TelegramSecretChat {
+            return
+        }
+        if let actions = self.actions, actions.isCopyProtected {
+            self.interfaceInteraction?.displayCopyProtectionTip(self.cloudButton, false)
+        } else {
+            self.interfaceInteraction?.forwardSelectedMessages("toCloud")
+        }
+    }
+
+    @objc private func forwardHideNamesButtonPressed() {
+        if let _ = self.presentationInterfaceState?.renderedPeer?.peer as? TelegramSecretChat {
+            return
+        }
+        if let actions = self.actions, actions.isCopyProtected {
+            self.interfaceInteraction?.displayCopyProtectionTip(self.forwardHideNamesButton, false)
+        } else {
+            self.interfaceInteraction?.forwardSelectedMessages("hideNames")
+        }
+    }
+
+    @objc private func quoteButtonPressed() {
+        self.interfaceInteraction?.forwardSelectedMessages("quote")
+    }
+    //
+
     @objc private func shareButtonPressed() {
         if let _ = self.presentationInterfaceState?.renderedPeer?.peer as? TelegramSecretChat {
             return
@@ -441,20 +535,21 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     }
     
     private func update(transition: ContainedViewLayoutTransition) {
-        if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded, deviceMetrics) = self.validLayout, let interfaceState = self.presentationInterfaceState {
+        if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, deviceMetrics, isSecondary, isMediaInputExpanded) = self.validLayout, let interfaceState = self.presentationInterfaceState {
             let _ = self.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: transition, interfaceState: interfaceState, metrics: metrics, deviceMetrics: deviceMetrics, isMediaInputExpanded: isMediaInputExpanded)
         }
     }
     
     override public func updateLayout(width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, bottomInset: CGFloat, additionalSideInsets: UIEdgeInsets, maxHeight: CGFloat, maxOverlayHeight: CGFloat, isSecondary: Bool, transition: ContainedViewLayoutTransition, interfaceState: ChatPresentationInterfaceState, metrics: LayoutMetrics, deviceMetrics: DeviceMetrics, isMediaInputExpanded: Bool) -> CGFloat {
-        self.validLayout = (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded, deviceMetrics)
+        self.validLayout = (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, deviceMetrics, isSecondary, isMediaInputExpanded)
         
         var leftInset = leftInset + 8.0
         var rightInset = rightInset + 8.0
         
-        let compactBottomSideInset = self.compactBottomSideInset(bottomInset: bottomInset, deviceMetrics: deviceMetrics)
-        leftInset += compactBottomSideInset
-        rightInset += compactBottomSideInset
+        if bottomInset <= 32.0 {
+            leftInset += 18.0
+            rightInset += 18.0
+        }
         
         let panelHeight = defaultHeight(metrics: metrics)
         
@@ -465,6 +560,10 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.deleteButton.isEnabled = false
             self.reportButton.isEnabled = false
             self.forwardButton.isImplicitlyDisabled = !actions.options.contains(.forward)
+            // MARK: exteraGram
+            self.cloudButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
+            self.forwardHideNamesButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
+            self.quoteButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
             
             if self.peerMedia {
                 self.deleteButton.isEnabled = !actions.options.intersection([.deleteLocally, .deleteGlobally]).isEmpty
@@ -504,6 +603,10 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.tagEditButton.isHidden = true
             self.tagButton.isHidden = true
             self.tagEditButton.isHidden = true
+            // MARK: exteraGram
+            self.cloudButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
+            self.forwardHideNamesButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
+            self.quoteButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
         }
         
         if self.reportButton.isHidden || (self.peerMedia && self.deleteButton.isHidden && self.reportButton.isHidden) {
@@ -526,7 +629,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             tagButton = self.tagEditButton
         }
         
-        let buttons: [GlassButtonView]
+        var buttons: [GlassButtonView] = []
         if self.reportButton.isHidden {
             if let tagButton {
                 buttons = [
@@ -579,6 +682,20 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         }
         
         let buttonSize = CGSize(width: 40.0, height: 40.0)
+
+        // MARK: exteraGram
+        reportButton.isHidden = true
+        buttons = [
+            self.deleteButton,
+            self.reportButton,
+            self.tagButton,
+            self.shareButton,
+            self.cloudButton,
+            self.forwardHideNamesButton,
+            self.quoteButton,
+            self.forwardButton
+        ].filter { !$0.isHidden }
+        //
         
         let availableWidth = width - leftInset - rightInset
         let spacing: CGFloat = floor((availableWidth - buttonSize.width * CGFloat(buttons.count)) / CGFloat(buttons.count - 1))

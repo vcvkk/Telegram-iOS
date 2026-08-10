@@ -503,7 +503,7 @@ typedef enum {
     cmsSigMacintosh                         = 0x4150504C,  // 'APPL'
     cmsSigMicrosoft                         = 0x4D534654,  // 'MSFT'
     cmsSigSolaris                           = 0x53554E57,  // 'SUNW'
-    cmsSigSGI                               = 0x53474920,  // 'SGI '
+    cmsSigSGI                               = 0x53474920,  // 'EGI '
     cmsSigTaligent                          = 0x54474E54,  // 'TGNT'
     cmsSigUnices                            = 0x2A6E6978   // '*nix'   // From argyll -- Not official
 

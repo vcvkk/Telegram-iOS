@@ -1,5 +1,9 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGSimpleSettings:EGSimpleSettings"
+]
+
 swift_library(
     name = "LegacyMediaPickerUI",
     module_name = "LegacyMediaPickerUI",
@@ -20,7 +24,6 @@ swift_library(
         "//submodules/AccountContext:AccountContext",
         "//submodules/LegacyComponents:LegacyComponents",
         "//submodules/LegacyUI:LegacyUI",
-        "//submodules/ContextUI:ContextUI",
         "//submodules/MimeTypes:MimeTypes",
         "//submodules/LocalMediaResources:LocalMediaResources",
         "//submodules/SearchPeerMembers:SearchPeerMembers",

@@ -11,6 +11,12 @@ private struct EphemeralDeleteMessageRequest {
 }
 
 func _internal_deleteMessagesInteractively(account: Account, messageIds: [MessageId], type: InteractiveMessagesDeletionType, deleteAllInGroup: Bool = false) -> Signal<Void, NoError> {
+    // MARK: exteraGram
+    var hookParams: [String: Any] = [
+        "message_ids": messageIds.map { $0.id },
+        "delete_for_everyone": type == .forEveryone,
+    ]
+    EGPluginHooks.deleteMessagesHook?(&hookParams)
     return account.postbox.transaction { transaction -> [EphemeralDeleteMessageRequest] in
         var ephemeralRequests: [EphemeralDeleteMessageRequest] = []
         for messageId in messageIds where messageId.namespace == Namespaces.Message.EphemeralLocal {

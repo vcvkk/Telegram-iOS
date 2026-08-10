@@ -24,9 +24,11 @@ replace_symbol_list = [
     "pitch_search",
     "remove_doubling",
 ]
-
-cc_library(
+ 
+objc_library(
     name = "rnnoise",
+    enable_modules = True,
+    module_name = "rnnoise",
     srcs = glob([
         "Sources/*.c",
         "Sources/*.h",

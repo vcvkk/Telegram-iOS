@@ -407,7 +407,7 @@ public final class ChatTextInputPanelComponent: Component {
                     },
                     cancelMessageSelection: { _ in
                     },
-                    deleteSelectedMessages: { _ in
+                    deleteSelectedMessages: {
                     },
                     reportSelectedMessages: {
                     },
@@ -418,11 +418,11 @@ public final class ChatTextInputPanelComponent: Component {
                     deleteMessages: { _, _, f in
                         f(.default)
                     },
-                    forwardSelectedMessages: {
+                    forwardSelectedMessages: { _ in
                     },
                     forwardCurrentForwardMessages: {
                     },
-                    forwardMessages: { _ in
+                    forwardMessages: { _, _ in
                     },
                     updateForwardOptionsState: { _ in
                     },
@@ -663,6 +663,8 @@ public final class ChatTextInputPanelComponent: Component {
                         component.sendContextAction?(node.view, gesture)
                     },
                     openScheduledMessages: {
+                    },
+                    openPeersNearby: {
                     },
                     displaySearchResultsTooltip: { _, _ in
                     },

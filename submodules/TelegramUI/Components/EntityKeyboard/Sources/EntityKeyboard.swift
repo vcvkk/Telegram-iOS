@@ -1,3 +1,4 @@
+import EGSimpleSettings
 import Foundation
 import UIKit
 import Display
@@ -5,6 +6,7 @@ import ComponentFlow
 import PagerComponent
 import TelegramPresentationData
 import TelegramCore
+import Postbox
 import BundleIconComponent
 import AudioToolbox
 import SwiftSignalKit
@@ -569,6 +571,11 @@ public final class EntityKeyboardComponent: Component {
             
             let emojiContentItemIdUpdated = ActionSlot<(AnyHashable, AnyHashable?, ComponentTransition)>()
             if let emojiContent = component.emojiContent {
+                // MARK: exteraGram
+                if EGSimpleSettings.shared.defaultEmojisFirst {
+                    emojiContent.panelItemGroups = egPatchEmojiKeyboardItems(emojiContent.panelItemGroups)
+                    emojiContent.contentItemGroups = egPatchEmojiKeyboardItems(emojiContent.contentItemGroups)
+                }
                 contents.append(AnyComponentWithIdentity(id: "emoji", component: AnyComponent(emojiContent)))
                 var topEmojiItems: [EntityKeyboardTopPanelComponent.Item] = []
                 for itemGroup in emojiContent.panelItemGroups {
@@ -1003,15 +1010,15 @@ public final class EntityKeyboardComponent: Component {
             pagerContentView.scrollToItemGroup(id: groupId, subgroupId: subgroupId, animated: animated)
             pagerView.collapseTopPanel()
         }
-        
+
         public func revealHiddenPanels() {
             guard let pagerView = self.pagerView.findTaggedView(tag: PagerComponentViewTag()) as? PagerComponent<EntityKeyboardChildEnvironment, EntityKeyboardTopContainerPanelEnvironment>.View else {
                 return
             }
-            
+
             pagerView.revealHiddenPanels()
         }
-        
+
         private func reorderPacks(category: ReorderCategory, items: [EntityKeyboardTopPanelComponent.Item]) {
             self.component?.reorderItems(category, items)
         }

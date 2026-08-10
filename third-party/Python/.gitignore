@@ -1,0 +1,4 @@
+# Python.xcframework is ~120 MB — too large for GitHub.
+# Bazel downloads it automatically via http_archive in MODULE.bazel.
+# Locally it is extracted here for IDE/Xcode access, but NOT committed.
+Python.xcframework/

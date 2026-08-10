@@ -1,15 +1,23 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGSimpleSettings:EGSimpleSettings"
+]
+
+egsrc = [
+    "//exteraGram/EGEmojiKeyboardDefaultFirst:EGEmojiKeyboardDefaultFirst"
+]
+
 swift_library(
     name = "EntityKeyboard",
     module_name = "EntityKeyboard",
-    srcs = glob([
+    srcs = egsrc + glob([
         "Sources/**/*.swift",
     ]),
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/Display:Display",
         "//submodules/ComponentFlow:ComponentFlow",
@@ -40,6 +48,7 @@ swift_library(
         "//submodules/AppBundle:AppBundle",
         "//submodules/UndoUI:UndoUI",
         "//submodules/Components/MultilineTextComponent:MultilineTextComponent",
+        "//submodules/Components/SolidRoundedButtonComponent:SolidRoundedButtonComponent",
         "//submodules/TelegramUI/Components/ButtonComponent",
         "//submodules/Components/LottieAnimationComponent:LottieAnimationComponent",
         "//submodules/LocalizedPeerData:LocalizedPeerData",

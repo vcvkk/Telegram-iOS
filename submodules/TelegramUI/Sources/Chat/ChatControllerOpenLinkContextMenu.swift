@@ -1,23 +1,27 @@
 import Foundation
 import UIKit
 import SwiftSignalKit
+import Postbox
 import TelegramCore
 import AsyncDisplayKit
 import Display
 import ContextUI
+import BrowserUI
 import UndoUI
 import AccountContext
-import BrowserUI
 import ChatMessageItemView
 import ChatMessageItemCommon
 import MessageUI
 import ChatControllerInteraction
-import TelegramUIPreferences
-import UrlEscaping
 import UrlWhitelist
 import OpenInExternalAppUI
 import SafariServices
 import TelegramPresentationData
+import TelegramUIPreferences
+import UrlEscaping
+
+// MARK: exteraGram
+import ShareController
 
 private struct ChatLinkOpenMode {
     let shouldOpenInApp: Bool
@@ -135,7 +139,7 @@ extension ChatControllerImpl {
                         self.chatDisplayNode.dismissInput()
                         let controller = BrowserScreen(context: self.context, subject: .webPage(url: resolvedUrl))
                         navigationController.pushViewController(controller)
-                        
+
                         if exceptionAdded {
                             Queue.mainQueue().after(0.5) {
                                 let tooltipScreen = UndoOverlayController(
@@ -165,21 +169,30 @@ extension ChatControllerImpl {
 
                             let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.webBrowserSettings]?.get(WebBrowserSettings.self) ?? WebBrowserSettings.defaultSettings
                             var defaultWebBrowser = settings.defaultWebBrowser
-                            if defaultWebBrowser == nil || defaultWebBrowser == "inApp" || defaultWebBrowser == "inAppSafari" {
+                            if defaultWebBrowser == nil || defaultWebBrowser == "inAppSafari" {
                                 defaultWebBrowser = "safari"
                             }
 
                             let targetUrl = chatLinkContextMenuCanonicalUrl(from: url)?.absoluteString ?? url
-                            let openInOptions = availableOpenInOptions(context: self.context, item: .url(url: targetUrl))
-                            if let option = openInOptions.first(where: { $0.identifier == defaultWebBrowser }) {
-                                if case let .openUrl(openInUrl) = option.action() {
-                                    self.context.sharedContext.applicationBindings.openUrl(openInUrl)
+                            // MARK: exteraGram
+                            if settings.defaultWebBrowser == "inApp", let parsedUrl = URL(string: targetUrl) {
+                                let controller = SFSafariViewController(url: parsedUrl)
+                                controller.preferredBarTintColor = self.presentationData.theme.rootController.navigationBar.opaqueBackgroundColor
+                                controller.preferredControlTintColor = self.presentationData.theme.rootController.navigationBar.accentTextColor
+                                self.view.window?.rootViewController?.present(controller, animated: true)
+                            } else {
+                                let openInOptions = availableOpenInOptions(context: self.context, item: .url(url: targetUrl))
+                                if let option = openInOptions.first(where: { $0.identifier == defaultWebBrowser }) {
+                                    if case let .openUrl(openInUrl) = option.action() {
+                                        self.context.sharedContext.applicationBindings.openUrl(openInUrl)
+                                    } else {
+                                        self.context.sharedContext.applicationBindings.openUrl(targetUrl)
+                                    }
                                 } else {
                                     self.context.sharedContext.applicationBindings.openUrl(targetUrl)
                                 }
-                            } else {
-                                self.context.sharedContext.applicationBindings.openUrl(targetUrl)
                             }
+                            //
                         })
                     } else {
                         self.openResolved(result: result, sourceMessageId: nil, forceExternal: true, concealed: false)
@@ -199,7 +212,7 @@ extension ChatControllerImpl {
                     delete: false,
                     url: url
                 ).startStandalone()
-                
+
                 exceptionAdded = true
             })
         )
@@ -210,15 +223,16 @@ extension ChatControllerImpl {
         guard let message = params.message, let contentNode = params.contentNode else {
             var (cleanUrl, _) = parseUrl(url: url, wasConcealed: false)
             var canAddToReadingList = true
+            var canOpenIn = availableOpenInOptions(context: self.context, item: .url(url: url)).count > 1
             let mailtoString = "mailto:"
             let telString = "tel:"
             var openText = self.presentationData.strings.Conversation_LinkDialogOpen
             var phoneNumber: String?
-
+            
             var isPhoneNumber = false
             var isEmail = false
             var hasOpenAction = true
-
+            
             if cleanUrl.hasPrefix(mailtoString) {
                 canAddToReadingList = false
                 cleanUrl = String(cleanUrl[cleanUrl.index(cleanUrl.startIndex, offsetBy: mailtoString.distance(from: mailtoString.startIndex, to: mailtoString.endIndex))...])
@@ -228,94 +242,97 @@ extension ChatControllerImpl {
                 phoneNumber = String(cleanUrl[cleanUrl.index(cleanUrl.startIndex, offsetBy: telString.distance(from: telString.startIndex, to: telString.endIndex))...])
                 cleanUrl = phoneNumber!
                 openText = self.presentationData.strings.UserInfo_PhoneCall
+                canOpenIn = false
                 isPhoneNumber = true
-
+                
                 if cleanUrl.hasPrefix("+888") {
                     hasOpenAction = false
                 }
+            } else if canOpenIn {
+                openText = self.presentationData.strings.Conversation_FileOpenIn
             }
-
-            let _ = (chatLinkContextMenuOpenMode(context: self.context, url: url)
-            |> deliverOnMainQueue).startStandalone(next: { [weak self] openMode in
+            
+            let actionSheet = ActionSheetController(presentationData: self.presentationData)
+            var items: [ActionSheetItem] = []
+            items.append(ActionSheetTextItem(title: cleanUrl))
+            if hasOpenAction {
+                items.append(ActionSheetButtonItem(title: openText, color: .accent, action: { [weak self, weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                    if let strongSelf = self {
+                        if canOpenIn {
+                            strongSelf.openUrlIn(url)
+                        } else {
+                            strongSelf.openUrl(url, concealed: false)
+                        }
+                    }
+                }))
+            }
+            if let phoneNumber = phoneNumber {
+                items.append(ActionSheetButtonItem(title: self.presentationData.strings.Conversation_AddContact, color: .accent, action: { [weak self, weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                    if let strongSelf = self {
+                        strongSelf.controllerInteraction?.addContact(phoneNumber)
+                    }
+                }))
+            }
+            items.append(ActionSheetButtonItem(title: canAddToReadingList ? self.presentationData.strings.ShareMenu_CopyShareLink : self.presentationData.strings.Conversation_ContextMenuCopy, color: .accent, action: { [weak actionSheet, weak self] in
+                actionSheet?.dismissAnimated()
                 guard let self else {
                     return
                 }
-
-                let actionSheet = ActionSheetController(presentationData: self.presentationData)
-                var items: [ActionSheetItem] = []
-                items.append(ActionSheetTextItem(title: cleanUrl))
-                if hasOpenAction {
-                    items.append(ActionSheetButtonItem(title: openText, color: .accent, action: { [weak self, weak actionSheet] in
-                        actionSheet?.dismissAnimated()
-                        self?.openUrl(url, concealed: false)
-                    }))
-
-                    if let openMode {
-                        let reverseText = openMode.shouldOpenInApp ? self.presentationData.strings.Chat_ContextMenu_OpenInBrowser : self.presentationData.strings.Chat_ContextMenu_OpenInApp
-                        items.append(ActionSheetButtonItem(title: reverseText, color: .accent, action: { [weak self, weak actionSheet] in
-                            actionSheet?.dismissAnimated()
-                            guard let self else {
-                                return
-                            }
-                            if openMode.shouldOpenInApp {
-                                self.presentOpenLinkConfirmation(url, target: .externalBrowser)
-                            } else {
-                                self.presentOpenLinkConfirmation(url, target: .inApp)
-                            }
-                        }))
-                    }
+                UIPasteboard.general.string = cleanUrl
+                
+                let content: UndoOverlayContent
+                if isPhoneNumber {
+                    content = .copy(text: self.presentationData.strings.Conversation_PhoneCopied)
+                } else if isEmail {
+                    content = .copy(text: self.presentationData.strings.Conversation_EmailCopied)
+                } else if canAddToReadingList {
+                    content = .linkCopied(title: nil, text: self.presentationData.strings.Conversation_LinkCopied)
+                } else {
+                    content = .copy(text: self.presentationData.strings.Conversation_TextCopied)
                 }
-                if let phoneNumber = phoneNumber {
-                    items.append(ActionSheetButtonItem(title: self.presentationData.strings.Conversation_AddContact, color: .accent, action: { [weak self, weak actionSheet] in
-                        actionSheet?.dismissAnimated()
-                        if let strongSelf = self {
-                            strongSelf.controllerInteraction?.addContact(phoneNumber)
-                        }
-                    }))
+                self.present(UndoOverlayController(presentationData: self.presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
+            }))
+            // MARK: exteraGram
+            items.append(ActionSheetButtonItem(title: self.presentationData.strings.Conversation_ContextMenuForward, color: .accent, action: { [weak actionSheet, weak self] in
+                actionSheet?.dismissAnimated()
+                guard let self else {
+                    return
                 }
-                items.append(ActionSheetButtonItem(title: canAddToReadingList ? self.presentationData.strings.ShareMenu_CopyShareLink : self.presentationData.strings.Conversation_ContextMenuCopy, color: .accent, action: { [weak actionSheet, weak self] in
+                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: false), in: .window(.root))
+            }))
+            items.append(ActionSheetButtonItem(title: self.presentationData.strings.Conversation_ContextMenuShare, color: .accent, action: { [weak actionSheet, weak self] in
+                actionSheet?.dismissAnimated()
+                guard let self else {
+                    return
+                }
+                self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: true), in: .current)
+            }))
+            //
+            if canAddToReadingList {
+                items.append(ActionSheetButtonItem(title: self.presentationData.strings.Conversation_AddToReadingList, color: .accent, action: { [weak actionSheet] in
                     actionSheet?.dismissAnimated()
-                    guard let self else {
-                        return
+                    if let link = URL(string: url) {
+                        let _ = try? SSReadingList.default()?.addItem(with: link, title: nil, previewText: nil)
                     }
-                    UIPasteboard.general.string = cleanUrl
-
-                    let content: UndoOverlayContent
-                    if isPhoneNumber {
-                        content = .copy(text: self.presentationData.strings.Conversation_PhoneCopied)
-                    } else if isEmail {
-                        content = .copy(text: self.presentationData.strings.Conversation_EmailCopied)
-                    } else if canAddToReadingList {
-                        content = .linkCopied(title: nil, text: self.presentationData.strings.Conversation_LinkCopied)
-                    } else {
-                        content = .copy(text: self.presentationData.strings.Conversation_TextCopied)
-                    }
-                    self.present(UndoOverlayController(presentationData: self.presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
                 }))
-                if canAddToReadingList {
-                    items.append(ActionSheetButtonItem(title: self.presentationData.strings.Conversation_AddToReadingList, color: .accent, action: { [weak actionSheet] in
-                        actionSheet?.dismissAnimated()
-                        if let link = URL(string: url) {
-                            let _ = try? SSReadingList.default()?.addItem(with: link, title: nil, previewText: nil)
-                        }
-                    }))
-                }
-                actionSheet.setItemGroups([ActionSheetItemGroup(items: items), ActionSheetItemGroup(items: [
-                    ActionSheetButtonItem(title: self.presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
-                        actionSheet?.dismissAnimated()
-                    })
-                ])])
-                self.chatDisplayNode.dismissInput()
-                self.present(actionSheet, in: .window(.root))
-            })
-
+            }
+            actionSheet.setItemGroups([ActionSheetItemGroup(items: items), ActionSheetItemGroup(items: [
+                ActionSheetButtonItem(title: self.presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                })
+            ])])
+            self.chatDisplayNode.dismissInput()
+            self.present(actionSheet, in: .window(.root))
+            
             return
         }
-
+        
         guard let messages = self.chatDisplayNode.historyNode.messageGroupInCurrentHistoryView(message.id) else {
             return
         }
-
+        
         var updatedMessages = messages
         for i in 0 ..< updatedMessages.count {
             if updatedMessages[i].id == message.id {
@@ -324,26 +341,34 @@ extension ChatControllerImpl {
                 break
             }
         }
-
+        
         var (cleanUrl, _) = parseUrl(url: url, wasConcealed: false)
         var canAddToReadingList = true
-
+        let canOpenIn = availableOpenInOptions(context: self.context, item: .url(url: url)).count > 1
+        
         var isEmail = false
         let mailtoString = "mailto:"
-        let openText = self.presentationData.strings.Conversation_LinkDialogOpen
+        var openText = self.presentationData.strings.Conversation_LinkDialogOpen
         var copyText = self.presentationData.strings.Conversation_ContextMenuCopyLink
         if cleanUrl.hasPrefix(mailtoString) {
             canAddToReadingList = false
             cleanUrl = String(cleanUrl[cleanUrl.index(cleanUrl.startIndex, offsetBy: mailtoString.distance(from: mailtoString.startIndex, to: mailtoString.endIndex))...])
             copyText = self.presentationData.strings.Conversation_ContextMenuCopyEmail
             isEmail = true
+        } else if canOpenIn {
+            openText = self.presentationData.strings.Conversation_FileOpenIn
         }
-
+            
         let recognizer: TapLongTapOrDoubleTapGestureRecognizer? = params.gesture
-        let gesture: ContextGesture? = nil
-
-        let source: ContextContentSource = .extracted(ChatMessageLinkContextExtractedContentSource(chatNode: self.chatDisplayNode, contentNode: contentNode))
-
+        let gesture: ContextGesture? = nil // anyRecognizer as? ContextGesture
+        
+        let source: ContextContentSource
+//                if let location = location {
+//                    source = .location(ChatMessageContextLocationContentSource(controller: self, location: messageNode.view.convert(messageNode.bounds, to: nil).origin.offsetBy(dx: location.x, dy: location.y)))
+//                } else {
+            source = .extracted(ChatMessageLinkContextExtractedContentSource(chatNode: self.chatDisplayNode, contentNode: contentNode))
+//                }
+        
         let itemsSignal = chatLinkContextMenuOpenMode(context: self.context, url: url)
         |> deliverOnMainQueue
         |> map { [weak self] openMode -> ContextController.Items in
@@ -355,12 +380,17 @@ extension ChatControllerImpl {
 
             items.append(
                 .action(ContextMenuActionItem(text: openText, icon: { theme in return generateTintedImage(image: openMode?.shouldOpenInApp == true ? UIImage(bundleImageName: "Chat/Context Menu/Browser") : UIImage(bundleImageName: "Chat/Context Menu/Globe"), color: theme.contextMenu.primaryColor) }, action: { [weak self] _, f in
-                    f(.default)
-
                     guard let self else {
                         return
                     }
-                    self.openUrl(url, concealed: false)
+                    f(.default)
+
+                    // MARK: exteraGram
+                    if canOpenIn {
+                        self.openUrlIn(url)
+                    } else {
+                        self.openUrl(url, concealed: false)
+                    }
                 }))
             )
 
@@ -396,6 +426,30 @@ extension ChatControllerImpl {
                 }))
             )
 
+            // MARK: exteraGram
+            items.append(
+                .action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_ContextMenuForward, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.contextMenu.primaryColor) }, action: { [weak self]  _, f in
+                    f(.default)
+
+                    guard let self else {
+                        return
+                    }
+
+                    self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: false), in: .window(.root))
+                }))
+            )
+            items.append(
+                .action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_ContextMenuShare, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Share"), color: theme.contextMenu.primaryColor) }, action: { [weak self]  _, f in
+                    f(.default)
+
+                    guard let self else {
+                        return
+                    }
+
+                    self.present(ShareController(context: self.context, subject: .url(url), immediateExternalShareOverridingEGBehaviour: true), in: .current)
+                }))
+            )
+            //
             if canAddToReadingList {
                 items.append(
                     .action(ContextMenuActionItem(text: self.presentationData.strings.Conversation_AddToReadingList, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/ReadingList"), color: theme.contextMenu.primaryColor) }, action: { _, f in
@@ -417,7 +471,7 @@ extension ChatControllerImpl {
         controller.dismissed = { [weak self] in
             self?.canReadHistory.set(true)
         }
-
+        
         self.window?.presentInGlobalOverlay(controller)
     }
 }

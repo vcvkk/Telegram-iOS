@@ -1,15 +1,26 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGStrings:EGStrings",
+    "//exteraGram/EGSimpleSettings:EGSimpleSettings",
+    "//exteraGram/EGBadges:EGBadges",
+    "//submodules/TranslateUI:TranslateUI"
+]
+
+egsrc = [
+    "//exteraGram/EGDoubleTapMessageAction:EGDoubleTapMessageAction"
+]
+
 swift_library(
     name = "ChatMessageBubbleItemNode",
     module_name = "ChatMessageBubbleItemNode",
-    srcs = glob([
+    srcs = egsrc + glob([
         "Sources/**/*.swift",
     ]),
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/AsyncDisplayKit",
         "//submodules/Display",
         "//submodules/SSignalKit/SwiftSignalKit",
@@ -50,6 +61,7 @@ swift_library(
         "//submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageFileBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode",
+        "//submodules/TelegramUI/Components/Chat/ChatMessageRichDataBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageItem",
@@ -97,7 +109,6 @@ swift_library(
         "//submodules/AvatarNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageSuggestedPostInfoNode",
         "//submodules/TelegramUI/Components/PremiumAlertController",
-        "//submodules/TelegramUI/Components/Chat/ChatMessageRichDataBubbleContentNode",
     ],
     visibility = [
         "//visibility:public",

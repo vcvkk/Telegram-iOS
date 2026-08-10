@@ -1,5 +1,8 @@
+import EGSimpleSettings
+import TranslateUI
 import Foundation
 import UIKit
+import Postbox
 import AsyncDisplayKit
 import Display
 import SwiftSignalKit
@@ -17,7 +20,7 @@ import ChatMessageStickerItemNode
 import ChatMessageAnimatedStickerItemNode
 import ChatMessageBubbleItemNode
 
-private func mediaMergeableStyle(_ media: EngineRawMedia) -> ChatMessageMerge {
+private func mediaMergeableStyle(_ media: Media) -> ChatMessageMerge {
     if let story = media as? TelegramMediaStory, story.isMention {
         return .none
     }
@@ -46,22 +49,9 @@ private func mediaMergeableStyle(_ media: EngineRawMedia) -> ChatMessageMerge {
     return .fullyMerged
 }
 
-private func anonymousGroupAdminSignature(message: EngineRawMessage, effectiveAuthor: EngineRawPeer?) -> String? {
-    guard let channel = message.peers[message.id.peerId] as? TelegramChannel, case .group = channel.info else {
-        return nil
-    }
-    guard effectiveAuthor?.id == channel.id else {
-        return nil
-    }
-    guard let signature = message.authorSignatureAttribute?.signature, !signature.isEmpty else {
-        return nil
-    }
-    return signature
-}
-
-private func messagesShouldBeMerged(accountPeerId: EnginePeer.Id, _ lhs: EngineRawMessage, _ rhs: EngineRawMessage) -> ChatMessageMerge {
-    var lhsEffectiveAuthor: EngineRawPeer? = lhs.author
-    var rhsEffectiveAuthor: EngineRawPeer? = rhs.author
+private func messagesShouldBeMerged(accountPeerId: PeerId, _ lhs: Message, _ rhs: Message) -> ChatMessageMerge {
+    var lhsEffectiveAuthor: Peer? = lhs.author
+    var rhsEffectiveAuthor: Peer? = rhs.author
     for attribute in lhs.attributes {
         if let attribute = attribute as? SourceReferenceMessageAttribute {
             lhsEffectiveAuthor = lhs.peers[attribute.messageId.peerId]
@@ -124,14 +114,6 @@ private func messagesShouldBeMerged(accountPeerId: EnginePeer.Id, _ lhs: EngineR
         sameAuthor = false
     }
     
-    if sameAuthor {
-        let lhsAnonymousAdminSignature = anonymousGroupAdminSignature(message: lhs, effectiveAuthor: lhsEffectiveAuthor)
-        let rhsAnonymousAdminSignature = anonymousGroupAdminSignature(message: rhs, effectiveAuthor: rhsEffectiveAuthor)
-        if lhsAnonymousAdminSignature != rhsAnonymousAdminSignature && (lhsAnonymousAdminSignature != nil || rhsAnonymousAdminSignature != nil) {
-            sameAuthor = false
-        }
-    }
-
     var lhsEffectiveTimestamp = lhs.timestamp
     var rhsEffectiveTimestamp = rhs.timestamp
     
@@ -243,7 +225,7 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
     public let controllerInteraction: ChatControllerInteraction
     public let content: ChatMessageItemContent
     public let disableDate: Bool
-    public let effectiveAuthorId: EnginePeer.Id?
+    public let effectiveAuthorId: PeerId?
     public let additionalContent: ChatMessageItemAdditionalContent?
     
     let dateHeader: ChatMessageDateHeader
@@ -252,7 +234,7 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
 
     public let headers: [ListViewItemHeader]
     
-    public var message: EngineRawMessage {
+    public var message: Message {
         switch self.content {
             case let .message(message, _, _, _, _):
                 return message
@@ -290,19 +272,10 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
     
     public var failed: Bool {
         switch self.content {
-        case let .message(message, _, _, _, _):
-            return message.flags.contains(.Failed)
-        case let .group(messages):
-            return messages[0].0.flags.contains(.Failed)
-        }
-    }
-    
-    public var pinToEdgeWithInset: Bool {
-        switch self.content {
-        case let .message(_, _, _, attributes, _):
-            return attributes.pinToTop
-        case let .group(messages):
-            return messages[0].3.pinToTop
+            case let .message(message, _, _, _, _):
+                return message.flags.contains(.Failed)
+            case let .group(messages):
+                return messages[0].0.flags.contains(.Failed)
         }
     }
     
@@ -319,10 +292,10 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
         var avatarHeader: ChatMessageAvatarHeader?
         let incoming = content.effectivelyIncoming(self.context.account.peerId)
         
-        var effectiveAuthor: EngineRawPeer?
+        var effectiveAuthor: Peer?
         var displayAuthorInfo: Bool
         
-        let messagePeerId: EnginePeer.Id = chatLocation.peerId ?? content.firstMessage.id.peerId
+        let messagePeerId: PeerId = chatLocation.peerId ?? content.firstMessage.id.peerId
         var headerSeparableThreadId: Int64?
         var headerDisplayPeer: ChatMessageDateHeader.HeaderData?
         
@@ -332,14 +305,14 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
                 if let forwardInfo = content.firstMessage.forwardInfo {
                     effectiveAuthor = forwardInfo.author
                     if effectiveAuthor == nil, let authorSignature = forwardInfo.authorSignature  {
-                        effectiveAuthor = TelegramUser(id: EnginePeer.Id(namespace: Namespaces.Peer.Empty, id: EnginePeer.Id.Id._internalFromInt64Value(Int64(authorSignature.persistentHashValue % 32))), accessHash: nil, firstName: authorSignature, lastName: nil, username: nil, phone: nil, photo: [], botInfo: nil, restrictionInfo: nil, flags: [], emojiStatus: nil, usernames: [], storiesHidden: nil, nameColor: nil, backgroundEmojiId: nil, profileColor: nil, profileBackgroundEmojiId: nil, subscriberCount: nil, verificationIconFileId: nil)
+                        effectiveAuthor = TelegramUser(id: PeerId(namespace: Namespaces.Peer.Empty, id: PeerId.Id._internalFromInt64Value(Int64(authorSignature.persistentHashValue % 32))), accessHash: nil, firstName: authorSignature, lastName: nil, username: nil, phone: nil, photo: [], botInfo: nil, restrictionInfo: nil, flags: [], emojiStatus: nil, usernames: [], storiesHidden: nil, nameColor: nil, backgroundEmojiId: nil, profileColor: nil, profileBackgroundEmojiId: nil, subscriberCount: nil, verificationIconFileId: nil)
                     }
                 }
                 if let sourceAuthorInfo = content.firstMessage.sourceAuthorInfo {
                     if let originalAuthor = sourceAuthorInfo.originalAuthor, let peer = content.firstMessage.peers[originalAuthor] {
                         effectiveAuthor = peer
                     } else if let authorSignature = sourceAuthorInfo.originalAuthorName {
-                        effectiveAuthor = TelegramUser(id: EnginePeer.Id(namespace: Namespaces.Peer.Empty, id: EnginePeer.Id.Id._internalFromInt64Value(Int64(authorSignature.persistentHashValue % 32))), accessHash: nil, firstName: authorSignature, lastName: nil, username: nil, phone: nil, photo: [], botInfo: nil, restrictionInfo: nil, flags: [], emojiStatus: nil, usernames: [], storiesHidden: nil, nameColor: nil, backgroundEmojiId: nil, profileColor: nil, profileBackgroundEmojiId: nil, subscriberCount: nil, verificationIconFileId: nil)
+                        effectiveAuthor = TelegramUser(id: PeerId(namespace: Namespaces.Peer.Empty, id: PeerId.Id._internalFromInt64Value(Int64(authorSignature.persistentHashValue % 32))), accessHash: nil, firstName: authorSignature, lastName: nil, username: nil, phone: nil, photo: [], botInfo: nil, restrictionInfo: nil, flags: [], emojiStatus: nil, usernames: [], storiesHidden: nil, nameColor: nil, backgroundEmojiId: nil, profileColor: nil, profileBackgroundEmojiId: nil, subscriberCount: nil, verificationIconFileId: nil)
                     }
                 }
                 if peerId.isVerificationCodes && effectiveAuthor == nil {
@@ -355,10 +328,6 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
                     }
                 }
                 displayAuthorInfo = incoming && peerId.isGroupOrChannel && effectiveAuthor != nil
-                
-                if let _ = content.firstMessage.guestChatAttribute {
-                    displayAuthorInfo = true
-                }
                 
                 if let chatPeer = content.firstMessage.peers[content.firstMessage.id.peerId], chatPeer.isForumOrMonoForum {
                     if case .replyThread = chatLocation {
@@ -380,7 +349,7 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
                                 headerDisplayPeer = ChatMessageDateHeader.HeaderData(contents: .thread(id: threadId, info: threadInfo))
                             } else if content.firstMessage.threadId == EngineMessage.newTopicThreadId {
                                 headerSeparableThreadId = content.firstMessage.threadId
-                                headerDisplayPeer = ChatMessageDateHeader.HeaderData(contents: .thread(id: threadId, info: EngineRawMessage.AssociatedThreadInfo(
+                                headerDisplayPeer = ChatMessageDateHeader.HeaderData(contents: .thread(id: threadId, info: Message.AssociatedThreadInfo(
                                     title: presentationData.strings.Chat_MessageHeaderBotNewThread,
                                     icon: nil,
                                     iconColor: 0,
@@ -454,7 +423,7 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
             
             if hasAvatar {
                 if let effectiveAuthor = effectiveAuthor {
-                    var storyStats: EnginePeerStoryStats?
+                    var storyStats: PeerStoryStats?
                     if case .peer(id: context.account.peerId) = chatLocation {
                     } else {
                         switch content {
@@ -551,7 +520,7 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
             }
         }
         
-        if viewClassName == ChatMessageBubbleItemNode.self && self.presentationData.largeEmoji && self.message.media.isEmpty && !self.message.attributes.contains(where: { $0 is TypingDraftMessageAttribute }) {
+        if viewClassName == ChatMessageBubbleItemNode.self && self.presentationData.largeEmoji && self.message.media.isEmpty {
             if case let .message(_, _, _, attributes, _) = self.content {
                 switch attributes.contentTypeHint {
                     case .largeEmoji:
@@ -564,8 +533,36 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
             }
         }
         
+        // MARK: exteraGram
+        let needsQuickTranslateButton: Bool
+        if viewClassName == ChatMessageBubbleItemNode.self {
+            if self.message.attributes.first(where: { $0 is QuickTranslationMessageAttribute }) as? QuickTranslationMessageAttribute != nil {
+                needsQuickTranslateButton = true
+            } else {
+                let (canTranslate, _) = canTranslateText(context: self.context, text: self.message.text, showTranslate: EGSimpleSettings.shared.quickTranslateButton, showTranslateIfTopical: false, ignoredLanguages: self.associatedData.translationSettings?.ignoredLanguages)
+                needsQuickTranslateButton = canTranslate
+            }
+        } else {
+            needsQuickTranslateButton = false
+        }
+        
         let configure = {
             let node = (viewClassName as! ChatMessageItemView.Type).init(rotated: self.controllerInteraction.chatIsRotated)
+            // MARK: exteraGram
+            if let node = node as? ChatMessageBubbleItemNode {
+                node.needsQuickTranslateButton = needsQuickTranslateButton
+            }
+            if let node = node as? ChatMessageStickerItemNode {
+                node.sizeCoefficient = Float(EGSimpleSettings.shared.stickerSize) / 100.0
+                if !EGSimpleSettings.shared.stickerTimestamp {
+                    node.dateAndStatusNode.isHidden = true
+                }
+            } else if let node = node as? ChatMessageAnimatedStickerItemNode {
+                node.sizeCoefficient = Float(EGSimpleSettings.shared.stickerSize) / 100.0
+                if !EGSimpleSettings.shared.stickerTimestamp {
+                    node.dateAndStatusNode.isHidden = true
+                }
+            }
             node.setupItem(self, synchronousLoad: synchronousLoads)
             
             let nodeLayout = node.asyncLayout()

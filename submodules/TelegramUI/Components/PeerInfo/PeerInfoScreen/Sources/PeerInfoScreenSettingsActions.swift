@@ -1,8 +1,11 @@
+import EGStrings
+import EGSettingsUI
 import Foundation
 import UIKit
 import Display
 import AccountContext
 import SwiftSignalKit
+import Postbox
 import TelegramCore
 import SettingsUI
 import PeerInfoStoryGridScreen
@@ -44,6 +47,8 @@ extension PeerInfoScreenNode {
             }
         }
         switch section {
+        case .exteragram:
+            self.controller?.push(egMainMenuController(context: self.context))
         case .avatar:
             self.controller?.openAvatarForEditing()
         case .edit:
@@ -57,6 +62,7 @@ extension PeerInfoScreenNode {
                 peerId: self.context.account.peerId,
                 avatarInitiallyExpanded: false,
                 isOpenedFromChat: false,
+                nearbyPeerDistance: nil,
                 reactionSourceMessageId: nil,
                 callMessages: [],
                 isMyProfile: true,
@@ -172,7 +178,7 @@ extension PeerInfoScreenNode {
         case .watch:
             push(watchSettingsController(context: self.context))
         case .support:
-            let supportPeer = Promise<EnginePeer.Id?>()
+            let supportPeer = Promise<PeerId?>()
             supportPeer.set(context.engine.peers.supportPeerId())
             
             self.controller?.present(textAlertController(context: self.context, updatedPresentationData: self.controller?.updatedPresentationData, title: nil, text: self.presentationData.strings.Settings_FAQ_Intro, actions: [
@@ -196,7 +202,7 @@ extension PeerInfoScreenNode {
             guard let controller = self.controller, !controller.presentAccountFrozenInfoIfNeeded() else {
                 return
             }
-            if case let .user(user) = self.data?.peer, let phoneNumber = user.phone {
+            if let user = self.data?.peer?._asPeer() as? TelegramUser, let phoneNumber = user.phone {
                 let introController = PrivacyIntroController(context: self.context, mode: .changePhoneNumber(phoneNumber), proceedAction: { [weak self] in
                     if let strongSelf = self, let navigationController = strongSelf.controller?.navigationController as? NavigationController {
                         navigationController.replaceTopController(ChangePhoneNumberController(context: strongSelf.context), animated: true)
@@ -217,15 +223,15 @@ extension PeerInfoScreenNode {
                 guard let strongSelf = self else {
                     return
                 }
-                var maximumAvailableAccounts: Int = 3
+                var maximumAvailableAccounts: Int = maximumexteraGramNumberOfAccounts
                 if accountAndPeer?.1.isPremium == true && !strongSelf.context.account.testingEnvironment {
-                    maximumAvailableAccounts = 4
+                    maximumAvailableAccounts = maximumexteraGramNumberOfAccounts
                 }
                 var count: Int = 1
                 for (accountContext, peer, _) in accountsAndPeers {
                     if !accountContext.account.testingEnvironment {
                         if peer.isPremium {
-                            maximumAvailableAccounts = 4
+                            maximumAvailableAccounts = maximumexteraGramNumberOfAccounts
                         }
                         count += 1
                     }
@@ -245,11 +251,27 @@ extension PeerInfoScreenNode {
                         navigationController.pushViewController(controller)
                     }
                 } else {
-                    strongSelf.context.sharedContext.beginNewAuth(testingEnvironment: strongSelf.context.account.testingEnvironment)
+                    // MARK: exteraGram
+                    if count + 1 > maximumSafeNumberOfAccounts {
+                        let presentationData = strongSelf.context.sharedContext.currentPresentationData.with { $0 }
+                        let alertController = textAlertController(context: strongSelf.context, updatedPresentationData: strongSelf.controller?.updatedPresentationData, title: presentationData.strings.ChatList_DeleteSavedMessagesConfirmationTitle, text: i18n("Auth.AccountBackupReminder", presentationData.strings.baseLanguageCode), actions: [
+                            TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {
+                                strongSelf.context.sharedContext.beginNewAuth(testingEnvironment: strongSelf.context.account.testingEnvironment)
+                            })
+                        ])
+                        if let controller = strongSelf.controller {
+                            controller.present(alertController, in: .window(.root))
+                        } else {
+                            strongSelf.context.sharedContext.beginNewAuth(testingEnvironment: strongSelf.context.account.testingEnvironment)
+                        }
+                    } else {
+                        strongSelf.context.sharedContext.beginNewAuth(testingEnvironment: strongSelf.context.account.testingEnvironment)
+                    }
+                    //
                 }
             })
         case .logout:
-            if case let .user(user) = self.data?.peer, let phoneNumber = user.phone {
+            if let user = self.data?.peer?._asPeer() as? TelegramUser, let phoneNumber = user.phone {
                 if let controller = self.controller, let navigationController = controller.navigationController as? NavigationController {
                     self.controller?.push(logoutOptionsController(context: self.context, navigationController: navigationController, canAddAccounts: true, phoneNumber: phoneNumber))
                 }

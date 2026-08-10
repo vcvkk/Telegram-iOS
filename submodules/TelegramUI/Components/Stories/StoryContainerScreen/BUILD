@@ -1,5 +1,10 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGStrings:EGStrings",
+    "//exteraGram/EGSimpleSettings:EGSimpleSettings"
+]
+
 swift_library(
     name = "StoryContainerScreen",
     module_name = "StoryContainerScreen",
@@ -9,7 +14,7 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/Display",
         "//submodules/AsyncDisplayKit",
         "//submodules/ComponentFlow",
@@ -36,6 +41,7 @@ swift_library(
         "//submodules/PhoneNumberFormat",
         "//submodules/TelegramIntents",
         "//submodules/LegacyUI",
+        "//submodules/WebSearchUI",
         "//submodules/PremiumUI",
         "//submodules/ICloudResources",
         "//submodules/LegacyComponents",
@@ -56,6 +62,7 @@ swift_library(
         "//submodules/ShimmerEffect",
         "//submodules/ImageCompression",
         "//submodules/TelegramUI/Components/TextNodeWithEntities",
+        "//submodules/TelegramUI/Components/TextProcessingScreen",
         "//submodules/InvisibleInkDustNode",
         "//submodules/PresentationDataUtils",
         "//submodules/UrlEscaping",
@@ -80,7 +87,6 @@ swift_library(
         "//submodules/Pasteboard",
         "//submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer",
         "//submodules/Speak",
-        "//submodules/TelegramUI/Components/TextProcessingScreen",
         "//submodules/TranslateUI",
         "//submodules/TelegramNotices",
         "//submodules/MediaPlayer:UniversalMediaPlayer",

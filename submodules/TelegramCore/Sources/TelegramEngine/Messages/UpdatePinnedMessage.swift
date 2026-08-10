@@ -15,6 +15,12 @@ public enum PinnedMessageUpdate {
 }
 
 func _internal_requestUpdatePinnedMessage(account: Account, peerId: PeerId, update: PinnedMessageUpdate) -> Signal<Void, UpdatePinnedMessageError> {
+    switch update {
+    case .pin(let id, _, _):
+        EGPluginHooks.fireAsync("messages.pinMessage", params: ["peer_id": peerId.id._internalGetInt64Value(), "message_id": Int(id.id), "pinned": true])
+    case .clear(let id):
+        EGPluginHooks.fireAsync("messages.pinMessage", params: ["peer_id": peerId.id._internalGetInt64Value(), "message_id": Int(id.id), "pinned": false])
+    }
     return account.postbox.transaction { transaction -> (Peer?, CachedPeerData?) in
         return (transaction.getPeer(peerId), transaction.getPeerCachedData(peerId: peerId))
     }

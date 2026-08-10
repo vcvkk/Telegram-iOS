@@ -456,7 +456,6 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
         self.wrappingScrollNode.view.alwaysBounceVertical = true
         self.wrappingScrollNode.view.delaysContentTouches = false
         self.wrappingScrollNode.view.canCancelContentTouches = true
-        self.wrappingScrollNode.view.scrollsToTop = false
         
         self.dimNode = ASDisplayNode()
         if self.fromForeignApp {
@@ -774,6 +773,40 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
         if self.presetText != nil || self.mediaParameters?.publicLinkPrefix != nil {
             self.setActionNodesHidden(false, inputField: true, actions: true, animated: false)
         }
+        
+        // MARK: exteraGram
+        // Replace your current accessibility setup with this:
+        self.isAccessibilityElement = false
+        self.accessibilityViewIsModal = true
+        self.shouldGroupAccessibilityChildren = false
+
+        // Make dim node not accessible
+        self.dimNode.isAccessibilityElement = false
+
+        // Wrapping scroll node setup
+        self.wrappingScrollNode.isAccessibilityElement = false
+        self.wrappingScrollNode.accessibilityViewIsModal = true
+        self.wrappingScrollNode.shouldGroupAccessibilityChildren = true
+
+        // Content container setup
+        self.contentContainerNode.isAccessibilityElement = false
+        self.contentContainerNode.accessibilityViewIsModal = true
+        self.contentContainerNode.shouldGroupAccessibilityChildren = true
+        self.contentContainerNode.accessibilityLabel = self.presentationData.strings.BoostGift_SelectRecipients
+
+        // Cancel button setup
+        self.cancelButtonNode.isAccessibilityElement = true
+        self.cancelButtonNode.accessibilityLabel = self.presentationData.strings.Common_Cancel
+        self.cancelButtonNode.accessibilityTraits = .button
+
+        // Action button setup
+        self.actionButtonNode.isAccessibilityElement = true
+        self.actionButtonNode.accessibilityLabel = "Send"
+        self.actionButtonNode.accessibilityTraits = .button
+
+        // Input field setup
+        self.inputFieldNode.isAccessibilityElement = true
+        self.inputFieldNode.accessibilityLabel = "Comment"
     }
     
     deinit {
@@ -786,6 +819,13 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
         if #available(iOSApplicationExtension 11.0, iOS 11.0, *) {
             self.wrappingScrollNode.view.contentInsetAdjustmentBehavior = .never
         }
+        
+        // Make the container view trap accessibility focus
+        self.view.accessibilityViewIsModal = true
+        self.wrappingScrollNode.view.accessibilityViewIsModal = true
+        
+        // If needed, set a label for VoiceOver
+        self.view.accessibilityLabel = "Share with"
     }
     
     func transitionToPeerTopics(_ peer: EngineRenderedPeer) {
@@ -1664,7 +1704,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
             |> mapToSignal { peers -> Signal<([RecentlySearchedPeer], [EnginePeer.Id: Bool]), NoError> in
                 var possiblePremiumRequiredPeers = Set<EnginePeer.Id>()
                 for peer in peers {
-                    if let user = peer.peer.peer as? TelegramUser, user.flags.contains(.requirePremium) {
+                    if let rawPeer = peer.peer.peer, case let .user(user) = EnginePeer(rawPeer), user.flags.contains(.requirePremium) {
                         possiblePremiumRequiredPeers.insert(user.id)
                     }
                 }

@@ -3,6 +3,7 @@ import CoreLocation
 import SwiftSignalKit
 import StoreKit
 import TelegramCore
+import Postbox
 import TelegramStringFormatting
 import TelegramUIPreferences
 import PersistentStringHash
@@ -28,7 +29,6 @@ private let productIdentifiers = [
     "org.telegram.telegramPremium.twelveMonths.code_x10",
     
     "org.telegram.telegramPremium.oneWeek.auth",
-    "org.telegram.telegramPremium.threeDays.auth",
     
     "org.telegram.telegramStars.topup.x15",
     "org.telegram.telegramStars.topup.x25",
@@ -240,12 +240,12 @@ public final class InAppPurchaseManager: NSObject {
                 
         super.init()
         
-        SKPaymentQueue.default().add(self)
+        // SKPaymentQueue.default().add(self) // MARK: exteraGram
         self.requestProducts()
     }
     
     deinit {
-        SKPaymentQueue.default().remove(self)
+        // SKPaymentQueue.default().remove(self) // MARK: exteraGram
     }
     
     var canMakePayments: Bool {
@@ -253,6 +253,7 @@ public final class InAppPurchaseManager: NSObject {
     }
     
     private func requestProducts() {
+        if ({ return true }()) { return } // MARK: exteraGram
         Logger.shared.log("InAppPurchaseManager", "Requesting products")
         let productRequest = SKProductsRequest(productIdentifiers: Set(productIdentifiers))
         productRequest.delegate = self
@@ -310,7 +311,7 @@ public final class InAppPurchaseManager: NSObject {
         let payment = SKMutablePayment(product: product.skProduct)
         payment.applicationUsername = accountPeerId
         payment.quantity = Int(quantity)
-        SKPaymentQueue.default().add(payment)
+        // SKPaymentQueue.default().add(payment) // MARK: exteraGram
         
         let productIdentifier = payment.productIdentifier
         let signal = Signal<PurchaseState, PurchaseError> { subscriber in
@@ -623,9 +624,9 @@ extension InAppPurchaseManager: SKPaymentTransactionObserver {
         }
         let id = Int64.random(in: Int64.min ... Int64.max)
         let fileResource = LocalFileMediaResource(fileId: id, size: Int64(receiptData.count), isSecretRelated: false)
-        engine.resources.storeResourceData(id: EngineMediaResource.Id(fileResource.id), data: receiptData)
+        engine.account.postbox.mediaBox.storeResourceData(fileResource.id, data: receiptData)
 
-        let file = TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: fileResource, previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "application/text", size: Int64(receiptData.count), attributes: [.FileName(fileName: "Receipt.dat")], alternativeRepresentations: [])
+        let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: fileResource, previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "application/text", size: Int64(receiptData.count), attributes: [.FileName(fileName: "Receipt.dat")], alternativeRepresentations: [])
         let message: EnqueueMessage = .message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: file), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])
 
         let _ = enqueueMessages(account: engine.account, peerId: engine.account.peerId, messages: [message]).start()
@@ -689,7 +690,7 @@ private final class PendingInAppPurchaseState: Codable {
         case starsGift(peerId: EnginePeer.Id, count: Int64)
         case starsGiveaway(stars: Int64, boostPeer: EnginePeer.Id, additionalPeerIds: [EnginePeer.Id], countries: [String], onlyNewSubscribers: Bool, showWinners: Bool, prizeDescription: String?, randomId: Int64, untilDate: Int32, users: Int32)
         case authCode(restore: Bool, phoneNumber: String, phoneCodeHash: String, premiumDays: Int32)
-        
+
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
 
@@ -751,7 +752,7 @@ private final class PendingInAppPurchaseState: Codable {
                     restore: try container.decode(Bool.self, forKey: .restore),
                     phoneNumber: try container.decode(String.self, forKey: .phoneNumber),
                     phoneCodeHash: try container.decode(String.self, forKey: .phoneCodeHash),
-                    premiumDays: try container.decode(Int32.self, forKey: .premiumDays),
+                    premiumDays: (try? container.decode(Int32.self, forKey: .premiumDays)) ?? 0
                 )
             default:
                 throw DecodingError.generic

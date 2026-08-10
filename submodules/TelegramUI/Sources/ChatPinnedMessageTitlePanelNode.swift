@@ -1,7 +1,9 @@
+import EGSimpleSettings
 import Foundation
 import UIKit
 import Display
 import AsyncDisplayKit
+import Postbox
 import TelegramCore
 import SwiftSignalKit
 import TelegramPresentationData
@@ -506,9 +508,9 @@ final class ChatPinnedMessageTitlePanelNode: ChatTitleAccessoryPanelNode {
         }
         
         if currentTranslateToLanguageUpdated || messageUpdated, let message = interfaceState.pinnedMessage?.message {
-            if let translation = message.attributes.first(where: { $0 is TranslationMessageAttribute }) as? TranslationMessageAttribute, translation.toLang == translateToLanguage?.toLang {
-            } else if let translateToLanguage {
-                self.translationDisposable.set(translateMessageIds(context: self.context, messageIds: [message.id], fromLang: translateToLanguage.fromLang, toLang: translateToLanguage.toLang).startStrict())
+            if let translation = message.attributes.first(where: { $0 is TranslationMessageAttribute }) as? TranslationMessageAttribute, translation.toLang == translateToLanguage?.toLang || translation.toLang.hasPrefix("\(translateToLanguage?.toLang ?? "")-") /* MARK: exteraGram */ {
+            } else if let translateToLanguage  {
+                self.translationDisposable.set(translateMessageIds(context: self.context, messageIds: [message.id], fromLang: translateToLanguage.fromLang, toLang: translateToLanguage.toLang, viaText: !self.context.isPremium || EGSimpleSettings.shared.translationBackend == EGSimpleSettings.TranslationBackend.gtranslate.rawValue).startStrict())
             }
         }
         
@@ -569,7 +571,7 @@ final class ChatPinnedMessageTitlePanelNode: ChatTitleAccessoryPanelNode {
         }
     }
     
-    private func enqueueTransition(width: CGFloat, panelHeight: CGFloat, leftInset: CGFloat, rightInset: CGFloat, transition: ContainedViewLayoutTransition, animation: PinnedMessageAnimation?, pinnedMessage: ChatPinnedMessage, theme: PresentationTheme, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, dateTimeFormat: PresentationDateTimeFormat, accountPeerId: EnginePeer.Id, firstTime: Bool, isReplyThread: Bool, translateToLanguage: String?) {
+    private func enqueueTransition(width: CGFloat, panelHeight: CGFloat, leftInset: CGFloat, rightInset: CGFloat, transition: ContainedViewLayoutTransition, animation: PinnedMessageAnimation?, pinnedMessage: ChatPinnedMessage, theme: PresentationTheme, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, dateTimeFormat: PresentationDateTimeFormat, accountPeerId: PeerId, firstTime: Bool, isReplyThread: Bool, translateToLanguage: String?) {
         let message = pinnedMessage.message
         
         var animationTransition: ContainedViewLayoutTransition = .immediate
@@ -660,7 +662,7 @@ final class ChatPinnedMessageTitlePanelNode: ChatTitleAccessoryPanelNode {
                 } else if let paidContent = media as? TelegramMediaPaidContent, let firstMedia = paidContent.extendedMedia.first {
                     switch firstMedia {
                     case let .preview(dimensions, immediateThumbnailData, _):
-                        let thumbnailMedia = TelegramMediaImage(imageId: EngineMedia.Id(namespace: 0, id: 0), representations: [], immediateThumbnailData: immediateThumbnailData, reference: nil, partialReference: nil, flags: [])
+                        let thumbnailMedia = TelegramMediaImage(imageId: MediaId(namespace: 0, id: 0), representations: [], immediateThumbnailData: immediateThumbnailData, reference: nil, partialReference: nil, flags: [])
                         if let dimensions {
                             imageDimensions = dimensions.cgSize
                         }
@@ -718,10 +720,10 @@ final class ChatPinnedMessageTitlePanelNode: ChatTitleAccessoryPanelNode {
             mediaUpdated = true
         }
         
-        let hasSpoiler = message.attributes.contains(where: { $0 is MediaSpoilerMessageAttribute })
-        
+        let hasSpoiler = !EGPluginHooks.suppressedAttributeTypes.contains("MediaSpoilerMessageAttribute") && message.attributes.contains(where: { $0 is MediaSpoilerMessageAttribute })
+
         var updateImageSignal: Signal<(TransformImageArguments) -> DrawingContext?, NoError>?
-        var updatedFetchMediaSignal: Signal<EngineFetchResourceSourceType, EngineFetchResourceError>?
+        var updatedFetchMediaSignal: Signal<FetchResourceSourceType, FetchResourceError>?
         if mediaUpdated {
             if let updatedMediaReference = updatedMediaReference, imageDimensions != nil {
                 if let imageReference = updatedMediaReference.concrete(TelegramMediaImage.self) {
@@ -734,7 +736,7 @@ final class ChatPinnedMessageTitlePanelNode: ChatTitleAccessoryPanelNode {
                     if fileReference.media.isAnimatedSticker {
                         let dimensions = fileReference.media.dimensions ?? PixelDimensions(width: 512, height: 512)
                         updateImageSignal = chatMessageAnimatedSticker(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), file: fileReference.media, small: false, size: dimensions.cgSize.aspectFitted(CGSize(width: 160.0, height: 160.0)))
-                        updatedFetchMediaSignal = context.engine.resources.fetch(reference: fileReference.resourceReference(fileReference.media.resource), userLocation: .peer(message.id.peerId), userContentType: MediaResourceUserContentType(file: fileReference.media))
+                        updatedFetchMediaSignal = fetchedMediaResource(mediaBox: context.account.postbox.mediaBox, userLocation: .peer(message.id.peerId), userContentType: MediaResourceUserContentType(file: fileReference.media), reference: fileReference.resourceReference(fileReference.media.resource))
                     } else if fileReference.media.isVideo || fileReference.media.isAnimated {
                         updateImageSignal = chatMessageVideoThumbnail(account: context.account, userLocation: .peer(message.id.peerId), fileReference: fileReference, blurred: hasSpoiler)
                     } else if let iconImageRepresentation = smallestImageRepresentation(fileReference.media.previewRepresentations) {
@@ -782,6 +784,8 @@ final class ChatPinnedMessageTitlePanelNode: ChatTitleAccessoryPanelNode {
                 switch entity.type {
                 case .Spoiler, .CustomEmoji:
                     return true
+                case let .TextUrl(url):
+                    return url.hasPrefix("tg://emoji?id=")
                 default:
                     return false
                 }
@@ -802,7 +806,7 @@ final class ChatPinnedMessageTitlePanelNode: ChatTitleAccessoryPanelNode {
             messageText = renderInstantPagePreviewIcons(mutableTextString, font: textFont, textColor: textColor)
         }
         
-        let textConstrainedSize = CGSize(width: width - textLineInset - contentLeftInset - rightInset - textRightInset - 10.0, height: CGFloat.greatestFiniteMagnitude)
+        let textConstrainedSize = CGSize(width: width - textLineInset - contentLeftInset - rightInset - textRightInset, height: CGFloat.greatestFiniteMagnitude)
         let (textLayout, textApply) = makeTextLayout(TextNodeLayoutArguments(attributedString: messageText, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: textConstrainedSize, alignment: .natural, cutout: nil, insets: UIEdgeInsets(top: 2.0, left: 0.0, bottom: 2.0, right: 0.0)))
         
         let spoilerTextLayoutAndApply: (TextNodeLayout, (TextNodeWithEntities.Arguments?) -> TextNodeWithEntities)?
@@ -981,22 +985,22 @@ final class ChatPinnedMessageTitlePanelNode: ChatTitleAccessoryPanelNode {
                         })
                         return
                     case let .switchInline(samePeer, query, peerTypes):
-                        var botPeer: EnginePeer?
-
+                        var botPeer: Peer?
+                        
                         var found = false
                         for attribute in message.attributes {
                             if let attribute = attribute as? InlineBotMessageAttribute {
                                 if let peerId = attribute.peerId {
-                                    botPeer = message.peers[peerId].flatMap(EnginePeer.init)
+                                    botPeer = message.peers[peerId]
                                     found = true
                                 }
                             }
                         }
                         if !found {
-                            botPeer = message.author.flatMap(EnginePeer.init)
+                            botPeer = message.author
                         }
-
-                        var peerId: EnginePeer.Id?
+                        
+                        var peerId: PeerId?
                         if samePeer {
                             peerId = message.id.peerId
                         }

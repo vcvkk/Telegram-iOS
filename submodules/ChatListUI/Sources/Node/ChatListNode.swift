@@ -1,3 +1,5 @@
+import EGAPIToken
+import EGAPIWebSettings
 import Foundation
 import UIKit
 import Display
@@ -16,6 +18,7 @@ import ChatListSearchItemHeader
 import PremiumUI
 import AnimationCache
 import MultiAnimationRenderer
+import Postbox
 import ChatFolderLinkPreviewScreen
 import StoryContainerScreen
 import ChatListHeaderComponent
@@ -81,6 +84,7 @@ public final class ChatListNodeInteraction {
     }
     
     let activateSearch: () -> Void
+    let openEGAnnouncement: (String, String, Bool, Bool) -> Void
     let peerSelected: (EnginePeer, EnginePeer?, Int64?, ChatListNodeEntryPromoInfo?, Bool) -> Void
     let disabledPeerSelected: (EnginePeer, Int64?, ChatListDisabledPeerReason) -> Void
     let togglePeerSelected: (EnginePeer, Int64?) -> Void
@@ -144,6 +148,8 @@ public final class ChatListNodeInteraction {
         animationCache: AnimationCache,
         animationRenderer: MultiAnimationRenderer,
         activateSearch: @escaping () -> Void,
+        // MARK: exteraGram
+        openEGAnnouncement: @escaping (String, String, Bool, Bool) -> Void = { _, _, _, _ in },
         peerSelected: @escaping (EnginePeer, EnginePeer?, Int64?, ChatListNodeEntryPromoInfo?, Bool) -> Void,
         disabledPeerSelected: @escaping (EnginePeer, Int64?, ChatListDisabledPeerReason) -> Void,
         togglePeerSelected: @escaping (EnginePeer, Int64?) -> Void,
@@ -192,6 +198,7 @@ public final class ChatListNodeInteraction {
         openUrl: @escaping (String) -> Void
     ) {
         self.activateSearch = activateSearch
+        self.openEGAnnouncement = openEGAnnouncement
         self.peerSelected = peerSelected
         self.disabledPeerSelected = disabledPeerSelected
         self.togglePeerSelected = togglePeerSelected
@@ -1278,7 +1285,7 @@ public final class ChatListNode: ListViewImpl {
                 case .Header, .Hole:
                     return nil
                 case let .PeerId(value):
-                    return EnginePeer.Id(value)
+                    return PeerId(value)
                 case .ThreadId, .GroupId, .ContactId, .ArchiveIntro, .EmptyIntro, .SectionHeader, .Notice, .additionalCategory, .TopPeer:
                     return nil
                 }
@@ -1387,14 +1394,18 @@ public final class ChatListNode: ListViewImpl {
     
     public var startedScrollingAtUpperBound: Bool = false
     
+    // MARK: exteraGram
+    public var getNavigationController: (()-> NavigationController?)?
+    
     private let autoSetReady: Bool
     
     public let isMainTab = ValuePromise<Bool>(false, ignoreRepeated: true)
     
     public var synchronousDrawingWhenNotAnimated: Bool = false
     
-    public init(context: AccountContext, location: ChatListControllerLocation, chatListFilter: ChatListFilter? = nil, previewing: Bool, fillPreloadItems: Bool, mode: ChatListNodeMode, isPeerEnabled: ((EnginePeer) -> Bool)? = nil, theme: PresentationTheme, fontSize: PresentationFontSize, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameSortOrder: PresentationPersonNameOrder, nameDisplayOrder: PresentationPersonNameOrder, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, disableAnimations: Bool, isInlineMode: Bool, autoSetReady: Bool, isMainTab: Bool?) {
+    public init(getNavigationController: (() -> NavigationController?)? = nil, context: AccountContext, location: ChatListControllerLocation, chatListFilter: ChatListFilter? = nil, previewing: Bool, fillPreloadItems: Bool, mode: ChatListNodeMode, isPeerEnabled: ((EnginePeer) -> Bool)? = nil, theme: PresentationTheme, fontSize: PresentationFontSize, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameSortOrder: PresentationPersonNameOrder, nameDisplayOrder: PresentationPersonNameOrder, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, disableAnimations: Bool, isInlineMode: Bool, autoSetReady: Bool, isMainTab: Bool?) {
         self.context = context
+        self.getNavigationController = getNavigationController
         self.location = location
         self.chatListFilter = chatListFilter
         self.chatListFilterValue.set(.single(chatListFilter))
@@ -1434,6 +1445,31 @@ public final class ChatListNode: ListViewImpl {
         let nodeInteraction = ChatListNodeInteraction(context: context, animationCache: self.animationCache, animationRenderer: self.animationRenderer, activateSearch: { [weak self] in
             if let strongSelf = self, let activateSearch = strongSelf.activateSearch {
                 activateSearch()
+            }
+        }, openEGAnnouncement: { [weak self] announcementId, url, needAuth, permanent in
+            if let strongSelf = self {
+                if needAuth {
+                    let _ = (getEGSettingsURL(context: strongSelf.context, url: url)
+                             |> deliverOnMainQueue).start(next: { [weak self] url in
+                        guard let strongSelf = self else {
+                            return
+                        }
+                        strongSelf.context.sharedContext.openExternalUrl(context: strongSelf.context, urlContext: .generic, url: url, forceExternal: false, presentationData: strongSelf.context.sharedContext.currentPresentationData.with { $0 }, navigationController: strongSelf.getNavigationController?(), dismissInput: {})
+                    })
+                } else {
+                    Queue.mainQueue().async {
+                        strongSelf.context.sharedContext.openExternalUrl(context: strongSelf.context, urlContext: .generic, url: url, forceExternal: false, presentationData: strongSelf.context.sharedContext.currentPresentationData.with { $0 }, navigationController: strongSelf.getNavigationController?(), dismissInput: {})
+                    }
+                    
+                }
+                if !permanent {
+                    Queue.mainQueue().after(0.6) { [weak self] in
+                        if let strongSelf = self {
+                            dismissEGProvidedSuggestion(suggestionId: announcementId)
+                            postEGWebSettingsInteractivelly(context: strongSelf.context, data: ["skip_announcement_id": announcementId])
+                        }
+                    }
+                }
             }
         }, peerSelected: { [weak self] peer, _, threadId, promoInfo, _ in
             if let strongSelf = self, let peerSelected = strongSelf.peerSelected {
@@ -1944,22 +1980,18 @@ public final class ChatListNode: ListViewImpl {
         
         let savedMessagesPeer: Signal<EnginePeer?, NoError>
         if case let .peers(filter, _, _, _, _, _, _) = mode, filter.contains(.onlyWriteable), case .chatList = location, self.chatListFilter == nil {
-            savedMessagesPeer = context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
-            |> mapToSignal { peer -> Signal<EnginePeer, NoError> in
-                if let peer {
-                    return .single(peer)
-                } else {
-                    return .never()
-                }
-            }
+            savedMessagesPeer = context.account.postbox.loadedPeerWithId(context.account.peerId)
             |> map(Optional.init)
+            |> map { peer in
+                return peer.flatMap(EnginePeer.init)
+            }
         } else {
             savedMessagesPeer = .single(nil)
         }
         
-        let hideArchivedFolderByDefault = context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: ApplicationSpecificPreferencesKeys.chatArchiveSettings))
+        let hideArchivedFolderByDefault = context.account.postbox.preferencesView(keys: [ApplicationSpecificPreferencesKeys.chatArchiveSettings])
         |> map { view -> Bool in
-            let settings: ChatArchiveSettings = view?.get(ChatArchiveSettings.self) ?? .default
+            let settings: ChatArchiveSettings = view.values[ApplicationSpecificPreferencesKeys.chatArchiveSettings]?.get(ChatArchiveSettings.self) ?? .default
             return settings.isHiddenByDefault
         }
         |> distinctUntilChanged
@@ -2695,7 +2727,7 @@ public final class ChatListNode: ListViewImpl {
                     strongSelf.enqueueHistoryPreloadUpdate()
                 }
                 
-                var refreshStoryPeerIds: [EnginePeer.Id] = []
+                var refreshStoryPeerIds: [PeerId] = []
                 var isHiddenItemVisible = false
                 if let range = range.visibleRange {
                     let entryCount = chatListView.filteredEntries.count

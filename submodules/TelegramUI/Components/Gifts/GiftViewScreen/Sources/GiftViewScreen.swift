@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import Display
 import AsyncDisplayKit
+import Postbox
 import TelegramCore
 import SwiftSignalKit
 import AccountContext
@@ -409,7 +410,7 @@ private final class GiftViewSheetContent: CombinedComponent {
                         if let profileController = context.sharedContext.makePeerInfoController(
                             context: context,
                             updatedPresentationData: nil,
-                            peer: peer,
+                            peer: peer._asPeer(),
                             mode: peer.id == context.account.peerId ? .myProfileGifts : .gifts,
                             avatarInitiallyExpanded: false,
                             fromChat: false,
@@ -557,7 +558,7 @@ private final class GiftViewSheetContent: CombinedComponent {
                                         if let controller = self.context.sharedContext.makePeerInfoController(
                                             context: self.context,
                                             updatedPresentationData: nil,
-                                            peer: peer,
+                                            peer: peer._asPeer(),
                                             mode: giftsPeerId == self.context.account.peerId ? .myProfileGifts : .gifts,
                                             avatarInitiallyExpanded: false,
                                             fromChat: false,
@@ -619,7 +620,7 @@ private final class GiftViewSheetContent: CombinedComponent {
                     title: presentationData.strings.Gift_Convert_Title,
                     text: text,
                     actions: [
-                        TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+                        TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_Cancel, action: {}),
                         TextAlertAction(type: .defaultAction, title: presentationData.strings.Gift_Convert_Convert, action: { [weak self, weak controller, weak navigationController] in
                             guard let self else {
                                 return
@@ -750,8 +751,8 @@ private final class GiftViewSheetContent: CombinedComponent {
                     case let .message(message):
                         if let action = message.media.first(where: { $0 is TelegramMediaAction }) as? TelegramMediaAction, case let .starGiftUnique(gift, isUpgrade, isTransferred, savedToProfile, canExportDate, transferStars, isRefunded, isPrepaidUpgrade, peerId, senderId, savedId, resaleAmount, canTransferDate, canResaleDate, _, assigned, fromOffer, canCraftAt, isCrafted) = action.action, case let .unique(uniqueGift) = gift {
                             let updatedAttributes = uniqueGift.attributes.filter { $0.attributeType != .originalInfo }
-                            let updatedMedia: [EngineMedia] = [
-                                .action(TelegramMediaAction(
+                            let updatedMedia: [Media] = [
+                                TelegramMediaAction(
                                     action: .starGiftUnique(
                                         gift: .unique(uniqueGift.withAttributes(updatedAttributes)),
                                         isUpgrade: isUpgrade,
@@ -773,15 +774,15 @@ private final class GiftViewSheetContent: CombinedComponent {
                                         canCraftAt: canCraftAt,
                                         isCrafted: isCrafted
                                     )
-                                ))
+                                )
                             ]
                             
-                            var mappedPeers: [EnginePeer.Id: EnginePeer] = [:]
+                            var mappedPeers: [PeerId: EnginePeer] = [:]
                             for (id, peer) in message.peers {
                                 mappedPeers[id] = EnginePeer(peer)
                             }
 
-                            var mappedAssociatedMessages: [EngineMessage.Id: EngineMessage] = [:]
+                            var mappedAssociatedMessages: [MessageId: EngineMessage] = [:]
                             for (id, message) in message.associatedMessages {
                                 mappedAssociatedMessages[id] = EngineMessage(message)
                             }
@@ -804,7 +805,7 @@ private final class GiftViewSheetContent: CombinedComponent {
                                 author: message.author,
                                 text: message.text,
                                 attributes: message.attributes,
-                                media: updatedMedia,
+                                media: updatedMedia.map { EngineMedia($0) },
                                 peers: mappedPeers,
                                 associatedMessages: mappedAssociatedMessages,
                                 associatedMessageIds: message.associatedMessageIds,
@@ -2248,7 +2249,7 @@ private final class GiftViewSheetContent: CombinedComponent {
                                                 if let controller = context.sharedContext.makePeerInfoController(
                                                     context: context,
                                                     updatedPresentationData: nil,
-                                                    peer: peer,
+                                                    peer: peer._asPeer(),
                                                     mode: .upgradableGifts,
                                                     avatarInitiallyExpanded: false,
                                                     fromChat: false,
@@ -4447,7 +4448,7 @@ private final class GiftViewSheetContent: CombinedComponent {
                                 MultilineTextComponent(text: .plain(NSAttributedString(string: stringForMediumDate(timestamp: soldOut.lastSale, strings: strings, dateTimeFormat: dateTimeFormat), font: tableFont, textColor: tableTextColor)))
                             )
                         ))
-                    } else if let date {
+                    } /*else*/; if let date { // MARK: exteraGram
                         tableItems.append(.init(
                             id: "date",
                             title: strings.Gift_View_Date,
@@ -5061,7 +5062,7 @@ private final class GiftViewSheetContent: CombinedComponent {
                     delay = true
                 }
                 
-                let upgradeMessageId = EngineMessage.Id(peerId: peerId, namespace: originalMessageId.namespace, id: upgradeMessageIdId)
+                let upgradeMessageId = MessageId(peerId: peerId, namespace: originalMessageId.namespace, id: upgradeMessageIdId)
                 let buttonTitle = strings.Gift_View_ViewUpgraded
                 buttonChild = button.update(
                     component: ButtonComponent(

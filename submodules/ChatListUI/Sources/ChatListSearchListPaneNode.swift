@@ -158,7 +158,7 @@ private enum ChatListRecentEntry: Comparable, Identifiable {
                 let primaryPeer: EnginePeer
                 var chatPeer: EnginePeer?
                 let maybeChatPeer = EnginePeer(peer.peer.peers[peer.peer.peerId]!)
-                if case .secretChat = maybeChatPeer, let associatedPeerId = maybeChatPeer.associatedPeerId, let associatedPeer = peer.peer.peers[associatedPeerId] {
+                if case .secretChat = maybeChatPeer, let associatedPeerId = maybeChatPeer._asPeer().associatedPeerId, let associatedPeer = peer.peer.peers[associatedPeerId] {
                     primaryPeer = EnginePeer(associatedPeer)
                     chatPeer = maybeChatPeer
                 } else if case .channel = maybeChatPeer, let mainChannel = peer.peer.chatOrMonoforumMainPeer {
@@ -464,7 +464,7 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
     case adPeer(AdPeer, Int, PresentationTheme, PresentationStrings, PresentationPersonNameOrder, PresentationPersonNameOrder, ChatListSearchSectionExpandType, String?)
     case localPeer(EnginePeer, EnginePeer?, (Int32, Bool)?, Int, PresentationTheme, PresentationStrings, PresentationPersonNameOrder, PresentationPersonNameOrder, ChatListSearchSectionExpandType, PeerStoryStats?, Bool, Bool)
     case globalPeer(FoundPeer, (Int32, Bool)?, Int, PresentationTheme, PresentationStrings, PresentationPersonNameOrder, PresentationPersonNameOrder, ChatListSearchSectionExpandType, PeerStoryStats?, Bool, String?)
-    case message(EngineMessage, EngineRenderedPeer, EnginePeerReadCounters?, EngineMessageHistoryThread.Info?, ChatListPresentationData, Int32, Bool?, Bool, MessageOrderingKey, (id: String, size: Int64, isFirstInList: Bool)?, MessageSection, Bool, PeerStoryStats?, Bool, TelegramSearchPeersScope)
+    case message(EngineMessage, EngineRenderedPeer, EnginePeerReadCounters?, TelegramCore.EngineMessageHistoryThread.Info?, ChatListPresentationData, Int32, Bool?, Bool, MessageOrderingKey, (id: String, size: Int64, isFirstInList: Bool)?, MessageSection, Bool, PeerStoryStats?, Bool, TelegramSearchPeersScope)
     case messagePlaceholder(Int32, ChatListPresentationData, TelegramSearchPeersScope)
     case emptyMessagesFooter(ChatListPresentationData, TelegramSearchPeersScope, String?)
     case addContact(String, PresentationTheme, PresentationStrings)
@@ -1033,10 +1033,9 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
                     }
                 }
                 if filter.contains(.onlyPrivateChats) {
-                    switch peer.peer {
-                    case .user, .secretChat:
-                        break
-                    default:
+                    if case .user = peer.peer {
+                    } else if case .secretChat = peer.peer {
+                    } else {
                         enabled = false
                     }
                 }
@@ -2140,7 +2139,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                 let queryTokens = stringIndexTokens(query ?? "", transliteration: .combined)
 
                 func messageMatchesTokens(message: EngineMessage, tokens: [ValueBoxKey]) -> Bool {
-                    for media in message.effectiveMedia {
+                    for media in message.media {
                         if let file = media as? TelegramMediaFile {
                             if let fileName = file.fileName {
                                 if matchStringIndexTokens(stringIndexTokens(fileName, transliteration: .none), with: tokens) {
@@ -2946,6 +2945,9 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                 |> mapToSignal { resolvedUrl -> Signal<EngineMessage?, NoError> in
                     if case let .channelMessage(_, messageId, _) = resolvedUrl {
                         return context.engine.messages.downloadMessage(messageId: messageId)
+                        |> map { message -> EngineMessage? in
+                            return message.flatMap(EngineMessage.init)
+                        }
                     } else {
                         return .single(nil)
                     }
@@ -4299,7 +4301,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                         result.append(.peer(
                             index: result.count,
                             peer: RecentlySearchedPeer(
-                                peer: RenderedPeer(peer: peer),
+                                peer: RenderedPeer(peer: peer._asPeer()),
                                 presence: nil,
                                 notificationSettings: peerNotificationSettings.flatMap({ $0._asNotificationSettings() }),
                                 unreadCount: unreadCount,
@@ -4339,7 +4341,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                             result.append(.peer(
                                 index: result.count,
                                 peer: RecentlySearchedPeer(
-                                    peer: RenderedPeer(peer: peer),
+                                    peer: RenderedPeer(peer: peer._asPeer()),
                                     presence: nil,
                                     notificationSettings: peerNotificationSettings.flatMap({ $0._asNotificationSettings() }),
                                     unreadCount: 0,
@@ -4440,8 +4442,15 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                 |> map { peers, notificationSettings, unreadCounts, storyStats, readCounters, globalNotificationSettings -> RecentItems in
                     var result: [ChatListRecentEntry] = []
                     var existingIds = Set<PeerId>()
-
+                    
+                    // MARK: exteraGram
+                    // Hidding exteraGramBot from recents so it won't annoy people. Ideally we should call removeRecentlyUsedApp, so it won't annoy users in other apps
+                    let skipId = 5846791198
+                    
                     for id in localApps.peerIds {
+                        if id.id._internalGetInt64Value() == skipId {
+                            continue
+                        }
                         if existingIds.contains(id) {
                             continue
                         }
@@ -4462,7 +4471,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                         result.append(.peer(
                             index: result.count,
                             peer: RecentlySearchedPeer(
-                                peer: RenderedPeer(peer: peer),
+                                peer: RenderedPeer(peer: peer._asPeer()),
                                 presence: nil,
                                 notificationSettings: peerNotificationSettings.flatMap({ $0._asNotificationSettings() }),
                                 unreadCount: unreadCount,
@@ -4481,6 +4490,9 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                     }
                     if let remoteApps {
                         for appPeerId in remoteApps {
+                            if appPeerId.id._internalGetInt64Value() == skipId {
+                                continue
+                            }
                             if existingIds.contains(appPeerId) {
                                 continue
                             }
@@ -4497,7 +4509,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                             result.append(.peer(
                                 index: result.count,
                                 peer: RecentlySearchedPeer(
-                                    peer: RenderedPeer(peer: peer),
+                                    peer: RenderedPeer(peer: peer._asPeer()),
                                     presence: nil,
                                     notificationSettings: peerNotificationSettings.flatMap({ $0._asNotificationSettings() }),
                                     unreadCount: 0,
@@ -4590,7 +4602,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                                     keepStack: .always
                                 ))
                             case .info:
-                                if let peerInfoScreen = self.context.sharedContext.makePeerInfoController(context: self.context, updatedPresentationData: nil, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+                                if let peerInfoScreen = self.context.sharedContext.makePeerInfoController(context: self.context, updatedPresentationData: nil, peer: peer._asPeer(), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
                                     navigationController.pushViewController(peerInfoScreen)
                                 }
                             case .openApp:
@@ -6670,10 +6682,10 @@ private final class EmptyResultsButton: Component {
                 transition: transition,
                 component: AnyComponent(ButtonComponent(
                     background: ButtonComponent.Background(
-                        style: .glass,
                         color: component.theme.list.itemCheckColors.fillColor,
                         foreground: component.theme.list.itemCheckColors.foregroundColor,
-                        pressedColor: component.theme.list.itemCheckColors.fillColor.withMultipliedAlpha(0.9)
+                        pressedColor: component.theme.list.itemCheckColors.fillColor.withMultipliedAlpha(0.9),
+                        cornerRadius: 10.0
                     ),
                     content: buttonContent,
                     isEnabled: isEnabled,
@@ -6685,7 +6697,7 @@ private final class EmptyResultsButton: Component {
                     }
                 )),
                 environment: {},
-                containerSize: CGSize(width: availableSize.width, height: 52.0)
+                containerSize: CGSize(width: availableSize.width, height: 50.0)
             )
             if let buttonView = self.button.view {
                 if buttonView.superview == nil {

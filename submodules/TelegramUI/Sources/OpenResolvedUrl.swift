@@ -1808,7 +1808,7 @@ func openResolvedUrlImpl(
                 guard let controller = context.sharedContext.makePeerInfoController(
                     context: context,
                     updatedPresentationData: updatedPresentationData,
-                    peer: peer,
+                    peer: peer._asPeer(),
                     mode: .storyAlbum(id: id),
                     avatarInitiallyExpanded: false,
                     fromChat: false,
@@ -1829,7 +1829,7 @@ func openResolvedUrlImpl(
                 guard let controller = context.sharedContext.makePeerInfoController(
                     context: context,
                     updatedPresentationData: updatedPresentationData,
-                    peer: peer,
+                    peer: peer._asPeer(),
                     mode: .giftCollection(id: id),
                     avatarInitiallyExpanded: false,
                     fromChat: false,

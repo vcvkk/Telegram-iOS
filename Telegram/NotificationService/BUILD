@@ -1,12 +1,17 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGAppGroupIdentifier:EGAppGroupIdentifier",
+    "//exteraGram/EGStatus:EGStatus",
+]
+
 swift_library(
     name = "NotificationServiceExtensionLib",
     module_name = "NotificationServiceExtensionLib",
     srcs = glob([
         "Sources/*.swift",
     ]),
-    deps = [
+    deps = egdeps + [
         "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/BuildConfig:BuildConfig",

@@ -2998,7 +2998,7 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
                     |> take(1)
                     |> deliverOnMainQueue).start(next: { [weak navigationController] peer in
                         if peer.restrictionText(platform: "ios", contentSettings: context.currentContentSettings.with { $0 }) == nil {
-                            if let infoController = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+                            if let infoController = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: peer._asPeer(), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
                                 navigationController?.pushViewController(infoController)
                             }
                         }
@@ -3243,7 +3243,7 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
             if component.metrics.widthClass == .regular {
                 expandAvatar = false
             }
-            if let infoController = component.context.sharedContext.makePeerInfoController(context: component.context, updatedPresentationData: nil, peer: peer, mode: mode, avatarInitiallyExpanded: expandAvatar, fromChat: false, requestsContext: nil) {
+            if let infoController = component.context.sharedContext.makePeerInfoController(context: component.context, updatedPresentationData: nil, peer: peer._asPeer(), mode: mode, avatarInitiallyExpanded: expandAvatar, fromChat: false, requestsContext: nil) {
                 component.controller()?.push(infoController)
             }
         }))

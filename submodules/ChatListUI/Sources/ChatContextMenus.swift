@@ -1,8 +1,11 @@
 import Foundation
 import UIKit
 import SwiftSignalKit
+import EGLogging
+import EGPluginEngine
 import ContextUI
 import AccountContext
+import Postbox
 import TelegramCore
 import Display
 import TelegramUIPreferences
@@ -16,11 +19,11 @@ import TelegramStringFormatting
 import ChatTimerScreen
 import NotificationPeerExceptionController
 
-func archiveContextMenuItems(context: AccountContext, group: EngineChatList.Group, chatListController: ChatListControllerImpl?) -> Signal<[ContextMenuItem], NoError> {
+func archiveContextMenuItems(context: AccountContext, groupId: PeerGroupId, chatListController: ChatListControllerImpl?) -> Signal<[ContextMenuItem], NoError> {
     let presentationData = context.sharedContext.currentPresentationData.with({ $0 })
     let strings = presentationData.strings
     return combineLatest(
-        context.engine.messages.unreadChatListPeerIds(groupId: group, filterPredicate: nil),
+        context.engine.messages.unreadChatListPeerIds(groupId: EngineChatList.Group(groupId), filterPredicate: nil),
         context.engine.data.get(
             TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: ApplicationSpecificPreferencesKeys.chatArchiveSettings)
         )
@@ -30,7 +33,7 @@ func archiveContextMenuItems(context: AccountContext, group: EngineChatList.Grou
         
         if !unreadChatListPeerIds.isEmpty {
             items.append(.action(ContextMenuActionItem(text: strings.ChatList_Context_MarkAllAsRead, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/MarkAsRead"), color: theme.contextMenu.primaryColor) }, action: { _, f in
-                let _ = (context.engine.messages.markAllChatsAsReadInteractively(items: [(groupId: group, filterPredicate: nil)])
+                let _ = (context.engine.messages.markAllChatsAsReadInteractively(items: [(groupId: EngineChatList.Group(groupId), filterPredicate: nil)])
                 |> deliverOnMainQueue).startStandalone(completed: {
                     f(.default)
                 })
@@ -347,7 +350,7 @@ func chatContextMenuItems(context: AccountContext, peerId: EnginePeer.Id, promoI
                                                         }
                                                         return filters
                                                     }).startStandalone()
-                                                    chatListController?.present(UndoOverlayController(presentationData: presentationData, content: .chatAddedToFolder(context: context, chatTitle: peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder), folderTitle: title.rawAttributedString), elevatedLayout: false, animateInAsReplacement: true, action: { _ in
+                                                    chatListController?.present(UndoOverlayController( presentationData: presentationData, content: .chatAddedToFolder(context: context, chatTitle: peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder), folderTitle: title.rawAttributedString), elevatedLayout: false, animateInAsReplacement: true, action: { _ in
                                                         return false
                                                     }), in: .current)
                                                 })
@@ -381,7 +384,7 @@ func chatContextMenuItems(context: AccountContext, peerId: EnginePeer.Id, promoI
                             }
                         }
                         
-                        let archiveEnabled = !isSavedMessages && peerId != EnginePeer.Id(namespace: Namespaces.Peer.CloudUser, id: EnginePeer.Id.Id._internalFromInt64Value(777000)) && peerId == context.account.peerId
+                        let archiveEnabled = !isSavedMessages && peerId != PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(777000)) /* && peerId == context.account.peerId // MARK: exteraGram */
                         if let group = peerGroup {
                             if archiveEnabled {
                                 let isArchived = group == .archive
@@ -596,6 +599,30 @@ func chatContextMenuItems(context: AccountContext, peerId: EnginePeer.Id, promoI
                         }
                     }
 
+                    // MARK: exteraGram — plugin context_menu entries
+                    let pluginItems = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "context_menu" }
+                    EGPluginDebugLog.shared.append(tag: "CtxMenu", "build — context_menu=\(pluginItems.count) total=\(EGPluginHooks.registeredMenuItems.count)")
+                    if !pluginItems.isEmpty {
+                        items.append(.separator)
+                        for entry in pluginItems {
+                            let pluginId = entry.pluginId
+                            let entryType = entry.entryType
+                            let itemId = entry.itemId
+                            let iconName = entry.iconName
+                            items.append(.action(ContextMenuActionItem(
+                                text: entry.title,
+                                icon: { (theme: PresentationTheme) in
+                                    guard let name = iconName else { return nil }
+                                    return generateTintedImage(image: UIImage(bundleImageName: name), color: theme.contextMenu.primaryColor)
+                                },
+                                action: { _, f2 in
+                                    f2(.dismissWithoutContent)
+                                    EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId, nil)
+                                }
+                            )))
+                        }
+                    }
+
                     if let item = items.last, case .separator = item {
                         items.removeLast()
                     }
@@ -607,7 +634,7 @@ func chatContextMenuItems(context: AccountContext, peerId: EnginePeer.Id, promoI
     }
 }
 
-public func chatForumTopicMenuItems(context: AccountContext, peerId: EnginePeer.Id, threadId: Int64, isPinned: Bool?, isClosed: Bool?, chatListController: ViewController?, joined: Bool, canSelect: Bool, customEdit: ((ContextController) -> Void)? = nil, customPinUnpin: ((ContextController) -> Void)? = nil, reorder: (() -> Void)? = nil, onDeleted: (() -> Void)? = nil) -> Signal<[ContextMenuItem], NoError> {
+public func chatForumTopicMenuItems(context: AccountContext, peerId: PeerId, threadId: Int64, isPinned: Bool?, isClosed: Bool?, chatListController: ViewController?, joined: Bool, canSelect: Bool, customEdit: ((ContextController) -> Void)? = nil, customPinUnpin: ((ContextController) -> Void)? = nil, reorder: (() -> Void)? = nil, onDeleted: (() -> Void)? = nil) -> Signal<[ContextMenuItem], NoError> {
     let presentationData = context.sharedContext.currentPresentationData.with({ $0 })
     let strings = presentationData.strings
 
@@ -842,30 +869,30 @@ public func chatForumTopicMenuItems(context: AccountContext, peerId: EnginePeer.
                         TelegramEngine.EngineData.Item.NotificationSettings.Global()
                     )
                     |> deliverOnMainQueue).startStandalone(next: { globalSettings in
-                        let updatePeerSound: (EnginePeer.Id, PeerMessageSound) -> Signal<Void, NoError> = { peerId, sound in
+                        let updatePeerSound: (PeerId, PeerMessageSound) -> Signal<Void, NoError> = { peerId, sound in
                             return context.engine.peers.updatePeerNotificationSoundInteractive(peerId: peerId, threadId: threadId, sound: sound) |> deliverOnMainQueue
                         }
                         
-                        let updatePeerNotificationInterval: (EnginePeer.Id, Int32?) -> Signal<Void, NoError> = { peerId, muteInterval in
+                        let updatePeerNotificationInterval: (PeerId, Int32?) -> Signal<Void, NoError> = { peerId, muteInterval in
                             return context.engine.peers.updatePeerMuteSetting(peerId: peerId, threadId: threadId, muteInterval: muteInterval) |> deliverOnMainQueue
                         }
                         
-                        let updatePeerDisplayPreviews: (EnginePeer.Id, PeerNotificationDisplayPreviews) -> Signal<Void, NoError> = {
+                        let updatePeerDisplayPreviews: (PeerId, PeerNotificationDisplayPreviews) -> Signal<Void, NoError> = {
                             peerId, displayPreviews in
                             return context.engine.peers.updatePeerDisplayPreviewsSetting(peerId: peerId, threadId: threadId, displayPreviews: displayPreviews) |> deliverOnMainQueue
                         }
                         
-                        let updatePeerStoriesMuted: (EnginePeer.Id, PeerStoryNotificationSettings.Mute) -> Signal<Void, NoError> = {
+                        let updatePeerStoriesMuted: (PeerId, PeerStoryNotificationSettings.Mute) -> Signal<Void, NoError> = {
                             peerId, mute in
                             return context.engine.peers.updatePeerStoriesMutedSetting(peerId: peerId, mute: mute) |> deliverOnMainQueue
                         }
                         
-                        let updatePeerStoriesHideSender: (EnginePeer.Id, PeerStoryNotificationSettings.HideSender) -> Signal<Void, NoError> = {
+                        let updatePeerStoriesHideSender: (PeerId, PeerStoryNotificationSettings.HideSender) -> Signal<Void, NoError> = {
                             peerId, hideSender in
                             return context.engine.peers.updatePeerStoriesHideSenderSetting(peerId: peerId, hideSender: hideSender) |> deliverOnMainQueue
                         }
                         
-                        let updatePeerStorySound: (EnginePeer.Id, PeerMessageSound) -> Signal<Void, NoError> = { peerId, sound in
+                        let updatePeerStorySound: (PeerId, PeerMessageSound) -> Signal<Void, NoError> = { peerId, sound in
                             return context.engine.peers.updatePeerStorySoundInteractive(peerId: peerId, sound: sound) |> deliverOnMainQueue
                         }
                         
@@ -988,7 +1015,30 @@ public func chatForumTopicMenuItems(context: AccountContext, peerId: EnginePeer.
                 chatListController?.selectPeerThread(peerId: peerId, threadId: threadId)
             })))
         }
-        
+
+        // MARK: exteraGram — plugin context_menu entries
+        let pluginItems = EGPluginHooks.registeredMenuItems.filter { $0.entryType == "context_menu" }
+        if !pluginItems.isEmpty {
+            items.append(.separator)
+            for entry in pluginItems {
+                let pluginId = entry.pluginId
+                let entryType = entry.entryType
+                let itemId = entry.itemId
+                let iconName = entry.iconName
+                items.append(.action(ContextMenuActionItem(
+                    text: entry.title,
+                    icon: { (theme: PresentationTheme) in
+                        guard let name = iconName else { return nil }
+                        return generateTintedImage(image: UIImage(bundleImageName: name), color: theme.contextMenu.primaryColor)
+                    },
+                    action: { _, f2 in
+                        f2(.dismissWithoutContent)
+                        EGPluginHooks.pluginMenuItemTappedHandler?(pluginId, entryType, itemId, nil)
+                    }
+                )))
+            }
+        }
+
         return .single(items)
     }
 }
@@ -999,9 +1049,11 @@ public func savedMessagesPeerMenuItems(context: AccountContext, threadId: Int64,
 
     return combineLatest(
         context.engine.data.get(
-            TelegramEngine.EngineData.Item.Peer.Peer(id: EnginePeer.Id(threadId))
+            TelegramEngine.EngineData.Item.Peer.Peer(id: PeerId(threadId))
         ),
-        context.engine.peers.getForumChannelPinnedTopics(id: context.account.peerId)
+        context.account.postbox.transaction { transaction -> [Int64] in
+            return transaction.getPeerPinnedThreads(peerId: context.account.peerId)
+        }
     )
     |> mapToSignal { [weak parentController] peer, pinnedThreadIds -> Signal<[ContextMenuItem], NoError> in
         var items: [ContextMenuItem] = []
@@ -1032,7 +1084,7 @@ public func savedMessagesPeerMenuItems(context: AccountContext, threadId: Int64,
         })))
         
         items.append(.action(ContextMenuActionItem(text: strings.ChatList_Context_Delete, textColor: .destructive, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.contextMenu.destructiveColor) }, action: { _, f in
-                deletePeerChat(EnginePeer.Id(threadId))
+                deletePeerChat(PeerId(threadId))
             f(.default)
         })))
         

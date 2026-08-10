@@ -1247,7 +1247,7 @@ final class ChatRecentActionsControllerNode: ViewControllerTracingNode {
                     if peer is TelegramChannel, let navigationController = strongSelf.getNavigationController() {
                         strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(EnginePeer(peer)), peekData: peekData, animated: true))
                     } else {
-                        if let infoController = strongSelf.context.sharedContext.makePeerInfoController(context: strongSelf.context, updatedPresentationData: nil, peer: EnginePeer(peer), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+                        if let infoController = strongSelf.context.sharedContext.makePeerInfoController(context: strongSelf.context, updatedPresentationData: nil, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
                             strongSelf.pushController(infoController)
                         }
                     }
@@ -1267,7 +1267,7 @@ final class ChatRecentActionsControllerNode: ViewControllerTracingNode {
         |> deliverOnMainQueue).startStrict(next: { [weak self] peer in
             if let strongSelf = self {
                 if let peer = peer {
-                    if let infoController = strongSelf.context.sharedContext.makePeerInfoController(context: strongSelf.context, updatedPresentationData: nil, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
+                    if let infoController = strongSelf.context.sharedContext.makePeerInfoController(context: strongSelf.context, updatedPresentationData: nil, peer: peer._asPeer(), mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) {
                         strongSelf.pushController(infoController)
                     }
                 }
@@ -1303,7 +1303,7 @@ final class ChatRecentActionsControllerNode: ViewControllerTracingNode {
                                 messageEntities = attribute.entities
                             }
                             if let attribute = attribute as? RestrictedContentMessageAttribute {
-                                restrictedText = attribute.platformText(platform: "ios", contentSettings: context.currentContentSettings.with { $0 }) ?? ""
+                                restrictedText = attribute.platformText(platform: "ios", contentSettings: context.currentContentSettings.with { $0 }, chatId: message.author?.id.id._internalGetInt64Value()) ?? ""
                             }
                         }
                         

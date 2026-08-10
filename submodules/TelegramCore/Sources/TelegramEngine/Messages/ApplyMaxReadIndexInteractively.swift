@@ -5,6 +5,7 @@ import SwiftSignalKit
 
 
 func _internal_applyMaxReadIndexInteractively(postbox: Postbox, stateManager: AccountStateManager, index: MessageIndex) -> Signal<Void, NoError> {
+    EGPluginHooks.fireAsync("messages.readHistory", params: ["peer_id": index.id.peerId.id._internalGetInt64Value(), "max_id": Int(index.id.id)])
     return postbox.transaction { transaction -> Void in
         _internal_applyMaxReadIndexInteractively(transaction: transaction, stateManager: stateManager, index: index)
     }

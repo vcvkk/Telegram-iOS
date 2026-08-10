@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import Display
 import SwiftSignalKit
+import Postbox
 import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -11,11 +12,6 @@ import AccountContext
 import ItemListPeerActionItem
 import DeviceAccess
 import QrCodeUI
-import ComponentFlow
-import AlertComponent
-import AlertCheckComponent
-import AppBundle
-import ContextUI
 
 private final class RecentSessionsControllerArguments {
     let context: AccountContext
@@ -25,7 +21,6 @@ private final class RecentSessionsControllerArguments {
     let terminateOtherSessions: () -> Void
     
     let openSession: (RecentAccountSession) -> Void
-    let openConnectedBotSession: (TelegramAccountConnectedBot) -> Void
     let openWebSession: (WebAuthorization, EnginePeer?) -> Void
     
     let removeWebSession: (Int64) -> Void
@@ -39,14 +34,13 @@ private final class RecentSessionsControllerArguments {
     let openDesktopLink: () -> Void
     let openWebLink: () -> Void
     
-    init(context: AccountContext, setSessionIdWithRevealedOptions: @escaping (Int64?, Int64?) -> Void, removeSession: @escaping (Int64) -> Void, terminateOtherSessions: @escaping () -> Void, openSession: @escaping (RecentAccountSession) -> Void, openConnectedBotSession: @escaping (TelegramAccountConnectedBot) -> Void, openWebSession: @escaping (WebAuthorization, EnginePeer?) -> Void, removeWebSession: @escaping (Int64) -> Void, terminateAllWebSessions: @escaping () -> Void, addDevice: @escaping () -> Void, openOtherAppsUrl: @escaping () -> Void, setupAuthorizationTTL: @escaping () -> Void, openDesktopLink: @escaping () -> Void, openWebLink: @escaping () -> Void) {
+    init(context: AccountContext, setSessionIdWithRevealedOptions: @escaping (Int64?, Int64?) -> Void, removeSession: @escaping (Int64) -> Void, terminateOtherSessions: @escaping () -> Void, openSession: @escaping (RecentAccountSession) -> Void, openWebSession: @escaping (WebAuthorization, EnginePeer?) -> Void, removeWebSession: @escaping (Int64) -> Void, terminateAllWebSessions: @escaping () -> Void, addDevice: @escaping () -> Void, openOtherAppsUrl: @escaping () -> Void, setupAuthorizationTTL: @escaping () -> Void, openDesktopLink: @escaping () -> Void, openWebLink: @escaping () -> Void) {
         self.context = context
         self.setSessionIdWithRevealedOptions = setSessionIdWithRevealedOptions
         self.removeSession = removeSession
         self.terminateOtherSessions = terminateOtherSessions
         
         self.openSession = openSession
-        self.openConnectedBotSession = openConnectedBotSession
         self.openWebSession = openWebSession
         
         self.removeWebSession = removeWebSession
@@ -78,7 +72,6 @@ private enum RecentSessionsSection: Int32 {
 
 private enum RecentSessionsEntryStableId: Hashable {
     case session(Int64)
-    case connectedBot(EnginePeer.Id)
     case index(Int32)
     case devicesInfo
     case ttl(Int32)
@@ -123,7 +116,6 @@ private enum RecentSessionsEntry: ItemListNodeEntry {
     case pendingSessionsInfo(SortIndex, String)
     case otherSessionsHeader(SortIndex, String)
     case addDevice(SortIndex, String)
-    case connectedBot(sortIndex: SortIndex, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, bot: TelegramAccountConnectedBot, peer: EnginePeer?, enabled: Bool)
     case session(index: Int32, sortIndex: SortIndex, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, session: RecentAccountSession, enabled: Bool, editing: Bool, revealed: Bool)
     case website(index: Int32, sortIndex: SortIndex, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, website: WebAuthorization, peer: EnginePeer?, enabled: Bool, editing: Bool, revealed: Bool)
     case devicesInfo(SortIndex, String)
@@ -138,7 +130,7 @@ private enum RecentSessionsEntry: ItemListNodeEntry {
                 return RecentSessionsSection.currentSession.rawValue
             case .pendingSessionsHeader, .pendingSession, .pendingSessionsInfo:
                 return RecentSessionsSection.pendingSessions.rawValue
-            case .otherSessionsHeader, .addDevice, .connectedBot, .session, .website, .devicesInfo:
+            case .otherSessionsHeader, .addDevice, .session, .website, .devicesInfo:
                 return RecentSessionsSection.otherSessions.rawValue
             case .ttlHeader, .ttlTimeout:
                 return RecentSessionsSection.ttl.rawValue
@@ -171,8 +163,6 @@ private enum RecentSessionsEntry: ItemListNodeEntry {
             return .index(9)
         case .addDevice:
             return .index(10)
-        case let .connectedBot(_, _, _, _, bot, _, _):
-            return .connectedBot(bot.id)
         case let .session(_, _, _, _, session, _, _, _):
             return .session(session.hash)
         case let .website(_, _, _, _, _, website, _, _, _, _):
@@ -211,8 +201,6 @@ private enum RecentSessionsEntry: ItemListNodeEntry {
         case let .otherSessionsHeader(index, _):
             return index
         case let .addDevice(index, _):
-            return index
-        case let .connectedBot(index, _, _, _, _, _, _):
             return index
         case let .session(_, index, _, _, _, _, _, _):
             return index
@@ -291,12 +279,6 @@ private enum RecentSessionsEntry: ItemListNodeEntry {
             }
         case let .addDevice(lhsSortIndex, lhsText):
             if case let .addDevice(rhsSortIndex, rhsText) = rhs, lhsSortIndex == rhsSortIndex, lhsText == rhsText {
-                return true
-            } else {
-                return false
-            }
-        case let .connectedBot(lhsSortIndex, lhsStrings, lhsDateTimeFormat, lhsNameDisplayOrder, lhsBot, lhsPeer, lhsEnabled):
-            if case let .connectedBot(rhsSortIndex, rhsStrings, rhsDateTimeFormat, rhsNameDisplayOrder, rhsBot, rhsPeer, rhsEnabled) = rhs, lhsSortIndex == rhsSortIndex, lhsStrings === rhsStrings, lhsDateTimeFormat == rhsDateTimeFormat, lhsNameDisplayOrder == rhsNameDisplayOrder, lhsBot == rhsBot, lhsPeer == rhsPeer, lhsEnabled == rhsEnabled {
                 return true
             } else {
                 return false
@@ -407,21 +389,6 @@ private enum RecentSessionsEntry: ItemListNodeEntry {
             return ItemListPeerActionItem(presentationData: presentationData, systemStyle: .glass, icon: PresentationResourcesItemList.addDeviceIcon(presentationData.theme), title: text, sectionId: self.section, height: .generic, color: .accent, editing: false, action: {
                 arguments.addDevice()
             })
-        case let .connectedBot(_, _, dateTimeFormat, nameDisplayOrder, bot, peer, enabled):
-            return ItemListConnectedBotSessionItem(
-                context: arguments.context,
-                presentationData: presentationData,
-                systemStyle: .glass,
-                dateTimeFormat: dateTimeFormat,
-                nameDisplayOrder: nameDisplayOrder,
-                bot: bot,
-                peer: peer,
-                enabled: enabled,
-                sectionId: self.section,
-                action: {
-                    arguments.openConnectedBotSession(bot)
-                }
-            )
         case let .session(_, _, _, dateTimeFormat, session, enabled, editing, revealed):
             return ItemListRecentSessionItem(presentationData: presentationData, systemStyle: .glass, dateTimeFormat: dateTimeFormat, session: session, enabled: enabled, editable: true, editing: editing, revealed: revealed, sectionId: self.section, setSessionIdWithRevealedOptions: { previousId, id in
                 arguments.setSessionIdWithRevealedOptions(previousId, id)
@@ -509,7 +476,7 @@ private struct RecentSessionsControllerState: Equatable {
     }
 }
 
-private func recentSessionsControllerEntries(presentationData: PresentationData, state: RecentSessionsControllerState, sessionsState: ActiveSessionsContextState, connectedBot: TelegramAccountConnectedBot?, connectedBotPeer: EnginePeer?, enableQRLogin: Bool) -> [RecentSessionsEntry] {
+private func recentSessionsControllerEntries(presentationData: PresentationData, state: RecentSessionsControllerState, sessionsState: ActiveSessionsContextState, enableQRLogin: Bool) -> [RecentSessionsEntry] {
     var entries: [RecentSessionsEntry] = []
     
     entries.append(.header(SortIndex(section: 0, item: 0), presentationData.strings.AuthSessions_HeaderInfo))
@@ -517,19 +484,16 @@ private func recentSessionsControllerEntries(presentationData: PresentationData,
     if !sessionsState.sessions.isEmpty {
         var existingSessionIds = Set<Int64>()
         entries.append(.currentSessionHeader(SortIndex(section: 1, item: 0), presentationData.strings.AuthSessions_CurrentSession))
-        var currentSessionItemIndex = 1
         if let index = sessionsState.sessions.firstIndex(where: { $0.hash == 0 }) {
             existingSessionIds.insert(sessionsState.sessions[index].hash)
-            entries.append(.currentSession(SortIndex(section: 1, item: currentSessionItemIndex), presentationData.strings, presentationData.dateTimeFormat, sessionsState.sessions[index]))
-            currentSessionItemIndex += 1
+            entries.append(.currentSession(SortIndex(section: 1, item: 1), presentationData.strings, presentationData.dateTimeFormat, sessionsState.sessions[index]))
         }
         
         var hasAddDevice = false
-        if sessionsState.sessions.count > 1 || enableQRLogin || connectedBot != nil {
-            if sessionsState.sessions.count > 1 || connectedBot != nil {
-                entries.append(.terminateOtherSessions(SortIndex(section: 1, item: currentSessionItemIndex), presentationData.strings.AuthSessions_TerminateOtherSessions))
-                currentSessionItemIndex += 1
-                entries.append(.currentSessionInfo(SortIndex(section: 1, item: currentSessionItemIndex), presentationData.strings.AuthSessions_TerminateOtherSessionsHelp))
+        if sessionsState.sessions.count > 1 || enableQRLogin {
+            if sessionsState.sessions.count > 1 {
+                entries.append(.terminateOtherSessions(SortIndex(section: 1, item: 2), presentationData.strings.AuthSessions_TerminateOtherSessions))
+                entries.append(.currentSessionInfo(SortIndex(section: 1, item: 3), presentationData.strings.AuthSessions_TerminateOtherSessionsHelp))
             } else if enableQRLogin {
                 hasAddDevice = true
 //                entries.append(.currentAddDevice(SortIndex(section: 1, item: 4), presentationData.strings.AuthSessions_AddDevice))
@@ -548,7 +512,7 @@ private func recentSessionsControllerEntries(presentationData: PresentationData,
                 entries.append(.pendingSessionsInfo(SortIndex(section: 3, item: 0), presentationData.strings.AuthSessions_IncompleteAttemptsInfo))
             }
             
-            if sessionsState.sessions.count > 1 || connectedBot != nil {
+            if sessionsState.sessions.count > 1 {
                 entries.append(.otherSessionsHeader(SortIndex(section: 4, item: 0), presentationData.strings.AuthSessions_OtherSessions))
             }
             
@@ -560,16 +524,10 @@ private func recentSessionsControllerEntries(presentationData: PresentationData,
                 return lhs.activityDate > rhs.activityDate
             })
             
-            var otherSessionItemIndex = 0
-            if let connectedBot {
-                entries.append(.connectedBot(sortIndex: SortIndex(section: 5, item: otherSessionItemIndex), strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, nameDisplayOrder: presentationData.nameDisplayOrder, bot: connectedBot, peer: connectedBotPeer, enabled: !state.terminatingOtherSessions))
-                otherSessionItemIndex += 1
-            }
             for i in 0 ..< filteredSessions.count {
                 if !existingSessionIds.contains(filteredSessions[i].hash) {
                     existingSessionIds.insert(filteredSessions[i].hash)
-                    entries.append(.session(index: Int32(i), sortIndex: SortIndex(section: 5, item: otherSessionItemIndex), strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, session: filteredSessions[i], enabled: state.removingSessionId != filteredSessions[i].hash && !state.terminatingOtherSessions, editing: state.editing, revealed: state.sessionIdWithRevealedOptions == filteredSessions[i].hash))
-                    otherSessionItemIndex += 1
+                    entries.append(.session(index: Int32(i), sortIndex: SortIndex(section: 5, item: i), strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, session: filteredSessions[i], enabled: state.removingSessionId != filteredSessions[i].hash && !state.terminatingOtherSessions, editing: state.editing, revealed: state.sessionIdWithRevealedOptions == filteredSessions[i].hash))
                 }
             }
             
@@ -585,7 +543,7 @@ private func recentSessionsControllerEntries(presentationData: PresentationData,
     return entries
 }
 
-private func recentSessionsControllerEntries(presentationData: PresentationData, state: RecentSessionsControllerState, websites: [WebAuthorization]?, peers: [EnginePeer.Id: EnginePeer]?) -> [RecentSessionsEntry] {
+private func recentSessionsControllerEntries(presentationData: PresentationData, state: RecentSessionsControllerState, websites: [WebAuthorization]?, peers: [EnginePeer.Id : EnginePeer]?) -> [RecentSessionsEntry] {
     var entries: [RecentSessionsEntry] = []
     
     if let websites = websites, let peers = peers {
@@ -616,18 +574,6 @@ private func recentSessionsControllerEntries(presentationData: PresentationData,
 private final class RecentSessionsControllerImpl: ItemListController, RecentSessionsController {
 }
 
-private final class RecentSessionsContextReferenceContentSource: ContextReferenceContentSource {
-    private let sourceView: UIView
-
-    init(sourceView: UIView) {
-        self.sourceView = sourceView
-    }
-
-    func transitionInfo() -> ContextControllerReferenceViewInfo? {
-        return ContextControllerReferenceViewInfo(referenceView: self.sourceView, contentAreaInScreenSpace: UIScreen.main.bounds, insets: UIEdgeInsets(top: -4.0, left: 0.0, bottom: -4.0, right: 0.0))
-    }
-}
-
 public func recentSessionsController(context: AccountContext, activeSessionsContext: ActiveSessionsContext, webSessionsContext: WebSessionsContext, websitesOnly: Bool, focusOnItemTag: RecentSessionsEntryTag? = nil) -> ViewController & RecentSessionsController {
     let statePromise = ValuePromise(RecentSessionsControllerState(), ignoreRepeated: true)
     let stateValue = Atomic(value: RecentSessionsControllerState())
@@ -645,11 +591,8 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
     webSessionsContext.loadMore()
     
     var presentControllerImpl: ((ViewController, ViewControllerPresentationArguments?) -> Void)?
-    var presentInGlobalOverlayImpl: ((ViewController) -> Void)?
     var pushControllerImpl: ((ViewController) -> Void)?
     var dismissImpl: (() -> Void)?
-    var findAutoTerminateReferenceNode: (() -> ItemListDisclosureItemNode?)?
-    var currentAuthorizationTTLDays: Int32?
     
     let actionsDisposable = DisposableSet()
     
@@ -733,8 +676,6 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
     let updateSessionDisposable = MetaDisposable()
     actionsDisposable.add(updateSessionDisposable)
     
-    let connectedBotAndPeerValue = Atomic<(TelegramAccountConnectedBot?, EnginePeer?)>(value: (nil, nil))
-    
     let arguments = RecentSessionsControllerArguments(context: context, setSessionIdWithRevealedOptions: { sessionId, fromSessionId in
         updateState { state in
             if (sessionId == nil && fromSessionId == state.sessionIdWithRevealedOptions) || (sessionId != nil && fromSessionId == nil) {
@@ -747,98 +688,33 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
         removeSessionImpl(sessionId, {})
     }, terminateOtherSessions: {
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-        let performTerminate: (Bool) -> Void = { terminateBot in
-            updateState {
-                return $0.withUpdatedTerminatingOtherSessions(true)
-            }
-            
-            let signal: Signal<Never, TerminateSessionError>
-            if terminateBot {
-                signal = activeSessionsContext.removeOther()
-                |> then(context.engine.accountData.setAccountConnectedBot(bot: nil) |> castError(TerminateSessionError.self))
-            } else {
-                signal = activeSessionsContext.removeOther()
-            }
-            
-            terminateOtherSessionsDisposable.set((signal
-            |> deliverOnMainQueue).start(error: { _ in
-                updateState {
-                    return $0.withUpdatedTerminatingOtherSessions(false)
-                }
-            }, completed: {
-                updateState {
-                    return $0.withUpdatedTerminatingOtherSessions(false)
-                }
-                context.sharedContext.updateNotificationTokensRegistration()
-            }))
-        }
-        
-        let (connectedBot, connectedBotPeer) = connectedBotAndPeerValue.with { $0 }
-        if connectedBot != nil {
-            let checkState = AlertCheckComponent.ExternalState()
-            let botUsername = connectedBotPeer?.addressName.flatMap { addressName -> String? in
-                if addressName.isEmpty {
-                    return nil
-                } else {
-                    return "@\(addressName)"
-                }
-            } ?? connectedBotPeer?.compactDisplayTitle ?? ""
-
-            var content: [AnyComponentWithIdentity<AlertComponentEnvironment>] = []
-            content.append(AnyComponentWithIdentity(
-                id: "text",
-                component: AnyComponent(
-                    AlertTextComponent(content: .plain(presentationData.strings.AuthSessions_TerminateOtherSessionsText))
-                )
-            ))
-            var controller: AlertScreen?
-            content.append(AnyComponentWithIdentity(
-                id: "check",
-                component: AnyComponent(
-                    AlertCheckComponent(title: presentationData.strings.RecentSessions_ConnectedBot_TerminateCheckbox(botUsername.isEmpty ? "" : "[\(botUsername)](peer)").string, initialValue: false, externalState: checkState, linkAction: {
-                        guard let connectedBotPeer, let infoController = context.sharedContext.makePeerInfoController(context: context, updatedPresentationData: nil, peer: connectedBotPeer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false, requestsContext: nil) else {
-                            return
+        let controller = textAlertController(
+            context: context,
+            title: nil,
+            text: presentationData.strings.AuthSessions_TerminateOtherSessionsText,
+            actions: [
+                TextAlertAction(type: .defaultDestructiveAction, title: presentationData.strings.AuthSessions_TerminateOtherSessions, action: {
+                    updateState {
+                        return $0.withUpdatedTerminatingOtherSessions(true)
+                    }
+                    
+                    terminateOtherSessionsDisposable.set((activeSessionsContext.removeOther()
+                    |> deliverOnMainQueue).start(error: { _ in
+                        updateState {
+                            return $0.withUpdatedTerminatingOtherSessions(false)
                         }
-                        if let controller {
-                            controller.dismiss(completion: {
-                                pushControllerImpl?(infoController)
-                            })
-                        } else {
-                            pushControllerImpl?(infoController)
+                    }, completed: {
+                        updateState {
+                            return $0.withUpdatedTerminatingOtherSessions(false)
                         }
-                    })
-                )
-            ))
-            
-            controller = AlertScreen(
-                configuration: AlertScreen.Configuration(actionAlignment: .vertical),
-                content: content,
-                actions: [
-                    .init(title: presentationData.strings.AuthSessions_TerminateOtherSessions, type: .defaultDestructive, action: {
-                        performTerminate(checkState.value)
-                    }),
-                    .init(title: presentationData.strings.Common_Cancel)
-                ],
-                updatedPresentationData: (presentationData, context.sharedContext.presentationData)
-            )
-            if let controller {
-                presentControllerImpl?(controller, nil)
-            }
-        } else {
-            let controller = textAlertController(
-                context: context,
-                title: nil,
-                text: presentationData.strings.AuthSessions_TerminateOtherSessionsText,
-                actions: [
-                    TextAlertAction(type: .defaultDestructiveAction, title: presentationData.strings.AuthSessions_TerminateOtherSessions, action: {
-                        performTerminate(false)
-                    }),
-                    TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {})
-                ],
-                actionLayout: .vertical
-            )
-            presentControllerImpl?(controller, nil)
-        }
+                        context.sharedContext.updateNotificationTokensRegistration()
+                    }))
+                }),
+                TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {})
+            ],
+            actionLayout: .vertical
+        )
+        presentControllerImpl?(controller, nil)
     }, openSession: { session in
         let controller = RecentSessionScreen(context: context, subject: .session(session), updateAcceptSecretChats: { value in
             updateSessionDisposable.set(activeSessionsContext.updateSessionAcceptsSecretChats(session, accepts: value).start())
@@ -849,20 +725,13 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
                 completion()
             })
         })
-        pushControllerImpl?(controller)
-    }, openConnectedBotSession: { bot in
-        let controller = RecentSessionScreen(context: context, subject: .connectedBot(bot), updateAcceptSecretChats: { _ in
-        }, updateAcceptIncomingCalls: { _ in
-        }, remove: { completion in
-            completion()
-        })
-        pushControllerImpl?(controller)
+        presentControllerImpl?(controller, nil)
     }, openWebSession: { session, peer in
         let controller = RecentSessionScreen(context: context, subject: .website(session, peer), updateAcceptSecretChats: { _ in }, updateAcceptIncomingCalls: { _ in }, remove: { completion in
             removeWebSessionImpl(session.hash)
             completion()
         })
-        pushControllerImpl?(controller)
+        presentControllerImpl?(controller, nil)
     }, removeWebSession: { sessionId in
         removeWebSessionImpl(sessionId)
     }, terminateAllWebSessions: {
@@ -910,6 +779,10 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
         context.sharedContext.openExternalUrl(context: context, urlContext: .generic, url: "https://telegram.org/apps", forceExternal: true, presentationData: context.sharedContext.currentPresentationData.with { $0 }, navigationController: nil, dismissInput: {})
     }, setupAuthorizationTTL: {
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        let controller = ActionSheetController(presentationData: presentationData)
+        let dismissAction: () -> Void = { [weak controller] in
+            controller?.dismissAnimated()
+        }
         let ttlAction: (Int32) -> Void = { ttl in
             updateAuthorizationTTLDisposable.set(activeSessionsContext.updateAuthorizationTTL(days: ttl).start())
         }
@@ -919,32 +792,17 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
             90,
             180
         ]
-        let timeoutItems: [ContextMenuItem] = timeoutValues.map { value in
-            return .action(ContextMenuActionItem(text: timeIntervalString(strings: presentationData.strings, value: value * 24 * 60 * 60), icon: { theme in
-                if currentAuthorizationTTLDays == value {
-                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor)
-                } else {
-                    return UIImage()
-                }
-            }, action: { _, f in
-                f(.default)
+        let timeoutItems: [ActionSheetItem] = timeoutValues.map { value in
+            return ActionSheetButtonItem(title: timeIntervalString(strings: presentationData.strings, value: value * 24 * 60 * 60), action: {
+                dismissAction()
                 ttlAction(value)
-            }))
+            })
         }
-        guard let sourceNode = findAutoTerminateReferenceNode?() else {
-            return
-        }
-        let contextController = makeContextController(
-            presentationData: presentationData,
-            source: .reference(RecentSessionsContextReferenceContentSource(sourceView: sourceNode.labelNode.view)),
-            items: .single(ContextController.Items(content: .list(timeoutItems))),
-            gesture: nil
-        )
-        sourceNode.updateHasContextMenu(hasContextMenu: true)
-        contextController.dismissed = { [weak sourceNode] in
-            sourceNode?.updateHasContextMenu(hasContextMenu: false)
-        }
-        presentInGlobalOverlayImpl?(contextController)
+        controller.setItemGroups([
+            ActionSheetItemGroup(items: timeoutItems),
+            ActionSheetItemGroup(items: [ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, action: { dismissAction() })])
+        ])
+        presentControllerImpl?(controller, nil)
     }, openDesktopLink: {
         context.sharedContext.openExternalUrl(context: context, urlContext: .generic, url: "https://getdesktop.telegram.org", forceExternal: true, presentationData: context.sharedContext.currentPresentationData.with { $0 }, navigationController: nil, dismissInput: {})
     }, openWebLink: {
@@ -953,10 +811,14 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
     
     let previousMode = Atomic<RecentSessionsMode>(value: .sessions)
     
-    let enableQRLogin = context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.appConfiguration))
+    let enableQRLogin = context.account.postbox.preferencesView(keys: [PreferencesKeys.appConfiguration])
     |> map { view -> Bool in
-        guard let appConfiguration = view?.get(AppConfiguration.self) else {
+        guard let appConfiguration = view.values[PreferencesKeys.appConfiguration]?.get(AppConfiguration.self) else {
             return false
+        }
+        // MARK: exteraGram
+        if appConfiguration.egWebSettings.global.qrLogin {
+            return true
         }
         guard let data = appConfiguration.data, let enableQR = data["qr_login_camera"] as? Bool, enableQR else {
             return false
@@ -965,29 +827,9 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
     }
     |> distinctUntilChanged
     
-    let connectedBotAndPeer = context.engine.data.subscribe(
-        TelegramEngine.EngineData.Item.Peer.BusinessConnectedBot(id: context.account.peerId)
-    )
-    |> mapToSignal { connectedBot -> Signal<(TelegramAccountConnectedBot?, EnginePeer?), NoError> in
-        guard let connectedBot else {
-            return .single((nil, nil))
-        }
-        return context.engine.data.subscribe(
-            TelegramEngine.EngineData.Item.Peer.Peer(id: connectedBot.id)
-        )
-        |> map { peer in
-            return (connectedBot, peer)
-        }
-    }
-    |> afterNext { value in
-        let _ = connectedBotAndPeerValue.swap(value)
-    }
-    
-    let signal = combineLatest(context.sharedContext.presentationData, mode.get(), statePromise.get(), activeSessionsContext.state, webSessionsContext.state, enableQRLogin, connectedBotAndPeer)
+    let signal = combineLatest(context.sharedContext.presentationData, mode.get(), statePromise.get(), activeSessionsContext.state, webSessionsContext.state, enableQRLogin)
     |> deliverOnMainQueue
-    |> map { presentationData, mode, state, sessionsState, websitesAndPeers, enableQRLogin, connectedBotAndPeer -> (ItemListControllerState, (ItemListNodeState, Any)) in
-        currentAuthorizationTTLDays = sessionsState.ttlDays
-
+    |> map { presentationData, mode, state, sessionsState, websitesAndPeers, enableQRLogin -> (ItemListControllerState, (ItemListNodeState, Any)) in
         var rightNavigationButton: ItemListNavigationButton?
         let websites = websitesAndPeers.sessions
         let peers = websitesAndPeers.peers
@@ -996,7 +838,7 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
             if state.terminatingOtherSessions {
                 rightNavigationButton = ItemListNavigationButton(content: .none, style: .activity, enabled: true, action: {})
             } else if state.editing {
-                rightNavigationButton = ItemListNavigationButton(content: .icon(.done), style: .bold, enabled: true, action: {
+                rightNavigationButton = ItemListNavigationButton(content: .text(presentationData.strings.Common_Done), style: .bold, enabled: true, action: {
                     updateState { state in
                         return state.withUpdatedEditing(false)
                     }
@@ -1011,6 +853,11 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
         }
         
         let emptyStateItem: ItemListControllerEmptyStateItem? = nil
+//        if sessionsState.sessions.count == 1 && mode == .sessions {
+//            emptyStateItem = RecentSessionsEmptyStateItem(theme: presentationData.theme, strings: presentationData.strings)
+//        } else {
+//            emptyStateItem = nil
+//        }
         
         let title: ItemListControllerTitle
         let entries: [RecentSessionsEntry]
@@ -1025,7 +872,7 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
             case (.websites, let websites, let peers):
                 entries = recentSessionsControllerEntries(presentationData: presentationData, state: state, websites: websites, peers: peers)
             default:
-                entries = recentSessionsControllerEntries(presentationData: presentationData, state: state, sessionsState: sessionsState, connectedBot: connectedBotAndPeer.0, connectedBotPeer: connectedBotAndPeer.1, enableQRLogin: enableQRLogin)
+                entries = recentSessionsControllerEntries(presentationData: presentationData, state: state, sessionsState: sessionsState, enableQRLogin: enableQRLogin)
         }
         
         let previousMode = previousMode.swap(mode)
@@ -1056,17 +903,11 @@ public func recentSessionsController(context: AccountContext, activeSessionsCont
             controller.present(c, in: .window(.root), with: p)
         }
     }
-    presentInGlobalOverlayImpl = { [weak controller] c in
-        controller?.presentInGlobalOverlay(c, with: nil)
-    }
     pushControllerImpl = { [weak controller] c in
         controller?.push(c)
     }
     dismissImpl = { [weak controller] in
         controller?.dismiss()
-    }
-    findAutoTerminateReferenceNode = { [weak controller] in
-        return controller?.itemNode(forTag: RecentSessionsEntryTag.autoTerminate) as? ItemListDisclosureItemNode
     }
     
     if let focusOnItemTag {

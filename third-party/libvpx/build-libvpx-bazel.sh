@@ -1,4 +1,4 @@
-#!/bin/bash
+#! /bin/sh
 
 set -e
 set -x
@@ -33,34 +33,18 @@ SCRIPT_DIR="$SOURCE_DIR"
 LIBVPX_SOURCE_DIR="$SOURCE_DIR"
 
 
-ORIG_PWD="$(pwd)"
+LIPO=$(xcrun -sdk iphoneos${SDK} -find lipo)
 
-EXTRA_CONFIGURE_ARGS=""
+ORIG_PWD="$(pwd)"
 
 if [ "$ARCH" = "armv7" ]; then
   TARGETS="armv7-darwin-gcc"
-  LIPO=$(xcrun -sdk iphoneos${SDK} -find lipo)
 elif [ "$ARCH" = "arm64" ]; then
   TARGETS="arm64-darwin-gcc"
-  LIPO=$(xcrun -sdk iphoneos${SDK} -find lipo)
 elif [ "$ARCH" = "sim_arm64" ]; then
   TARGETS="arm64-iphonesimulator-gcc"
-  LIPO=$(xcrun -sdk iphoneos${SDK} -find lipo)
-elif [ "$ARCH" = "macos_arm64" ]; then
-  TARGETS="arm64-darwin22-gcc"
-  LIPO=$(xcrun -sdk macosx -find lipo)
-  export SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
-elif [ "$ARCH" = "linux_arm64" ]; then
-  TARGETS="arm64-linux-gcc"
-  LIPO="cp"
-  EXTRA_CONFIGURE_ARGS="--enable-pic"
-elif [ "$ARCH" = "linux_x86_64" ]; then
-  TARGETS="x86_64-linux-gcc"
-  LIPO="cp"
-  EXTRA_CONFIGURE_ARGS="--enable-pic"
 elif [ "$ARCH" = "x86_64" ]; then
   TARGETS="x86_64-iphonesimulator-gcc"
-  LIPO=$(xcrun -sdk iphoneos${SDK} -find lipo)
 else
   echo "Unsupported architecture $ARCH"
   exit 1
@@ -183,11 +167,7 @@ build_framework() {
   cp -p "${target_dist_dir}"/include/vpx/* "${HEADER_DIR}"
 
   # Build the fat library.
-  if [ "$LIPO" = "cp" ]; then
-    cp ${lib_list} ${FRAMEWORK_DIR}/VPX
-  else
-    ${LIPO} -create ${lib_list} -output ${FRAMEWORK_DIR}/VPX
-  fi
+  ${LIPO} -create ${lib_list} -output ${FRAMEWORK_DIR}/VPX
 
   # Create the vpx_config.h shim that allows usage of vpx_config.h from
   # within VPX.framework.

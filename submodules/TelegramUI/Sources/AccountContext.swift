@@ -1,3 +1,6 @@
+import EGStrings
+import EGSimpleSettings
+
 import Foundation
 import SwiftSignalKit
 import UIKit
@@ -157,6 +160,8 @@ public final class AccountContextImpl: AccountContext {
     public var countriesConfiguration: Signal<CountriesConfiguration, NoError> {
         return self._countriesConfiguration.get()
     }
+    
+    public var watchManager: WatchManager?
     
     private var storedPassword: (String, CFAbsoluteTime, SwiftSignalKit.Timer)?
     private var limitsConfigurationDisposable: Disposable?
@@ -329,9 +334,9 @@ public final class AccountContextImpl: AccountContext {
         self.animationRenderer = DCTMultiAnimationRendererImpl()
         (self.animationRenderer as? DCTMultiAnimationRendererImpl)?.useYuvA = sharedContext.immediateExperimentalUISettings.compressedEmojiCache
         
-        let updatedLimitsConfiguration = self.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.limitsConfiguration))
+        let updatedLimitsConfiguration = account.postbox.preferencesView(keys: [PreferencesKeys.limitsConfiguration])
         |> map { preferences -> LimitsConfiguration in
-            return preferences?.get(LimitsConfiguration.self) ?? LimitsConfiguration.defaultValue
+            return preferences.values[PreferencesKeys.limitsConfiguration]?.get(LimitsConfiguration.self) ?? LimitsConfiguration.defaultValue
         }
         
         self.currentLimitsConfiguration = Atomic(value: limitsConfiguration)
@@ -353,7 +358,7 @@ public final class AccountContextImpl: AccountContext {
             let _ = currentContentSettings.swap(value)
         })
         
-        let updatedAppConfiguration = getAppConfiguration(engine: self.engine)
+        let updatedAppConfiguration = getAppConfiguration(postbox: account.postbox)
         self.currentAppConfiguration = Atomic(value: appConfiguration)
         self._appConfiguration.set(.single(appConfiguration) |> then(updatedAppConfiguration))
                 
@@ -378,23 +383,21 @@ public final class AccountContextImpl: AccountContext {
                 }).start()
             }
         })
-                
-        let queue = Queue()
-        self.deviceSpecificContactImportContexts = QueueLocalObject(queue: queue, generate: {
-            return DeviceSpecificContactImportContexts(queue: queue)
-        })
         
         let langCode = sharedContext.currentPresentationData.with { $0 }.strings.baseLanguageCode
         self.currentCountriesConfiguration = Atomic(value: CountriesConfiguration(countries: loadCountryCodes()))
         if !temp {
             let currentCountriesConfiguration = self.currentCountriesConfiguration
             self.countriesConfigurationDisposable = (self.engine.localization.getCountriesList(accountManager: sharedContext.accountManager, langCode: langCode)
-            |> deliverOnMainQueue).start(next: { [weak self] value in
-                let configuration = CountriesConfiguration(countries: value)
-                let _ = currentCountriesConfiguration.swap(configuration)
-                self?._countriesConfiguration.set(.single(configuration))
+            |> deliverOnMainQueue).start(next: { value in
+                let _ = currentCountriesConfiguration.swap(CountriesConfiguration(countries: value))
             })
         }
+        
+        let queue = Queue()
+        self.deviceSpecificContactImportContexts = QueueLocalObject(queue: queue, generate: {
+            return DeviceSpecificContactImportContexts(queue: queue)
+        })
         
         if let contactDataManager = sharedContext.contactDataManager {
             let deviceSpecificContactImportContexts = self.deviceSpecificContactImportContexts
@@ -560,10 +563,11 @@ public final class AccountContextImpl: AccountContext {
             return .single(nil)
         case let .replyThread(data):
             if data.isForumPost, let peerId = location.peerId {
-                return self.engine.data.subscribe(TelegramEngine.EngineData.Item.Messages.ThreadInfo(peerId: data.peerId, threadId: data.threadId))
-                |> map { threadData -> MessageId? in
-                    if let threadData {
-                        return MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: threadData.maxOutgoingReadId)
+                let viewKey: PostboxViewKey = .messageHistoryThreadInfo(peerId: data.peerId, threadId: data.threadId)
+                return self.account.postbox.combinedView(keys: [viewKey])
+                |> map { views -> MessageId? in
+                    if let threadInfo = views.views[viewKey] as? MessageHistoryThreadInfoView, let data = threadInfo.info?.data.get(MessageHistoryThreadData.self) {
+                        return MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: data.maxOutgoingReadId)
                     } else {
                         return nil
                     }
@@ -582,13 +586,26 @@ public final class AccountContextImpl: AccountContext {
     public func chatLocationUnreadCount(for location: ChatLocation, contextHolder: Atomic<ChatLocationContextHolder?>) -> Signal<Int, NoError> {
         switch location {
         case let .peer(peerId):
-            return self.engine.data.subscribe(TelegramEngine.EngineData.Item.Messages.PeerUnreadCount(id: peerId, handleThreads: false))
+            let unreadCountsKey: PostboxViewKey = .unreadCounts(items: [.peer(id: peerId, handleThreads: false), .total(nil)])
+            return self.account.postbox.combinedView(keys: [unreadCountsKey])
+            |> map { views in
+                var unreadCount: Int32 = 0
+                
+                if let view = views.views[unreadCountsKey] as? UnreadMessageCountsView {
+                    if let count = view.count(for: .peer(id: peerId, handleThreads: false)) {
+                        unreadCount = count
+                    }
+                }
+                
+                return Int(unreadCount)
+            }
         case let .replyThread(data):
             if data.isForumPost {
-                return self.engine.data.subscribe(TelegramEngine.EngineData.Item.Messages.ThreadInfo(peerId: data.peerId, threadId: data.threadId))
-                |> map { threadData -> Int in
-                    if let threadData {
-                        return Int(threadData.incomingUnreadCount)
+                let viewKey: PostboxViewKey = .messageHistoryThreadInfo(peerId: data.peerId, threadId: data.threadId)
+                return self.account.postbox.combinedView(keys: [viewKey])
+                |> map { views -> Int in
+                    if let threadInfo = views.views[viewKey] as? MessageHistoryThreadInfoView, let data = threadInfo.info?.data.get(MessageHistoryThreadData.self) {
+                        return Int(data.incomingUnreadCount)
                     } else {
                         return 0
                     }
@@ -820,6 +837,8 @@ public final class AccountContextImpl: AccountContext {
     }
     
     public func requestCall(peerId: PeerId, isVideo: Bool, completion: @escaping () -> Void) {
+        // MARK: exteraGram
+        let makeCall = {
         guard let callResult = self.sharedContext.callManager?.requestCall(context: self, peerId: peerId, isVideo: isVideo, endCurrentIfAny: false) else {
             return
         }
@@ -887,6 +906,19 @@ public final class AccountContextImpl: AccountContext {
         } else {
             completion()
         }
+        // MARK: exteraGram
+        }
+        if EGSimpleSettings.shared.confirmCalls {
+            let presentationData = self.sharedContext.currentPresentationData.with { $0 }
+            self.sharedContext.mainWindow?.present(textAlertController(context: self, title: nil, text: isVideo ? i18n("CallConfirmation.Video.Title", presentationData.strings.baseLanguageCode) : i18n("CallConfirmation.Audio.Title", presentationData.strings.baseLanguageCode), actions: [TextAlertAction(type: .genericAction, title: presentationData.strings.Common_No, action: {}), TextAlertAction(type: .destructiveAction, title: presentationData.strings.Common_Yes, action: { [weak self] in
+                guard let _ = self else {
+                    return
+                }
+                makeCall()
+            })]), on: .root)
+        } else {
+            makeCall()
+        }
     }
     
     public func getAppConfigValue(_ key: String) -> Any? {
@@ -916,10 +948,10 @@ private final class ChatLocationReplyContextHolderImpl: ChatLocationContextHolde
     }
 }
 
-func getAppConfiguration(engine: TelegramEngine) -> Signal<AppConfiguration, NoError> {
-    return engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.appConfiguration))
+func getAppConfiguration(postbox: Postbox) -> Signal<AppConfiguration, NoError> {
+    return postbox.preferencesView(keys: [PreferencesKeys.appConfiguration])
     |> map { view -> AppConfiguration in
-        let appConfiguration: AppConfiguration = view?.get(AppConfiguration.self) ?? AppConfiguration.defaultValue
+        let appConfiguration: AppConfiguration = view.values[PreferencesKeys.appConfiguration]?.get(AppConfiguration.self) ?? AppConfiguration.defaultValue
         return appConfiguration
     }
     |> distinctUntilChanged

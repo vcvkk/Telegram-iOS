@@ -1,6 +1,7 @@
 import Foundation
 import MediaPlayer
 import AVFAudio
+import EGSimpleSettings
 import Display
 import AsyncDisplayKit
 import Postbox
@@ -137,13 +138,13 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
                 params.openUrl(url)
                 return true
             case let .pass(file):
-                let _ = (params.context.engine.resources.data(resource: EngineMediaResource(file.resource), waitUntilFetchStatus: true)
+                let _ = (params.context.account.postbox.mediaBox.resourceData(file.resource, option: .complete(waitUntilFetchStatus: true))
                 |> take(1)
                 |> deliverOnMainQueue).startStandalone(next: { data in
                     guard let navigationController = params.navigationController else {
                         return
                     }
-                    if data.isComplete, let content = try? Data(contentsOf: URL(fileURLWithPath: data.path)) {
+                    if data.complete, let content = try? Data(contentsOf: URL(fileURLWithPath: data.path)) {
                         if let pass = try? PKPass(data: content), let controller = PKAddPassesViewController(pass: pass) {
                             if let window = navigationController.view.window {
                                 controller.popoverPresentationController?.sourceView = window
@@ -234,6 +235,18 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
             case let .document(file, immediateShare):
                 params.dismissInput()
                 let presentationData = params.context.sharedContext.currentPresentationData.with { $0 }
+
+                // Plugin files: parse and display metadata
+                if let fileName = file.fileName,
+                   (fileName as NSString).pathExtension.lowercased() == "plugin" {
+                    presentEGPluginMetadataIfAvailable(
+                        file: file,
+                        context: params.context,
+                        navigationController: params.navigationController
+                    )
+                    return true
+                }
+
                 if immediateShare {
                     let controller = params.context.sharedContext.makeShareController(context: params.context, params: ShareControllerParams(subject: .media(.standalone(media: file), nil), immediateExternalShare: true))
                     params.present(controller, nil, .window(.root))
@@ -256,14 +269,11 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
                                 }
                             }
                             
-                            let fileReference: FileMediaReference = .message(message: MessageReference(params.message), media: file)
                             let subject: BrowserScreen.Subject
-                            if file.mimeType.contains("markdown") {
-                                subject = .markdownDocument(file: fileReference, canShare: canShare)
-                            } else if file.mimeType.contains("pdf") {
-                                subject = .pdfDocument(file: fileReference, canShare: canShare)
+                            if file.mimeType == "application/pdf" {
+                                subject = .pdfDocument(file: .message(message: MessageReference(params.message), media: file), canShare: canShare)
                             } else {
-                                subject = .document(file: fileReference, canShare: canShare)
+                                subject = .document(file: .message(message: MessageReference(params.message), media: file), canShare: canShare)
                             }
                             let controller = BrowserScreen(context: params.context, subject: subject)
                             controller.openDocument = { [weak controller] file, canShare in
@@ -330,7 +340,8 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
                     } |> take(1) |> timeout(1.0, queue: .mainQueue(), alternate: .single(false)) |> deliverOnMainQueue).startStandalone(next: { value in
                         if value {
                             let presentationData = params.context.sharedContext.currentPresentationData.with { $0 }
-                            let toastController = UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: presentationData.strings.Chat_ToastVoiceMessageDeviceMuted, timeout: 4.0, customUndoText: nil), elevatedLayout: false, animateInAsReplacement: false, action: { _ in
+                            //TODO:localize
+                            let toastController = UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: "Device is muted.", timeout: 4.0, customUndoText: nil), elevatedLayout: false, animateInAsReplacement: false, action: { _ in
                                 return true
                             })
                             params.present(toastController, nil, .current)
@@ -462,7 +473,7 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
                 }), .window(.root))
             case let .theme(media):
                 params.dismissInput()
-                let path = params.context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(media.resource.id))
+                let path = params.context.account.postbox.mediaBox.completedResourcePath(media.resource)
                 var previewTheme: PresentationTheme?
                 if let path = path, let data = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe) {
                     previewTheme = makePresentationTheme(data: data)
@@ -478,7 +489,7 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
     return false
 }
 
-public func makeInstantPageControllerImpl(context: AccountContext, message: Message, sourcePeerType: MediaAutoDownloadPeerType?) -> ViewController? {
+func makeInstantPageControllerImpl(context: AccountContext, message: Message, sourcePeerType: MediaAutoDownloadPeerType?) -> ViewController? {
     guard let (webpage, anchor) = instantPageAndAnchor(message: EngineMessage(message)) else {
         return nil
     }
@@ -486,7 +497,7 @@ public func makeInstantPageControllerImpl(context: AccountContext, message: Mess
     return makeInstantPageControllerImpl(context: context, webPage: webpage, anchor: anchor, sourceLocation: sourceLocation)
 }
 
-public func makeInstantPageControllerImpl(context: AccountContext, webPage: TelegramMediaWebpage, anchor: String?, sourceLocation: InstantPageSourceLocation) -> ViewController {
+func makeInstantPageControllerImpl(context: AccountContext, webPage: TelegramMediaWebpage, anchor: String?, sourceLocation: InstantPageSourceLocation) -> ViewController {
     return BrowserScreen(context: context, subject: .instantPage(webPage: webPage, anchor: anchor, sourceLocation: sourceLocation, preloadedResources: nil))
 }
 
@@ -542,7 +553,7 @@ func openChatTheme(context: AccountContext, message: Message, pushController: @e
                 }
                 if case let .theme(slug) = resolvedUrl {
                     if let file = file {
-                        if let path = context.sharedContext.accountManager.resources.completedResourcePath(resource: EngineMediaResource(file.resource)), let data = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedRead) {
+                        if let path = context.sharedContext.accountManager.mediaBox.completedResourcePath(file.resource), let data = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedRead) {
                             if let theme = makePresentationTheme(data: data) {
                                 let controller = ThemePreviewController(context: context, previewTheme: theme, source: .slug(slug, file))
                                 pushController(controller)

@@ -1,15 +1,27 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGSimpleSettings:EGSimpleSettings",
+    "//exteraGram/EGAPIWebSettings:EGAPIWebSettings",
+    "//exteraGram/EGAPIToken:EGAPIToken",
+    "//exteraGram/EGBadges:EGBadges",
+    "//exteraGram/EGLogging:EGLogging",
+    "//exteraGram/EGPluginEngine:EGPluginEngine",
+]
+egsrcs = [
+    "//exteraGram/EGChatListSimpleSettingsSignal:EGChatListSimpleSettingsSignal",
+]
+
 swift_library(
     name = "ChatListUI",
     module_name = "ChatListUI",
     srcs = glob([
         "Sources/**/*.swift",
-    ]),
+    ]) + egsrcs,
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",
@@ -30,7 +42,6 @@ swift_library(
         "//submodules/SearchBarNode:SearchBarNode",
         "//submodules/ChatListSearchRecentPeersNode:ChatListSearchRecentPeersNode",
         "//submodules/ChatListSearchItemHeader:ChatListSearchItemHeader",
-        "//submodules/TelegramUI/Components/SectionTitleContextItem",
         "//submodules/TemporaryCachedPeerDataManager:TemporaryCachedPeerDataManager",
         "//submodules/PeerPresenceStatusManager:PeerPresenceStatusManager",
         "//submodules/PeerOnlineMarkerNode:PeerOnlineMarkerNode",
@@ -127,11 +138,9 @@ swift_library(
         "//submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent",
         "//submodules/TelegramUI/Components/GlassBackgroundComponent",
         "//submodules/TelegramUI/Components/AlertComponent",
-        "//submodules/TelegramUI/Components/AlertComponent/AlertHeaderComponent",
         "//submodules/TelegramUI/Components/AlertComponent/AlertTransferHeaderComponent",
         "//submodules/TelegramUI/Components/AvatarComponent",
         "//submodules/TelegramUI/Components/PeerManagement/OwnershipTransferController",
-        "//submodules/TelegramUI/Components/GlassControls",
     ],
     visibility = [
         "//visibility:public",

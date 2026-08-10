@@ -1,3 +1,4 @@
+import EGSimpleSettings
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -163,7 +164,7 @@ final class SharePeersContainerNode: ASDisplayNode, ShareContentContainerNode {
         
         self.peersValue.set(.single(peers))
         
-        let canShareStory = controllerInteraction.shareStory != nil
+        let canShareStory = controllerInteraction.shareStory != nil && EGSimpleSettings.shared.showRepostToStoryV2
         
         let items: Signal<[SharePeerEntry], NoError> = combineLatest(self.peersValue.get(), self.foundPeers.get(), self.tick.get(), self.themePromise.get())
         |> map { [weak controllerInteraction] initialPeers, foundPeers, _, theme -> [SharePeerEntry] in
@@ -326,6 +327,30 @@ final class SharePeersContainerNode: ASDisplayNode, ShareContentContainerNode {
         }
 
         self.contentTitleNode.view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(self.debugTapGesture(_:))))
+        
+        // MARK: exteraGram
+        self.isAccessibilityElement = false
+
+        self.contentTitleNode.isAccessibilityElement = true
+        self.contentTitleNode.accessibilityLabel = strings.ShareMenu_ShareTo
+        self.contentTitleNode.accessibilityTraits = .header
+
+        self.contentSubtitleNode.isAccessibilityElement = true
+        self.contentSubtitleNode.accessibilityLabel = strings.ShareMenu_SelectChats
+
+        self.searchButtonNode.isAccessibilityElement = true
+        self.searchButtonNode.accessibilityLabel = strings.Common_Search
+        self.searchButtonNode.accessibilityTraits = .button
+
+        self.shareButtonNode.isAccessibilityElement = true
+        self.shareButtonNode.accessibilityLabel = "System Share Menu"
+        self.shareButtonNode.accessibilityTraits = .button
+
+        self.contentTitleAccountNode.isAccessibilityElement = true
+        self.contentTitleAccountNode.accessibilityLabel = strings.Shortcut_SwitchAccount
+        self.contentTitleAccountNode.accessibilityTraits = .button
+        //
+
     }
     
     deinit {
@@ -373,7 +398,7 @@ final class SharePeersContainerNode: ASDisplayNode, ShareContentContainerNode {
         self.contentOffsetUpdated = f
     }
     
-    private func calculateMetrics(size: CGSize, additionalBottomInset: CGFloat, isEmbedded: Bool) -> (topInset: CGFloat, itemWidth: CGFloat) {
+    private func calculateMetrics(size: CGSize, additionalBottomInset: CGFloat) -> (topInset: CGFloat, itemWidth: CGFloat) {
         let itemCount = self.entries.count
         
         let itemInsets = UIEdgeInsets(top: 0.0, left: 12.0, bottom: 0.0, right: 12.0)
@@ -394,7 +419,7 @@ final class SharePeersContainerNode: ASDisplayNode, ShareContentContainerNode {
         }
         let initiallyRevealedRowCount = min(minimallyRevealedRowCount, CGFloat(rowCount))
         
-        let gridTopInset = isEmbedded ? 136.0 : max(0.0, size.height - floor(initiallyRevealedRowCount * itemWidth) - 14.0 - additionalBottomInset)
+        let gridTopInset = max(0.0, size.height - floor(initiallyRevealedRowCount * itemWidth) - 14.0 - additionalBottomInset)
         return (gridTopInset, itemWidth)
     }
     
@@ -569,14 +594,9 @@ final class SharePeersContainerNode: ASDisplayNode, ShareContentContainerNode {
         }
     }
     
-    var isEmbedded = false
     func updateLayout(size: CGSize, isLandscape: Bool, bottomInset: CGFloat, transition: ContainedViewLayoutTransition) {
         let firstLayout = self.validLayout == nil
         self.validLayout = (size, bottomInset)
-        
-        self.contentTitleNode.isHidden = self.isEmbedded
-        self.contentSubtitleNode.isHidden = self.isEmbedded
-        self.searchButtonNode.isHidden = self.isEmbedded
         
         let gridLayoutTransition: ContainedViewLayoutTransition
         if firstLayout {
@@ -587,7 +607,7 @@ final class SharePeersContainerNode: ASDisplayNode, ShareContentContainerNode {
             self.overrideGridOffsetTransition = nil
         }
         
-        let (gridTopInset, itemWidth) = self.calculateMetrics(size: size, additionalBottomInset: bottomInset, isEmbedded: self.isEmbedded)
+        let (gridTopInset, itemWidth) = self.calculateMetrics(size: size, additionalBottomInset: bottomInset)
         
         var scrollToItem: GridNodeScrollToItem?
         if let ensurePeerVisibleOnLayout = self.ensurePeerVisibleOnLayout {
@@ -685,8 +705,8 @@ final class SharePeersContainerNode: ASDisplayNode, ShareContentContainerNode {
             self.contentTitleNode.isHidden = true
             self.contentSubtitleNode.isHidden = true
         } else {
-            self.contentTitleNode.isHidden = self.isEmbedded
-            self.contentSubtitleNode.isHidden = self.isEmbedded
+            self.contentTitleNode.isHidden = false
+            self.contentSubtitleNode.isHidden = false
             
             var subtitleText = self.strings.ShareMenu_SelectChats
             if !self.controllerInteraction.selectedPeers.isEmpty {
@@ -706,6 +726,7 @@ final class SharePeersContainerNode: ASDisplayNode, ShareContentContainerNode {
                 })
             }
             self.contentSubtitleNode.attributedText = NSAttributedString(string: subtitleText, font: subtitleFont, textColor: self.theme.actionSheet.secondaryTextColor)
+            self.contentSubtitleNode.accessibilityLabel = subtitleText
         }
         self.contentGridNode.forEachItemNode { itemNode in
             if let itemNode = itemNode as? ShareControllerPeerGridItemNode {

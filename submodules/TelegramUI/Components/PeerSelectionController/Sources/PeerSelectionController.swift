@@ -13,6 +13,7 @@ import ChatListFilterTabContainerNode
 
 public final class PeerSelectionControllerImpl: ViewController, PeerSelectionController {
     private let context: AccountContext
+    private let forceHideNames: Bool
     
     private var presentationData: PresentationData
     private var presentationDataDisposable: Disposable?
@@ -98,6 +99,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
     
     public init(_ params: PeerSelectionControllerParams) {
         self.context = params.context
+        self.forceHideNames = params.forceHideNames
         self.filter = params.filter
         self.forumPeerId = params.forumPeerId
         self.hasFilters = params.hasFilters
@@ -355,6 +357,8 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
         
         self.displayNode = PeerSelectionControllerNode(
             context: self.context,
+            // MARK: exteraGram
+            forceHideNames: self.forceHideNames,
             controller: self,
             presentationData: self.presentationData,
             filter: nodeFilter,

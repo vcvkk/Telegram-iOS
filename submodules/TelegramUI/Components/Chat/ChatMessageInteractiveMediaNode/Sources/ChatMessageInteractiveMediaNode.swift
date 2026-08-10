@@ -1,3 +1,4 @@
+import EGSimpleSettings
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -943,12 +944,14 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                 }
             }
             
-            let hasSpoiler = message.attributes.contains(where: { $0 is MediaSpoilerMessageAttribute })
+            let hasSpoiler = !EGPluginHooks.suppressedAttributeTypes.contains("MediaSpoilerMessageAttribute") && message.attributes.contains(where: { $0 is MediaSpoilerMessageAttribute })
             var isExtendedMediaPreview = false
             var isInlinePlayableVideo = false
             var isSticker = false
             var maxDimensions = layoutConstants.image.maxDimensions
             var maxHeight = layoutConstants.image.maxDimensions.height
+            // MARK: exteraGram
+            var imageOriginalMaxDimensions: CGSize?
             var isStory = false
             var isGift = false
             
@@ -971,6 +974,19 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                 }
             } else if let image = media as? TelegramMediaImage, let dimensions = largestImageRepresentation(image.representations)?.dimensions {
                 unboundSize = CGSize(width: max(10.0, floor(dimensions.cgSize.width * 0.5)), height: max(10.0, floor(dimensions.cgSize.height * 0.5)))
+                // MARK: exteraGram
+                if let channel = message.peers[message.id.peerId] as? TelegramChannel, case .broadcast = channel.info, EGSimpleSettings.shared.wideChannelPosts {
+                    imageOriginalMaxDimensions = maxDimensions
+                    switch sizeCalculation {
+                    case let .constrained(constrainedSize):
+                        maxDimensions.width = constrainedSize.width
+                    case .unconstrained:
+                        maxDimensions.width = unboundSize.width
+                    }
+                    if message.text.isEmpty {
+                        maxDimensions.width = max(layoutConstants.image.maxDimensions.width, unboundSize.aspectFitted(CGSize(width: maxDimensions.width, height: layoutConstants.image.minDimensions.height)).width)
+                    }
+                }
             } else if let file = media as? TelegramMediaFile, var dimensions = file.dimensions {
                 if let thumbnail = file.previewRepresentations.first {
                     let dimensionsVertical = dimensions.width < dimensions.height
@@ -1198,6 +1214,9 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                 }
                                 
                                 boundingSize = CGSize(width: boundingWidth, height: filledSize.height).cropped(CGSize(width: CGFloat.greatestFiniteMagnitude, height: maxHeight))
+                                if let imageOriginalMaxDimensions = imageOriginalMaxDimensions {
+                                    boundingSize.height = min(boundingSize.height, nativeSize.aspectFitted(imageOriginalMaxDimensions).height)
+                                }
                                 boundingSize.height = max(boundingSize.height, layoutConstants.image.minDimensions.height)
                                 boundingSize.width = max(boundingSize.width, layoutConstants.image.minDimensions.width)
                                 switch contentMode {
@@ -1471,7 +1490,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                         }
                                     }, cancel: {
                                         if file.isAnimated {
-                                            context.engine.resources.cancelInteractiveResourceFetch(id: EngineMediaResource.Id(file.resource.id))
+                                            context.account.postbox.mediaBox.cancelInteractiveResourceFetch(file.resource)
                                         } else {
                                             messageMediaFileCancelInteractiveFetch(context: context, messageId: message.id, file: file)
                                         }
@@ -1706,7 +1725,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                 }
                             }, cancel: {
                                 if file.isAnimated {
-                                    context.engine.resources.cancelInteractiveResourceFetch(id: EngineMediaResource.Id(file.resource.id))
+                                    context.account.postbox.mediaBox.cancelInteractiveResourceFetch(file.resource)
                                 } else {
                                     messageMediaFileCancelInteractiveFetch(context: context, messageId: message.id, file: file)
                                 }
@@ -1766,7 +1785,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                             if NativeVideoContent.isHLSVideo(file: file), let minimizedQuality = HLSVideoContent.minimizedHLSQuality(file: .standalone(media: file), codecConfiguration: HLSCodecConfiguration(context: context)) {
                                 let postbox = context.account.postbox
                                 
-                                let playlistStatusSignal = context.engine.resources.status(resource: EngineMediaResource(minimizedQuality.playlist.media.resource))
+                                let playlistStatusSignal = postbox.mediaBox.resourceStatus(minimizedQuality.playlist.media.resource)
                                 |> map { status -> MediaResourceStatus in
                                     switch status {
                                     case .Fetching, .Paused:
@@ -1796,7 +1815,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                             return .single((.Local, nil))
                                         }
                                         
-                                        return context.engine.resources.status(resource: EngineMediaResource(preloadData.0.media.resource))
+                                        return postbox.mediaBox.resourceStatus(preloadData.0.media.resource)
                                         |> map { status -> Bool in
                                             if case .Fetching = status {
                                                 return true
@@ -1806,7 +1825,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                         }
                                         |> distinctUntilChanged
                                         |> mapToSignal { isFetching -> Signal<(MediaResourceStatus, MediaResourceStatus?), NoError> in
-                                            return context.engine.resources.resourceRangesStatus(resource: EngineMediaResource(preloadData.0.media.resource))
+                                            return postbox.mediaBox.resourceRangesStatus(preloadData.0.media.resource)
                                             |> map { status -> (MediaResourceStatus, MediaResourceStatus?) in
                                                 let preloadRanges = RangeSet(preloadData.1)
                                                 let intersection = status.intersection(preloadRanges)
@@ -2094,32 +2113,6 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                 }
                                 
                                 if currentReplaceAnimatedStickerNode, let updatedAnimatedStickerFile = updateAnimatedStickerFile {
-                                    var allowSticker = false
-                                    if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
-                                        if updatedAnimatedStickerFile.fileId.namespace == Namespaces.Media.CloudFile {
-                                            var isValidated = false
-                                            for attribute in updatedAnimatedStickerFile.attributes {
-                                                if case .hintIsValidated = attribute {
-                                                    isValidated = true
-                                                    break
-                                                }
-                                            }
-                                            
-                                            inner: for attribute in updatedAnimatedStickerFile.attributes {
-                                                if case let .Sticker(_, packReference, _) = attribute {
-                                                    if case .name = packReference {
-                                                        allowSticker = true
-                                                    } else if isValidated {
-                                                        allowSticker = true
-                                                    }
-                                                    break inner
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        allowSticker = true
-                                    }
-                                    
                                     let animatedStickerNode = DefaultAnimatedStickerNodeImpl()
                                     animatedStickerNode.isUserInteractionEnabled = false
                                     animatedStickerNode.started = {
@@ -2131,9 +2124,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                     strongSelf.animatedStickerNode = animatedStickerNode
                                     let dimensions = updatedAnimatedStickerFile.dimensions ?? PixelDimensions(width: 512, height: 512)
                                     let fittedDimensions = dimensions.cgSize.aspectFitted(CGSize(width: 384.0, height: 384.0))
-                                    if allowSticker {
-                                        animatedStickerNode.setup(source: AnimatedStickerResourceSource(account: context.account, resource: updatedAnimatedStickerFile.resource, isVideo: updatedAnimatedStickerFile.isVideo), width: Int(fittedDimensions.width), height: Int(fittedDimensions.height), mode: .direct(cachePathPrefix: nil))
-                                    }
+                                    animatedStickerNode.setup(source: AnimatedStickerResourceSource(account: context.account, resource: updatedAnimatedStickerFile.resource, isVideo: updatedAnimatedStickerFile.isVideo), width: Int(fittedDimensions.width), height: Int(fittedDimensions.height), mode: .direct(cachePathPrefix: nil))
                                     strongSelf.pinchContainerNode.contentNode.insertSubnode(animatedStickerNode, aboveSubnode: strongSelf.imageNode)
                                     animatedStickerNode.visibility = strongSelf.visibility
                                 }
@@ -3084,6 +3075,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                 icon = .eye
             }
         }
+ 
         
         if displaySpoiler, let context = self.context {
             let extendedMediaOverlayNode: ExtendedMediaOverlayNode

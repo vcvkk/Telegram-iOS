@@ -49,12 +49,6 @@ genrule(
         BUILD_ARCH="arm64"
     elif [ "$(TARGET_CPU)" == "ios_sim_arm64" ]; then
         BUILD_ARCH="sim_arm64"
-    elif [ "$(TARGET_CPU)" == "darwin_arm64" ]; then
-        BUILD_ARCH="macos_arm64"
-    elif [ "$(TARGET_CPU)" == "k8" ] || [ "$(TARGET_CPU)" == "x86_64" ]; then
-        BUILD_ARCH="linux_x86_64"
-    elif [ "$(TARGET_CPU)" == "aarch64" ] || [ "$(TARGET_CPU)" == "arm64" ]; then
-        BUILD_ARCH="linux_arm64"
     else
         echo "Unsupported architecture $(TARGET_CPU)"
     fi
@@ -63,20 +57,15 @@ genrule(
     rm -rf "$$BUILD_DIR"
     mkdir -p "$$BUILD_DIR"
 
-    if [ "$${BUILD_ARCH}" = "linux_x86_64" ] || [ "$${BUILD_ARCH}" = "linux_arm64" ]; then
-        EXTRA_PATH=""
-    else
-        MESON_DIR="$$(pwd)/$$BUILD_DIR/meson"
-        rm -rf "$$MESON_DIR"
-        mkdir -p "$$MESON_DIR"
-        tar -xzf "$(location @meson_tar_gz//file)" -C "$$MESON_DIR"
+    MESON_DIR="$$(pwd)/$$BUILD_DIR/meson"
+    rm -rf "$$MESON_DIR"
+    mkdir -p "$$MESON_DIR"
+    tar -xzf "$(location @meson_tar_gz//file)" -C "$$MESON_DIR"
 
-        NINJA_DIR="$$(pwd)/$$BUILD_DIR/ninja"
-        rm -rf "$$NINJA_DIR"
-        mkdir -p "$$NINJA_DIR"
-        unzip "$(location @ninja-mac_zip//file)" -d "$$NINJA_DIR"
-        EXTRA_PATH="$$MESON_DIR/meson-1.6.0:$$NINJA_DIR"
-    fi
+    NINJA_DIR="$$(pwd)/$$BUILD_DIR/ninja"
+    rm -rf "$$NINJA_DIR"
+    mkdir -p "$$NINJA_DIR"
+    unzip "$(location @ninja-mac_zip//file)" -d "$$NINJA_DIR"
 
     cp $(location :build-dav1d-bazel.sh) "$$BUILD_DIR/"
     cp $(location :arm64-iPhoneSimulator.meson) "$$BUILD_DIR/"
@@ -89,11 +78,7 @@ genrule(
     mkdir -p "$$BUILD_DIR/Public/compat"
     mkdir -p "$$BUILD_DIR/Public/common"
 
-    if [ -n "$$EXTRA_PATH" ]; then
-        PATH="$$PATH:$$EXTRA_PATH" bash $$BUILD_DIR/build-dav1d-bazel.sh $$BUILD_ARCH "$$BUILD_DIR"
-    else
-        bash $$BUILD_DIR/build-dav1d-bazel.sh $$BUILD_ARCH "$$BUILD_DIR"
-    fi
+    PATH="$$PATH:$$MESON_DIR/meson-1.6.0:$$NINJA_DIR" sh $$BUILD_DIR/build-dav1d-bazel.sh $$BUILD_ARCH "$$BUILD_DIR"
     """ +
     "\n".join([
         "cp -f \"$$BUILD_DIR/dav1d/build/include/{}\" \"$(location Public/{})\"".format(header, header) for header in generated_headers
@@ -119,8 +104,10 @@ cc_library(
     srcs = [":Public/dav1d/lib/lib" + x + ".a" for x in libs]
 )
 
-cc_library(
+objc_library(
     name = "dav1d",
+    module_name = "dav1d",
+    enable_modules = True,
     hdrs = [":Public/" + x for x in generated_headers],
     includes = [
         "Public",

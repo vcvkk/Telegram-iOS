@@ -1,9 +1,15 @@
+// MARK: exteraGram
+import TelegramUIPreferences
+import EGSimpleSettings
+import SwiftUI
+
 import Foundation
 import UniformTypeIdentifiers
 import UIKit
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
+import Postbox
 import TelegramCore
 import MobileCoreServices
 import TelegramPresentationData
@@ -354,8 +360,12 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     private var strings: PresentationStrings?
     
     private let hapticFeedback = HapticFeedback()
-    
+
     public var isAIEnabled: Bool = false
+
+    // MARK: exteraGram
+    private var sendWithReturnKey: Bool
+    private var sendWithReturnKeyDisposable: Disposable?
     
     public var inputTextState: ChatTextInputState {
         if let richTextInputNode = self.richTextInputNode {
@@ -709,6 +719,11 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         
         self.textInputViewInternalInsets = UIEdgeInsets(top: 5.0, left: 12.0, bottom: 4.0, right: 11.0)
 
+
+        // MARK: exteraGram
+        self.sendWithReturnKey = EGSimpleSettings.shared.sendWithReturnKey // MARK: exteraGram
+        //
+
         var hasSpoilers = true
         var hasQuotes = true
         if presentationInterfaceState.chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat {
@@ -796,7 +811,6 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.sendActionButtons.micButton.alpha = 0.0
         self.sendActionButtons.micButtonTintMaskView.alpha = 0.0
         self.sendActionButtons.expandMediaInputButtonBackgroundView.alpha = 0.0
-        self.sendActionButtons.stopButtonIcon.alpha = 0.0
         
         self.mediaActionButtons = ChatTextInputActionButtonsNode(context: context, presentationInterfaceState: presentationInterfaceState, presentationContext: presentationContext, presentController: presentController)
         self.mediaActionButtons.sendContainerNode.alpha = 0.0
@@ -928,6 +942,10 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
         }
         self.attachmentButtonDisabledNode.addTarget(self, action: #selector(self.attachmentButtonPressed), forControlEvents: .touchUpInside)
+        // MARK: exteraGram
+        let longPressGesture = UILongPressGestureRecognizer(target: self, action: #selector(self.attachmentButtonLongPressed(_:)))
+        longPressGesture.minimumPressDuration = 1.0
+        self.attachmentButton.addGestureRecognizer(longPressGesture)
   
         self.sendActionButtons.sendButtonLongPressed = { [weak self] node, gesture in
             self?.interfaceInteraction?.displaySendMessageOptions(node, gesture)
@@ -1124,6 +1142,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     
     deinit {
         self.statusDisposable.dispose()
+        self.sendWithReturnKeyDisposable?.dispose()
         self.tooltipController?.dismiss()
         self.currentEmojiSuggestion?.disposable.dispose()
     }
@@ -1665,9 +1684,10 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         var leftInset = leftInset
         var rightInset = rightInset
         
-        let compactBottomSideInset = self.compactBottomSideInset(bottomInset: bottomInset, deviceMetrics: deviceMetrics)
-        leftInset += compactBottomSideInset
-        rightInset += compactBottomSideInset
+        if bottomInset <= 32.0 {
+            leftInset += 18.0
+            rightInset += 18.0
+        }
         
         let placeholderColor: UIColor = interfaceState.theme.chat.inputPanel.inputPlaceholderColor
         
@@ -2454,7 +2474,6 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         if buttonTitleUpdated && !transition.isAnimated {
             transition = .animated(duration: 0.3, curve: .easeInOut)
         }
-        
         let textInputBackgroundWidthOffset: CGFloat = 0.0
         var attachmentButtonX: CGFloat = hideOffset.x + leftInset + leftMenuInset + 8.0
         
@@ -2521,7 +2540,6 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                     }
                 }
             }
-            
             sendActionButtonsSize = self.sendActionButtons.updateLayout(size: CGSize(width: 40.0, height: minimalHeight), isMediaInputExpanded: isMediaInputExpanded, showTitle: showTitle, currentMessageEffectId: presentationInterfaceState.interfaceState.sendMessageEffect, transition: transition, interfaceState: presentationInterfaceState)
             mediaActionButtonsSize = self.mediaActionButtons.updateLayout(size: CGSize(width: 40.0, height: minimalHeight), isMediaInputExpanded: isMediaInputExpanded, showTitle: false, currentMessageEffectId: presentationInterfaceState.interfaceState.sendMessageEffect, transition: transition, interfaceState: presentationInterfaceState)
         }
@@ -2635,7 +2653,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         if additionalSideInsets.right > 0.0 {
             textFieldInsets.right += additionalSideInsets.right / 3.0
         }
-        if inputHasText || self.extendedSearchLayout || hasMediaDraft || hasForward || hasSlowmodeButton || isEditingMedia {
+        if EGSimpleSettings.shared.hideRecordingButton || inputHasText || self.extendedSearchLayout || hasMediaDraft || hasForward || hasSlowmodeButton || isEditingMedia {
         } else {
             if let customRightAction = self.customRightAction, case .empty = customRightAction {
                 textFieldInsets.right = 8.0
@@ -3343,6 +3361,14 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             
             let placeholderSize = self.textPlaceholderNode.updateLayout(CGSize(width: textPlaceholderMaxWidth, height: CGFloat.greatestFiniteMagnitude))
             
+            if transition.isAnimated, let snapshotLayer = self.textPlaceholderNode.layer.snapshotContentTree() {
+                self.textPlaceholderNode.supernode?.layer.insertSublayer(snapshotLayer, above: self.textPlaceholderNode.layer)
+                snapshotLayer.animateAlpha(from: 1.0, to: 0.0, duration: 0.22, removeOnCompletion: false, completion: { [weak snapshotLayer] _ in
+                    snapshotLayer?.removeFromSuperlayer()
+                })
+                self.textPlaceholderNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.18)
+            }
+            
             textPlaceholderSize = placeholderSize
         } else {
             textPlaceholderSize = self.textPlaceholderNode.updateLayout(CGSize(width: textPlaceholderMaxWidth, height: CGFloat.greatestFiniteMagnitude))
@@ -3709,7 +3735,6 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
         }
         if let mediaDraftState = interfaceState.interfaceState.mediaDraftState, case .audio = mediaDraftState.contentType {
-            viewOnceIsVisible = true
             recordMoreIsVisible = true
         }
                 
@@ -3721,28 +3746,12 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         transition.updateSublayerTransformOffset(layer: self.clippingNode.layer, offset: CGPoint(x: 0.0, y: clippingDelta))*/
         
         let viewOnceSize = self.viewOnceButton.update(theme: interfaceState.theme)
-        
-        var viewOnceButtonY: CGFloat = -105.0
-        if isRecording {
-            if accessoryPanel == nil {
-                viewOnceButtonY -= 49.0
-            }
-        }
-        
-        let viewOnceButtonFrame = CGRect(origin: CGPoint(x: width - rightInset - 50.0 - UIScreenPixel, y: viewOnceButtonY), size: viewOnceSize)
+        let viewOnceButtonFrame = CGRect(origin: CGPoint(x: width - rightInset - 50.0 - UIScreenPixel, y: -152.0), size: viewOnceSize)
         self.viewOnceButton.bounds = CGRect(origin: .zero, size: viewOnceButtonFrame.size)
         transition.updatePosition(node: self.viewOnceButton, position: viewOnceButtonFrame.center)
         
         if self.viewOnceButton.alpha.isZero && viewOnceIsVisible {
             self.viewOnceButton.update(isSelected: self.viewOnce, animated: false)
-        }
-                
-        transition.updateAlpha(node: self.viewOnceButton, alpha: viewOnceIsVisible ? 1.0 : 0.0)
-        transition.updateTransformScale(node: self.viewOnceButton, scale: viewOnceIsVisible ? 1.0 : 0.01)
-        if let user = interfaceState.renderedPeer?.peer as? TelegramUser, user.id != interfaceState.accountPeerId && user.botInfo == nil && interfaceState.sendPaidMessageStars == nil {
-            self.viewOnceButton.isHidden = false
-        } else {
-            self.viewOnceButton.isHidden = true
         }
         
         let recordMoreSize = self.recordMoreButton.update(theme: interfaceState.theme)
@@ -3752,6 +3761,14 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         
         if self.recordMoreButton.alpha.isZero && recordMoreIsVisible {
             self.recordMoreButton.update(isSelected: false, animated: false)
+        }
+        
+        transition.updateAlpha(node: self.viewOnceButton, alpha: viewOnceIsVisible ? 1.0 : 0.0)
+        transition.updateTransformScale(node: self.viewOnceButton, scale: viewOnceIsVisible ? 1.0 : 0.01)
+        if let user = interfaceState.renderedPeer?.peer as? TelegramUser, user.id != interfaceState.accountPeerId && user.botInfo == nil && interfaceState.sendPaidMessageStars == nil {
+            self.viewOnceButton.isHidden = false
+        } else {
+            self.viewOnceButton.isHidden = true
         }
         
         transition.updateAlpha(node: self.recordMoreButton, alpha: recordMoreIsVisible ? 1.0 : 0.0)
@@ -4356,19 +4373,19 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         let _ = file
         let _ = itemLayer
         
-        var collectionId: EngineItemCollectionId?
+        var collectionId: ItemCollectionId?
         for attribute in file.attributes {
             if case let .CustomEmoji(_, _, _, packReference) = attribute {
                 switch packReference {
                 case let .id(id, _):
-                    collectionId = EngineItemCollectionId(namespace: Namespaces.ItemCollection.CloudEmojiPacks, id: id)
+                    collectionId = ItemCollectionId(namespace: Namespaces.ItemCollection.CloudEmojiPacks, id: id)
                 default:
                     break
                 }
             }
         }
         
-        var bubbleUpEmojiOrStickersets: [EngineItemCollectionId] = []
+        var bubbleUpEmojiOrStickersets: [ItemCollectionId] = []
         if let collectionId {
             bubbleUpEmojiOrStickersets.append(collectionId)
         }
@@ -4425,9 +4442,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                         case let .CustomEmoji(_, _, displayText, stickerPackReference):
                             text = displayText
                             
-                            var packId: EngineItemCollectionId?
+                            var packId: ItemCollectionId?
                             if case let .id(id, _) = stickerPackReference {
-                                packId = EngineItemCollectionId(namespace: Namespaces.ItemCollection.CloudEmojiPacks, id: id)
+                                packId = ItemCollectionId(namespace: Namespaces.ItemCollection.CloudEmojiPacks, id: id)
                             }
                             emojiAttribute = ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: packId, fileId: file.fileId.id, file: file)
                             break loop
@@ -4586,8 +4603,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         let blurTransitionOut: ComponentTransition = transition.isAnimated ? .easeInOut(duration: 0.18) : .immediate
         let sendButtonBlurOut: CGFloat = 4.0
         
-        var hideMicButton = false
-        var hideMicButtonBackground = false
+        var hideMicButton = EGSimpleSettings.shared.hideRecordingButton
+        var hideMicButtonBackground = EGSimpleSettings.shared.hideRecordingButton
         
         if self.customRightAction != nil {
             self.mediaActionButtons.isHidden = true
@@ -4670,7 +4687,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 }
             }
             
-            if (hasText || keepSendButtonEnabled && !mediaInputIsActive && !hasSlowModeButton) {
+            if (EGSimpleSettings.shared.hideRecordingButton || hasText || keepSendButtonEnabled && !mediaInputIsActive && !hasSlowModeButton) {
                 if self.sendActionButtons.sendContainerNode.alpha.isZero && self.rightSlowModeInset.isZero {
                     alphaTransition.updateAlpha(node: self.sendActionButtons.sendContainerNode, alpha: 1.0)
                     blurTransitionIn.setBlur(layer: self.sendActionButtons.sendContainerNode.layer, radius: 0.0)
@@ -4703,9 +4720,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             hideMicButton = true
         }
         
-        var displayStop = false
         if let interfaceState = self.presentationInterfaceState {
-            displayStop = interfaceState.canStopIncomingStreamingMessage
             if case let .customChatContents(customChatContents) = interfaceState.subject {
                 switch customChatContents.kind {
                 case .hashTagSearch:
@@ -4718,33 +4733,13 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
         }
         
-        if displayStop {
-            let alphaTransition = ComponentTransition(alphaTransition)
-            alphaTransition.setAlpha(view: self.mediaActionButtons.micButton, alpha: 0.0)
-            alphaTransition.setAlpha(view: self.mediaActionButtons.micButtonBackgroundView, alpha: 1.0)
-            alphaTransition.setAlpha(view: self.mediaActionButtons.micButtonTintMaskView, alpha: 0.0)
-            alphaTransition.setAlpha(view: self.mediaActionButtons.stopButtonIcon, alpha: 1.0)
-            
-            ComponentTransition(transition).setScale(view: self.mediaActionButtons.stopButtonIcon, scale: 1.0)
-            ComponentTransition(transition).setScale(view: self.mediaActionButtons.micButton, scale: 0.001)
-            ComponentTransition(transition).setScale(view: self.mediaActionButtons.micButtonTintMaskView, scale: 0.001)
-        } else if hideMicButton || (mediaInputIsActive && !hideExpandMediaInput) {
-            ComponentTransition(alphaTransition).setAlpha(view: self.mediaActionButtons.stopButtonIcon, alpha: 0.0)
-            ComponentTransition(transition).setScale(view: self.mediaActionButtons.stopButtonIcon, scale: 0.001)
-            ComponentTransition(transition).setScale(view: self.mediaActionButtons.micButton, scale: 1.0)
-            ComponentTransition(transition).setScale(view: self.mediaActionButtons.micButtonTintMaskView, scale: 1.0)
-            
+        if hideMicButton || (mediaInputIsActive && !hideExpandMediaInput) {
             if !self.mediaActionButtons.micButton.alpha.isZero {
                 alphaTransition.updateAlpha(layer: self.mediaActionButtons.micButton.layer, alpha: 0.0)
                 alphaTransition.updateAlpha(layer: self.mediaActionButtons.micButtonBackgroundView.layer, alpha: 0.0)
                 alphaTransition.updateAlpha(layer: self.mediaActionButtons.micButtonTintMaskView.layer, alpha: 0.0)
             }
         } else {
-            ComponentTransition(alphaTransition).setAlpha(view: self.mediaActionButtons.stopButtonIcon, alpha: 0.0)
-            ComponentTransition(transition).setScale(view: self.mediaActionButtons.stopButtonIcon, scale: 0.001)
-            ComponentTransition(transition).setScale(view: self.mediaActionButtons.micButton, scale: 1.0)
-            ComponentTransition(transition).setScale(view: self.mediaActionButtons.micButtonTintMaskView, scale: 1.0)
-            
             let micAlpha: CGFloat = self.mediaActionButtons.micButton.fadeDisabled ? 0.5 : 1.0
             if !self.mediaActionButtons.micButton.alpha.isEqual(to: micAlpha) {
                 alphaTransition.updateAlpha(layer: self.mediaActionButtons.micButton.layer, alpha: micAlpha)
@@ -4776,12 +4771,13 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
     
     private func updateTextHeight(animated: Bool) {
-        if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, _, metrics, _, _, deviceMetrics) = self.validLayout, let interfaceState = self.presentationInterfaceState {
+        if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, _, metrics, _, _, _) = self.validLayout, let interfaceState = self.presentationInterfaceState {
             var leftInset = leftInset
             var rightInset = rightInset
-            let compactBottomSideInset = self.compactBottomSideInset(bottomInset: bottomInset, deviceMetrics: deviceMetrics)
-            leftInset += compactBottomSideInset
-            rightInset += compactBottomSideInset
+            if bottomInset <= 32.0 {
+                leftInset += 18.0
+                rightInset += 18.0
+            }
             
             let baseWidth = width - leftInset - self.leftMenuInset - rightInset - self.rightSlowModeInset + self.currentTextInputBackgroundWidthOffset - additionalSideInsets.right
             let (_, textFieldHeight, _) = self.calculateTextFieldMetrics(width: baseWidth, sendActionControlsWidth: self.sendActionButtons.bounds.width, maxHeight: maxHeight, metrics: metrics, bottomInset: bottomInset, interfaceState: interfaceState)
@@ -5372,6 +5368,13 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
 
         self.updateActivity()
+        
+        // MARK: exteraGram
+        if self.sendWithReturnKey && text == "\n" {
+            self.sendButtonPressed()
+            return false
+        }
+        
         var cleanText = text
         let removeSequences: [String] = ["\u{202d}", "\u{202c}"]
         for sequence in removeSequences {
@@ -5499,20 +5502,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 attributedString = chatInputStateStringFromRTF(data, type: NSAttributedString.DocumentType.rtfd)
             }
         }
-
-        // Rich-message markdown copied to the clipboard is plain text containing
-        // `[<alt>](tg://emoji?id=<fileId>)` emoji markers (no RTF/private type).
-        // Reattach those markers as live custom-emoji attributes so the field
-        // shows the animated emoji (matching the edit-load reconstruction). Only
-        // taken when a marker actually converted, so ordinary text pastes are
-        // unaffected and fall through to default paste.
-        if attributedString == nil, let plainText = pasteboard.string, plainText.contains("tg://emoji?id=") {
-            let reattached = chatInputTextWithReattachedCustomEmoji(plainText)
-            if reattached.string != plainText {
-                attributedString = reattached
-            }
-        }
-
+        
         if let attributedString = attributedString {
             self.interfaceInteraction?.updateTextInputStateAndMode { current, inputMode in
                 if let inputText = current.inputText.mutableCopy() as? NSMutableAttributedString {
@@ -5646,6 +5636,11 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         } else {
             self.displayAttachmentMenu()
         }
+    }
+    
+    // MARK: exteraGram
+    @objc func attachmentButtonLongPressed(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
     }
     
     @objc func searchLayoutClearButtonPressed() {
@@ -5844,8 +5839,12 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
     
     public func frameForInputActionButton() -> CGRect? {
-        if !self.mediaActionButtons.alpha.isZero && self.mediaActionButtons.frame.minX < self.bounds.width {
-            return self.mediaActionButtons.frame.insetBy(dx: 0.0, dy: -4.0).offsetBy(dx: -3.0, dy: 0.0)
+        if !self.mediaActionButtons.alpha.isZero {
+            if self.mediaActionButtons.micButton.alpha.isZero {
+                return self.mediaActionButtons.frame.insetBy(dx: 0.0, dy: -4.0).offsetBy(dx: -3.0, dy: 0.0)
+            } else {
+                return self.mediaActionButtons.frame.insetBy(dx: 0.0, dy: -4.0).offsetBy(dx: -3.0, dy: 0.0)
+            }
         }
         return nil
     }
@@ -5941,3 +5940,4 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         return AttachmentInputPanelTransition(inputNode: self, accessoryPanelNode: accessoryPanelNode, menuButtonNode: self.menuButton, menuButtonBackgroundView: self.menuButtonBackgroundView, menuIconNode: self.menuButtonIconNode, menuTextNode: self.menuButtonTextNode, prepareForDismiss: { self.menuButtonIconNode.enqueueState(.app, animated: false) })
     }
 }
+

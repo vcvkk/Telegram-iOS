@@ -1,5 +1,9 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+egdeps = [
+    "//exteraGram/EGStrings:EGStrings"
+]
+
 swift_library(
     name = "AuthorizationUI",
     module_name = "AuthorizationUI",
@@ -9,9 +13,10 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = [
+    deps = egdeps + [
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/TelegramCore:TelegramCore",
+        "//submodules/Postbox:Postbox",
         "//submodules/Display:Display",
         "//submodules/SSignalKit/SSignalKit",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
@@ -47,7 +52,6 @@ swift_library(
         "//submodules/TelegramUI/Components/PlainButtonComponent",
         "//submodules/Utils/DeviceModel",
         "//submodules/PresentationDataUtils",
-        "//submodules/TelegramUI/Components/GlassBarButtonComponent",
     ],
     visibility = [
         "//visibility:public",

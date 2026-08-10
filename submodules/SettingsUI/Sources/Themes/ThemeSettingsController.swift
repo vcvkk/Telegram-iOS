@@ -3,6 +3,7 @@ import UIKit
 import AsyncDisplayKit
 import Display
 import SwiftSignalKit
+import Postbox
 import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -424,7 +425,7 @@ private func themeSettingsControllerEntries(
     var authorName = presentationData.strings.Appearance_PreviewReplyAuthor
     if let accountPeer {
         nameColor = accountPeer.nameColor ?? .preset(.blue)
-        if accountPeer.hasCustomNameColor {
+        if accountPeer._asPeer().hasCustomNameColor {
             authorName = accountPeer.displayTitle(strings: strings, displayOrder: presentationData.nameDisplayOrder)
         }
         profileColor = accountPeer.effectiveProfileColor
@@ -569,77 +570,116 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
         return animatedEmojiStickers
     }
     
-    let arguments = ThemeSettingsControllerArguments(context: context, selectTheme: { theme in
+    // --- НАЧАЛО ИЗМЕНЕНИЙ (ВЫНОС ПЕРЕМЕННЫХ) ---
+    
+    let selectThemeAction: (PresentationThemeReference) -> Void = { theme in
         selectThemeImpl?(theme)
-    }, openThemeSettings: {
+    }
+    
+    let openThemeSettingsAction: () -> Void = {
         pushControllerImpl?(themePickerController(context: context))
-    }, openWallpaperSettings: {
+    }
+    
+    let openWallpaperSettingsAction: () -> Void = {
         pushControllerImpl?(ThemeGridController(context: context))
-    }, openNameColorSettings: {
+    }
+    
+    let openNameColorSettingsAction: () -> Void = {
         pushControllerImpl?(UserAppearanceScreen(context: context))
-    }, selectAccentColor: { accentColor in
+    }
+    
+    let selectAccentColorAction: (PresentationThemeAccentColor?) -> Void = { accentColor in
         selectAccentColorImpl?(accentColor)
-    }, openAccentColorPicker: { themeReference, create in
+    }
+    
+    let openAccentColorPickerAction: (PresentationThemeReference, Bool) -> Void = { themeReference, create in
         openAccentColorPickerImpl?(themeReference, create)
-    }, toggleNightTheme: { value in
+    }
+    
+    let toggleNightThemeAction: (Bool) -> Void = { value in
         let _ = updatePresentationThemeSettingsInteractively(accountManager: context.sharedContext.accountManager, { current in
             var current = current
             current.automaticThemeSwitchSetting.force = value
             return current
         }).start()
         presentCrossfadeControllerImpl?(true)
-    }, openAutoNightTheme: {
+    }
+    
+    let openAutoNightThemeAction: () -> Void = {
         pushControllerImpl?(themeAutoNightSettingsController(context: context))
-    }, openTextSize: {
+    }
+    
+    let openTextSizeAction: () -> Void = {
         let _ = (context.sharedContext.accountManager.sharedData(keys: Set([ApplicationSpecificSharedDataKeys.presentationThemeSettings]))
         |> take(1)
         |> deliverOnMainQueue).start(next: { view in
             let settings = view.entries[ApplicationSpecificSharedDataKeys.presentationThemeSettings]?.get(PresentationThemeSettings.self) ?? PresentationThemeSettings.defaultSettings
             pushControllerImpl?(TextSizeSelectionController(context: context, presentationThemeSettings: settings))
         })
-    }, openBubbleSettings: {
+    }
+    
+    let openBubbleSettingsAction: () -> Void = {
         let _ = (context.sharedContext.accountManager.sharedData(keys: Set([ApplicationSpecificSharedDataKeys.presentationThemeSettings]))
         |> take(1)
         |> deliverOnMainQueue).start(next: { view in
             let settings = view.entries[ApplicationSpecificSharedDataKeys.presentationThemeSettings]?.get(PresentationThemeSettings.self) ?? PresentationThemeSettings.defaultSettings
             pushControllerImpl?(BubbleSettingsController(context: context, presentationThemeSettings: settings))
         })
-    }, openPowerSavingSettings: {
+    }
+    
+    let openPowerSavingSettingsAction: () -> Void = {
         pushControllerImpl?(energySavingSettingsScreen(context: context))
-    }, openStickersAndEmoji: {
+    }
+    
+    let openStickersAndEmojiAction: () -> Void = {
         let _ = (archivedPacks.get() |> take(1) |> deliverOnMainQueue).start(next: { archivedStickerPacks in
             pushControllerImpl?(installedStickerPacksController(context: context, mode: .general, archivedPacks: archivedStickerPacks, updatedPacks: { _ in
             }))
         })
-    }, toggleSendWithCmdEnter: { value in
+    }
+    
+    let toggleSendWithCmdEnterAction: (Bool) -> Void = { value in
         let _ = updateChatSettingsInteractively(accountManager: context.sharedContext.accountManager, { current in
             return current.withUpdatedSendWithCmdEnter(value)
         }).start()
-    }, toggleShowNextMediaOnTap: { value in
+    }
+    
+    let toggleShowNextMediaOnTapAction: (Bool) -> Void = { value in
         let _ = updateMediaDisplaySettingsInteractively(accountManager: context.sharedContext.accountManager, { current in
             return current.withUpdatedShowNextMediaOnTap(value)
         }).start()
-    }, selectAppIcon: { icon in
-        let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
-        |> deliverOnMainQueue).start(next: { peer in
-            let isPremium = peer?.isPremium ?? false
-            if icon.isPremium && !isPremium {
+    }
+    
+    let selectAppIconAction: (PresentationAppIcon) -> Void = { (icon: PresentationAppIcon) -> Void in
+        
+        let peerItem = TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId)
+        let dataSignal = context.engine.data.get(peerItem)
+        let mainQueueSignal = dataSignal |> deliverOnMainQueue
+        
+        let _ = mainQueueSignal.start(next: { (peer: EnginePeer?) -> Void in
+            
+            let isPremium: Bool = peer?.isPremium ?? false
+            let isPremiumIcon: Bool = icon.isPremium
+            
+            if isPremiumIcon && !isPremium {
                 var replaceImpl: ((ViewController) -> Void)?
-                let controller = PremiumDemoScreen(context: context, subject: .appIcons, source: .other, action: {
-                    let controller = PremiumIntroScreen(context: context, source: .appIcons)
-                    replaceImpl?(controller)
+                let demoController = PremiumDemoScreen(context: context, subject: .appIcons, source: .other, action: {
+                    let introController = PremiumIntroScreen(context: context, source: .appIcons)
+                    replaceImpl?(introController)
                 })
-                replaceImpl = { [weak controller] c in
-                    controller?.replace(with: c)
+                replaceImpl = { [weak demoController] c in
+                    demoController?.replace(with: c)
                 }
-                pushControllerImpl?(controller)
+                pushControllerImpl?(demoController)
+
             } else {
                 currentAppIconName.set(icon.name)
-                context.sharedContext.applicationBindings.requestSetAlternateIconName(icon.isDefault ? nil : icon.name, { _ in
-                })
+                context.sharedContext.applicationBindings.requestSetAlternateIconName(icon.isDefault ? nil : icon.name, { _ in })
             }
         })
-    }, editTheme: { theme in
+    }
+    
+    let editThemeAction: (PresentationCloudTheme) -> Void = { theme in
         let controller = editThemeController(context: context, mode: .edit(theme), navigateToChat: { peerId in
             let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
             |> deliverOnMainQueue).start(next: { peer in
@@ -652,7 +692,9 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
             })
         })
         pushControllerImpl?(controller)
-    }, themeContextAction: { isCurrent, reference, node, gesture in
+    }
+    
+    let themeContextActionClosure: (Bool, PresentationThemeReference, ASDisplayNode, ContextGesture?) -> Void = { isCurrent, reference, node, gesture in
         let _ = (context.sharedContext.accountManager.transaction { transaction -> (PresentationThemeAccentColor?, TelegramWallpaper?) in
             let settings = transaction.getSharedData(ApplicationSpecificSharedDataKeys.presentationThemeSettings)?.get(PresentationThemeSettings.self) ?? PresentationThemeSettings.defaultSettings
             let accentColor = settings.themeSpecificAccentColors[reference.index]
@@ -841,7 +883,9 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
             let contextController = makeContextController(presentationData: presentationData, source: .controller(ContextControllerContentSourceImpl(controller: themeController, sourceNode: node)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
             presentInGlobalOverlayImpl?(contextController, nil)
         })
-    }, colorContextAction: { isCurrent, reference, accentColor, node, gesture in
+    }
+    
+    let colorContextActionClosure: (Bool, PresentationThemeReference, ThemeSettingsColorOption?, ASDisplayNode, ContextGesture?) -> Void = { isCurrent, reference, accentColor, node, gesture in
         let _ = (context.sharedContext.accountManager.transaction { transaction -> (ThemeSettingsColorOption?, TelegramWallpaper?) in
             let settings = transaction.getSharedData(ApplicationSpecificSharedDataKeys.presentationThemeSettings)?.get(PresentationThemeSettings.self) ?? PresentationThemeSettings.defaultSettings
             var wallpaper: TelegramWallpaper?
@@ -1089,7 +1133,32 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
             let contextController = makeContextController(presentationData: presentationData, source: .controller(ContextControllerContentSourceImpl(controller: themeController, sourceNode: node)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
             presentInGlobalOverlayImpl?(contextController, nil)
         })
-    })
+    }
+
+    // Инициализатор теперь получает строгие переменные
+    let arguments = ThemeSettingsControllerArguments(
+        context: context,
+        selectTheme: selectThemeAction,
+        openThemeSettings: openThemeSettingsAction,
+        openWallpaperSettings: openWallpaperSettingsAction,
+        openNameColorSettings: openNameColorSettingsAction,
+        selectAccentColor: selectAccentColorAction,
+        openAccentColorPicker: openAccentColorPickerAction,
+        toggleNightTheme: toggleNightThemeAction,
+        openAutoNightTheme: openAutoNightThemeAction,
+        openTextSize: openTextSizeAction,
+        openBubbleSettings: openBubbleSettingsAction,
+        openPowerSavingSettings: openPowerSavingSettingsAction,
+        openStickersAndEmoji: openStickersAndEmojiAction,
+        toggleSendWithCmdEnter: toggleSendWithCmdEnterAction,
+        toggleShowNextMediaOnTap: toggleShowNextMediaOnTapAction,
+        selectAppIcon: selectAppIconAction,
+        editTheme: editThemeAction,
+        themeContextAction: themeContextActionClosure,
+        colorContextAction: colorContextActionClosure
+    )
+    
+    // --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
     let signal = combineLatest(
         queue: .mainQueue(),
@@ -1098,7 +1167,8 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
             ApplicationSpecificSharedDataKeys.presentationThemeSettings,
             ApplicationSpecificSharedDataKeys.chatSettings,
             ApplicationSpecificSharedDataKeys.mediaDisplaySettings,
-            SharedDataKeys.chatThemes
+            SharedDataKeys.chatThemes,
+            ApplicationSpecificSharedDataKeys.egStatus // MARK: exteraGram
         ]),
         cloudThemes.get(),
         availableAppIcons,
@@ -1113,8 +1183,8 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
         let chatSettings = sharedData.entries[ApplicationSpecificSharedDataKeys.chatSettings]?.get(ChatSettings.self) ?? ChatSettings.defaultSettings
         let mediaSettings = sharedData.entries[ApplicationSpecificSharedDataKeys.mediaDisplaySettings]?.get(MediaDisplaySettings.self) ?? MediaDisplaySettings.defaultSettings
         
-        let isPremium = peerView.peers[peerView.peerId]?.isPremium ?? false
-        
+        let isPremium = true
+
         let themeReference: PresentationThemeReference
         if presentationData.autoNightModeTriggered {
             if let _ = settings.theme.emoticon {
@@ -1322,7 +1392,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
             wallpaperSignal = cachedWallpaper(engine: context.engine, network: context.account.network, slug: file.slug, settings: colorWallpaper.settings)
             |> mapToSignal { cachedWallpaper in
                 if let wallpaper = cachedWallpaper?.wallpaper, case let .file(file) = wallpaper {
-                    let _ = context.engine.resources.fetch(reference: .wallpaper(wallpaper: .slug(file.slug), resource: file.file.resource), userLocation: .other, userContentType: .other).start()
+                    let _ = fetchedMediaResource(mediaBox: context.account.postbox.mediaBox, userLocation: .other, userContentType: .other, reference: .wallpaper(wallpaper: .slug(file.slug), resource: file.file.resource)).start()
 
                     return .single(wallpaper)
     

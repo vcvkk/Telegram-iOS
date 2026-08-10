@@ -3,6 +3,7 @@ import UIKit
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
+import Postbox
 import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -926,7 +927,7 @@ final class GiftOptionsScreenComponent: Component {
                                     if let controller = context.sharedContext.makePeerInfoController(
                                         context: context,
                                         updatedPresentationData: nil,
-                                        peer: peer,
+                                        peer: peer._asPeer(),
                                         mode: .gifts,
                                         avatarInitiallyExpanded: false,
                                         fromChat: false,
@@ -1368,7 +1369,6 @@ final class GiftOptionsScreenComponent: Component {
             
             let optionSpacing: CGFloat = 10.0
             let optionWidth = (availableSize.width - sideInset * 2.0 - optionSpacing * 2.0) / 3.0
-            
             let showStarPrice = (self.starsState?.balance.value ?? 0) > 10
             
             var hasGenericGifts = false
@@ -1381,7 +1381,7 @@ final class GiftOptionsScreenComponent: Component {
             }
             let hasAnyGifts = hasGenericGifts || hasTransferGifts
             
-            if isSelfGift || isChannelGift || isPremiumDisabled {
+            if isSelfGift || isChannelGift || isPremiumDisabled || { return true }() /* MARK: exteraGram */  {
                 if !self.premiumItems.isEmpty {
                     for (_, itemView) in self.premiumItems {
                         itemView.view?.removeFromSuperview()
