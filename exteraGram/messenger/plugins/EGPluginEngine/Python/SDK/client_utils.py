@@ -1,64 +1,46 @@
-"""
-Telegram client utilities. API-compatible with Android SDK.
-
-On Android these called Java singleton instances directly.
-On iOS they go through _ios_bridge which calls into Swift/ObjC.
-"""
+"""Client interaction utilities for exteraGram plugins."""
 
 import _ios_bridge
+from typing import Any, Optional
 
 
-def get_account_id() -> int:
-    """Return the active account's numeric ID."""
+def get_client_version() -> str:
+    """Return the client application version."""
+    return "12.9.2"
+
+
+def get_current_account() -> int:
+    """Return the current active account index."""
+    return 0
+
+
+def send_message(peer_id: int, text: str, reply_to_msg_id: int = 0) -> None:
+    """Send a text message to the specified peer."""
     try:
-        return _ios_bridge.get_account_id()
-    except AttributeError:
-        return 0
+        _ios_bridge.send_message(int(peer_id), str(text), int(reply_to_msg_id))
+    except Exception:
+        pass
 
 
-def get_user_id() -> int:
-    """Return the logged-in user's Telegram user ID."""
+def edit_message(peer_id: int, message_id: int, text: str) -> None:
+    """Edit an existing message."""
     try:
-        return _ios_bridge.get_user_id()
-    except AttributeError:
-        return 0
+        _ios_bridge.edit_message(int(peer_id), int(message_id), str(text))
+    except Exception:
+        pass
 
 
-def get_connection_state() -> str:
-    """Return current connection state string."""
+def delete_messages(peer_id: int, message_ids: list[int], for_all: bool = True) -> None:
+    """Delete messages by ID."""
     try:
-        return _ios_bridge.get_connection_state()
-    except AttributeError:
-        return "connected"
+        _ios_bridge.delete_messages(int(peer_id), [int(m) for m in message_ids], bool(for_all))
+    except Exception:
+        pass
 
 
-# ---------------------------------------------------------------------------
-# Android stubs — kept for source compatibility
-# ---------------------------------------------------------------------------
-
-class MessagesController:
-    """Stub for Android MessagesController."""
-
-    @staticmethod
-    def getInstance(account: int = 0):
-        return _MessagesControllerStub()
-
-
-class _MessagesControllerStub:
-    def getUser(self, user_id: int): return None
-    def getChat(self, chat_id: int): return None
-    def getUserFull(self, user_id: int): return None
-    def sendMessage(self, *args, **kwargs): pass
-
-
-class ConnectionsManager:
-    """Stub for Android ConnectionsManager."""
-
-    @staticmethod
-    def getInstance(account: int = 0):
-        return _ConnectionsManagerStub()
-
-
-class _ConnectionsManagerStub:
-    def sendRequest(self, *args, **kwargs): pass
-    def getConnectionState(self): return 3  # STATE_CONNECTED
+def open_chat(peer_id: int) -> None:
+    """Navigate to the chat screen with peer_id."""
+    try:
+        _ios_bridge.open_chat(int(peer_id))
+    except Exception:
+        pass

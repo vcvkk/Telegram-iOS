@@ -108,7 +108,7 @@ public final class EGPluginRuntime {
         }
 
         // Wipe stale generated packages so we start clean.
-        for dir in ["ui", "android", "java"] {
+        for dir in ["ui", "android", "java", "elyx", "elyxcore", "extera_utils"] {
             try? fm.removeItem(at: sp.appendingPathComponent(dir))
         }
 
@@ -134,8 +134,6 @@ __all__ = ['AlertDialogBuilder','BulletinHelper']
 """, to: "ui/alert.py")
 
             // -- android/ -----------------------------------------------------
-            //   Each submodule pulls from eg_widgets so Android-style imports
-            //   work unchanged ("from android.widget import LinearLayout").
             try write("__all__ = []\n", to: "android/__init__.py")
             try write("""
 from eg_widgets import LinearLayout, TextView, Button, Space
@@ -158,15 +156,31 @@ from eg_widgets import GradientDrawable
 __all__ = ['GradientDrawable']
 """, to: "android/graphics/drawable.py")
 
-            // -- java/ — only dynamic_proxy is used by plugins ----------------
+            // -- java/ --------------------------------------------------------
             try write("""
-from eg_widgets import dynamic_proxy
-__all__ = ['dynamic_proxy']
+from java import jclass, dynamic_proxy
+__all__ = ['jclass', 'dynamic_proxy']
 """, to: "java/__init__.py")
+
+            // -- elyx / elyxcore ----------------------------------------------
+            try write("""
+from elyxcore import (
+    Asset, AssetNotFoundException, Assets, AssetsDirNotFoundException,
+    Callback, Callback2, Callback3, CallbackReturn, LazyDict,
+    OnClickListener, Runnable, SettingsController, Strings,
+    gen, gen2, get_environment, import_module, mvel_execute
+)
+__all__ = [
+    'Asset', 'AssetNotFoundException', 'Assets', 'AssetsDirNotFoundException',
+    'Callback', 'Callback2', 'Callback3', 'CallbackReturn', 'LazyDict',
+    'OnClickListener', 'Runnable', 'SettingsController', 'Strings',
+    'gen', 'gen2', 'get_environment', 'import_module', 'mvel_execute'
+]
+""", to: "elyx/__init__.py")
 
             try version.write(toFile: marker, atomically: true, encoding: .utf8)
             EGPluginDebugLog.shared.append(tag: "Runtime",
-                "ui/ + android/ + java/ packages bootstrapped (v\(version))")
+                "SDK packages (ui, android, java, elyx, elyxcore) bootstrapped (v\(version))")
         } catch {
             EGLogger.shared.log("PluginRuntime", "package bootstrap error: \(error)")
         }
