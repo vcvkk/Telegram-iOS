@@ -193,7 +193,14 @@ func _internal_managedRecentlyUsedInlineBots(postbox: Postbox, network: Network,
             return postbox.transaction { transaction -> Void in
                 updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: parsedPeers)
                 
-                let sortedPeersWithRating = peersWithRating.sorted(by: { $0.1 > $1.1 })
+                // MARK: exteraGram
+                // The request asks for two categories (flags 1 << 2 and 1 << 17),
+                // and a bot that is in both comes back twice. replaceItems asserts
+                // that ids are unique, which crashed every debug build a few
+                // seconds after launch; release builds silently left a dangling
+                // index row instead. Keep each peer once, at its best rating.
+                var seenPeerIds = Set<PeerId>()
+                let sortedPeersWithRating = peersWithRating.sorted(by: { $0.1 > $1.1 }).filter { seenPeerIds.insert($0.0).inserted }
                 
                 transaction.replaceOrderedItemListItems(collectionId: Namespaces.OrderedItemList.CloudRecentInlineBots, items: sortedPeersWithRating.compactMap { (peerId, rating) in
                     if let entry = CodableEntry(RecentPeerItem(rating: rating)) {
