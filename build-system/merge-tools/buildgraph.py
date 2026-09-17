@@ -37,6 +37,10 @@ def build_directories(repo_root):
     """dir -> set of dirs it references, for every BUILD file in the tree."""
     edges = {}
     for build_path in glob(os.path.join(repo_root, "**", "BUILD"), recursive=True):
+        # third-party/XcodeGen carries a *directory* named BUILD in its Carthage
+        # fixture, which the glob matches just as happily as a build file.
+        if not os.path.isfile(build_path):
+            continue
         rel_dir = os.path.relpath(os.path.dirname(build_path), repo_root)
         if rel_dir.startswith("bazel-") or "/bazel-" in rel_dir:
             continue

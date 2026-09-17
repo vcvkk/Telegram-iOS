@@ -62,6 +62,9 @@ and strands files at the old version.
    python3 build-system/merge-tools/check_enum_cases.py      # enum cases vs their uses
    python3 build-system/merge-tools/check_init_args.py       # init call sites vs declarations
    python3 build-system/merge-tools/check_signal_arity.py    # combineLatest vs its closure
+   python3 build-system/merge-tools/check_hoisted_closures.py # hoisted closure vs its callee
+   python3 build-system/merge-tools/check_arch_coverage.py   # every arch Make.py emits
+   python3 build-system/merge-tools/check_ordered_list_ids.py # no duplicate ids in list writes
    python3 build-system/merge-tools/check_api_drift.py --upstream /tmp/upstream/release-<NEW>
    python3 build-system/merge-tools/check_syntax_debt.py --upstream /tmp/upstream/release-<NEW>
    ```
@@ -171,6 +174,63 @@ and strands files at the old version.
    (`makeTextProcessingScreen`, `makeAvatarMediaPickerScreen`,
    `makeLinkEditController`, `makeGalleryCaptionPanelView`).
 
+   `check_hoisted_closures.py` covers the idiom this fork adopted in fbcf2554:
+   the divergent arguments of the two enormous `ChatControllerInteraction`
+   initializers now live in named closures (`openMessageContextMenuImpl` and
+   friends), so a bump cannot collide inside one 200-line expression. The cost
+   is that the annotation and the method it forwards to are two declarations a
+   merge can move independently — the annotation keeps the fork's `Message`
+   while the method follows upstream to `EngineMessage`. `check_engine_adapters`
+   is structurally unable to see this: the argument is a bare `message` whose
+   only type is that annotation, and the callee name is ambiguous *on purpose*
+   (`openMessageContextMenu` is both the interaction property taking `Message`
+   and the method taking `EngineMessage`). This checker compares the two
+   declarations instead, disambiguating the callee by its full argument label
+   list, and reports only `Message`/`Peer` vs `EngineMessage`/`EnginePeer` —
+   `MessageId` vs `EngineMessage.Id` is the *same* type through a typealias, and
+   treating it as a finding cost eleven false positives in SettingsUI on the
+   first run. It found five in the 12.9.2 bump, one of which the compiler had
+   not reached: `openPollMedia` sat behind an unrelated scope error on the line
+   above it.
+
+   `check_arch_coverage.py` covers the third architecture. `Make.py` can emit
+   `arm64`, `sim_arm64` and `x86_64`, but only two of those are ever exercised,
+   so the third rots in four places at once — a `select()` with no branch and no
+   `//conditions:default` (bazel fails during *analysis*, which `--keep_going`
+   does not soften, so it costs a whole round and suppresses every other
+   finding); a genrule `$(TARGET_CPU)` chain that falls through to an `echo`
+   without `exit 1`, leaving `BUILD_ARCH` empty so the failure surfaces
+   somewhere unrelated; a BUILD that maps a CPU to an arch name its own
+   `build-*-bazel.sh` does not handle (mozjpeg — the BUILD side looked complete,
+   which is why it survived); and NEON intrinsics reached on a non-ARM target
+   (subcodec, whose header guards `<arm_neon.h>` while its .cpp does not). It
+   reads the architecture list out of `Make.py`, so adding a configuration there
+   extends the checker with it. Both polarities of the NEON guard are tracked:
+   `#if !defined(__ARM_NEON)` puts the ARM half in the `#else`, and getting that
+   backwards makes the checker report the file it just fixed.
+   What it does not catch: a select whose x86_64 case falls to a
+   `//conditions:default` of `[]`. That passes analysis and the checker alike,
+   and `crc32c` got all the way to the link step that way — `crc32c.cc` calls
+   `ExtendSse42` whenever the compiler reports SSE4.2, so the x86_64 branch
+   needs `crc32c_sse42.cc` *and* `-msse4.2`.
+
+   `check_hoisted_closures.py` tracks shadowing: a nested closure parameter or
+   `let` that reuses the hoisted parameter's name ends the annotation's
+   authority. Without that, `navigateToMessageContext: { message in` inside
+   `openMessageImpl` was reported against code that compiles.
+
+   `check_ordered_list_ids.py` covers a crash no compiler or CI run can see,
+   because it depends on what the server returns. `OrderedItemListTable`'s
+   `replaceItems` asserts unique ids; release builds compile that out and keep a
+   dangling index row, debug builds crash. The 12.9.2 tree died about five
+   seconds into every debug launch because the recent-inline-bots sync asks
+   `getTopPeers` for two categories and a bot in both came back twice. The
+   checker flags a function that builds a list write in nested loops over
+   server groupings without any dedupe. When a debug build dies on
+   `Postbox/OrderedItemListTable.swift:151`, attach lldb with a breakpoint on
+   that line and read `collectionId` (`Namespaces.OrderedItemList`) — the crash
+   report's triggered thread is the main run loop and names nothing useful.
+
    `check_engine_adapters.py` covers the fork's single largest source of
    compile errors: a `Peer`/`Message` handed across the boundary to a module
    that stayed on `EnginePeer`/`EngineMessage`, or the reverse. It resolves an
@@ -200,6 +260,21 @@ and strands files at the old version.
    validate's diagnostics 30 minutes later. Pushes to other branches do not
    trigger CI. Don't push in bursts — each push cancels the previous run, and a
    cancelled run does not save the bazel cache.
+
+   `Make.py` passes `--experimental_ui_max_stdouterr_bytes=-1`. Without it
+   bazel drops an action's entire stderr once it passes 1 MB, printing only
+   "exceeds maximum size ...; skipping" — and TelegramUI is the target that
+   crosses it, so a failing run digested as zero diagnostics.
+
+   The oversized `ChatControllerInteraction` and `ChatPanelInterfaceInteraction`
+   initializers produce "unable to type-check this expression in reasonable
+   time" (or "failed to produce diagnostic") against an arbitrary interior
+   line, hiding every real error in the module. Raising
+   `-solver-expression-time-threshold` does not help. The remedy is to hoist
+   the biggest closure arguments into `let fooImpl: <declared type> = { … }`
+   *before* the initializer statement — not in place — and to split
+   `openMessageImpl`'s action switch into `ChatControllerOpenMessageAction.swift`.
+   Each hoist typically unmasks one genuine adapter error.
 
    **The bazel disk cache is the whole build time.** A validate run is ~6
    minutes when the cache holds (82% disk-cache hits, ~40 actions executed) and

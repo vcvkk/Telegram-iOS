@@ -468,6 +468,52 @@ def closure_param_bindings(src, decls, spans):
     return extra
 
 
+def annotated_closure_bindings(src, spans):
+    """Type the parameters of a closure whose `let` carries the signature.
+
+        let openMessageContextMenuImpl: (Message, Bool, ASDisplayNode, ...) -> Void = {
+            [weak self] message, selectAll, node, ... in
+
+    This is the shape the fork hoists its divergent arguments into, so that its
+    edits stop colliding with upstream inside the two enormous
+    `ChatControllerInteraction` initializers. The binding regexes below see only
+    `{ ... names ... in` and record every one of those names as *opaque*, which
+    is what let eleven `Message` -> `EngineMessage` call sites through in the
+    12.9.2 bump while this checker reported a clean run.
+
+    The annotation is the authority: bind the Nth closure parameter to the Nth
+    type in the signature, and only when the two agree on arity, since Swift
+    also allows `{ _ in }` and `$0`.
+    """
+    out = []
+    for match in re.finditer(rf"\b(?:let|var)\s+{IDENTIFIER}\s*:\s*\(", src):
+        open_paren = match.end() - 1
+        close_paren = match_paren(src, open_paren)
+        if close_paren < 0:
+            continue
+        # `(A, B) -> Void = { [weak self] a, b in` — nothing else may intervene.
+        head = re.match(
+            r"\s*->\s*[^={\n]*=\s*\{\s*(?:\[[^\]]*\]\s*)?(?P<names>[^}\n]*?)\s+in\b",
+            src[close_paren + 1:],
+        )
+        if not head:
+            continue
+        names = [n.strip() for n in head.group("names").split(",")]
+        types = [t.strip() for t in split_args(src[open_paren + 1:close_paren])]
+        if len(names) != len(types) or not types:
+            continue
+        brace = close_paren + 1 + src[close_paren + 1:].index("{", head.start())
+        end = next((stop for start, stop in spans if start == brace), None)
+        if end is None:
+            continue
+        for name, declared in zip(names, types):
+            # A labelled parameter type reads `_ item: ChatMessageItem`.
+            declared = declared.split(":")[-1].strip()
+            if declared and re.fullmatch(IDENTIFIER, name):
+                out.append((name, brace, "annotated", declared, end))
+    return out
+
+
 def func_param_bindings(src, spans):
     """Function parameters, scoped to the function body.
 
@@ -598,6 +644,8 @@ def bindings(src, decls=None):
     found = defaultdict(list)
     for name, position, kind, payload, end in func_param_bindings(src, spans):
         found[name].append((position, kind, payload, end))
+    for name, position, kind, payload, end in annotated_closure_bindings(src, spans):
+        found[name].append((position, kind, payload, end))
     for kind, pattern in BINDING_RES:
         for match in pattern.finditer(src):
             groups = match.groupdict()
@@ -645,10 +693,43 @@ def receiver_type(name, position, binds, props, enclosing):
     if kind == "annotated":
         return payload
     if kind == "assigned":
+        converted = conversion_result(payload)
+        if converted:
+            return converted
         hop = re.fullmatch(rf"(?:self|strongSelf|{IDENTIFIER})\.({IDENTIFIER})",
                            payload.rstrip(" ,{"))
         if hop and enclosing:
             return props.get(enclosing, {}).get(hop.group(1))
+    return None
+
+
+# The four conversions that cross the boundary. An expression ending in one of
+# them has exactly one type however long the chain in front of it is, which is
+# what makes an otherwise inferred `let` resolvable:
+#
+#     let message = self.chatDisplayNode.historyNode
+#         .messageInCurrentHistoryView(message.id)?._asMessage()
+#
+# `message` is `Message` there, and `self.openViewOnceMediaMessage(message)` —
+# which takes `EngineMessage` — is the kind of call the compiler answers with
+# "unable to type-check this expression in reasonable time" rather than with
+# the mismatch, because it sits inside one of the giant chat closures.
+CONVERSIONS = (
+    (re.compile(r"\._asMessage\(\)\s*$"), "Message"),
+    (re.compile(r"\._asPeer\(\)\s*$"), "Peer"),
+    (re.compile(rf"^EngineMessage\s*\({IDENTIFIER}"), "EngineMessage"),
+    (re.compile(rf"^EnginePeer\s*\({IDENTIFIER}"), "EnginePeer"),
+)
+
+
+def conversion_result(expr):
+    """The type an expression has because of how it ends, or None."""
+    expr = expr.strip().rstrip(" ,{")
+    # `?._asMessage() else` / `._asMessage() {` — a guard tail is not the type.
+    expr = re.sub(r"\s+(?:else|where)\b.*$", "", expr)
+    for pattern, result in CONVERSIONS:
+        if pattern.search(expr):
+            return result
     return None
 
 
@@ -662,6 +743,11 @@ def resolve_expression(expr, position, binds, props, enclosing):
             found = classify(binding[1])
             if found:
                 return found[0], found[1], f"nearest binding is `{expr}: {binding[1]}`"
+        if binding and binding[0] == "assigned":
+            converted = conversion_result(binding[1])
+            found = classify(converted) if converted else None
+            if found:
+                return found[0], found[1], f"`{expr}` is assigned a {converted}"
         return None  # opaque or inferred: let the compiler decide
 
     member = re.fullmatch(rf"({IDENTIFIER})\.({IDENTIFIER})", expr)

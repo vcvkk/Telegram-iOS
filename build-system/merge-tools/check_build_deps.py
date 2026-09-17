@@ -119,6 +119,9 @@ def build_graph():
         rel_dir = os.path.relpath(os.path.dirname(build_path), REPO_ROOT)
         if rel_dir.startswith("bazel-") or "/bazel-" in rel_dir:
             continue
+        # third-party/XcodeGen has a *directory* named BUILD in a fixture.
+        if not os.path.isfile(build_path):
+            continue
         src = strip_build_comments(read(build_path))
         for match in MODULE_RULE_RE.finditer(src):
             body = match.group("body")
@@ -262,6 +265,8 @@ def main():
     for root in scope:
         pattern = os.path.join(REPO_ROOT, root, "**", "BUILD")
         for build_path in glob(pattern, recursive=True):
+            if not os.path.isfile(build_path):
+                continue
             rel_dir = os.path.relpath(os.path.dirname(build_path), REPO_ROOT)
             if rel_dir.startswith("bazel-") or "/bazel-" in rel_dir:
                 continue
