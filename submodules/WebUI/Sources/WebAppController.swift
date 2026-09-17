@@ -277,14 +277,7 @@ public final class WebAppController: ViewController, AttachmentContainable {
             }
             
             // MARK: exteraGram
-            var userScripts: [WKUserScript] = []
-            let globalEGConfig = context.currentAppConfiguration.with({ $0 }).egWebSettings.global
-            let botIdInt = controller.botId.id._internalGetInt64Value()
-            if botIdInt != 1985737506, let botMonkey = globalEGConfig.botMonkeys.first(where: { $0.botId == botIdInt}) {
-                if !botMonkey.src.isEmpty {
-                    userScripts.append(WKUserScript(source: botMonkey.src, injectionTime: .atDocumentStart, forMainFrameOnly: false))
-                }
-            }
+            // TODO(exteragram): Supply locally installed user scripts through `userScripts`.
             let webView = WebAppWebView(userScripts: userScripts, account: context.account)
             webView.alpha = 0.0
             webView.navigationDelegate = self
@@ -4014,17 +4007,7 @@ public final class WebAppController: ViewController, AttachmentContainable {
             })))
 
             // MARK: exteraGram
-            let globalEGConfig = context.currentAppConfiguration.with({ $0 }).egWebSettings.global
-            let botIdInt = botId.id._internalGetInt64Value()
-            if botIdInt != 1985737506, let botMonkey = globalEGConfig.botMonkeys.first(where: { $0.botId == botIdInt}) {
-                let itemText = (self?.controllerNode.webView?.monkeyClickerActive ?? false) ? "Disable Clicker" : "Enable Clicker"
-                items.append(.action(ContextMenuActionItem(text: itemText, icon: { theme in
-                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Bots"), color: theme.contextMenu.primaryColor)
-                }, action: { [weak self] c, _ in
-                    c?.dismiss(completion: nil)
-                    self?.controllerNode.webView?.toggleClicker(enableJS: botMonkey.enable, disableJS: botMonkey.disable)
-                })))
-            }
+            // TODO(exteragram): Add an action that opens the user-script management webpage.
             
             items.append(.action(ContextMenuActionItem(text: presentationData.strings.WebApp_PrivacyPolicy, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Privacy"), color: theme.contextMenu.primaryColor)

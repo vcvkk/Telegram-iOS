@@ -268,9 +268,6 @@ final class WebAppWebView: WKWebView {
         })
     }
     
-    // MARK: exteraGram
-    public private(set) var monkeyClickerActive = false
-    
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let result = super.hitTest(point, with: event)
         self.lastTouchTimestamp = CACurrentMediaTime()
@@ -283,18 +280,5 @@ final class WebAppWebView: WKWebView {
     
     override var inputAccessoryView: UIView? {
         return nil
-    }
-}
-
-// MARK: exteraGram
-extension WebAppWebView {
-    
-    public func toggleClicker(enableJS: String, disableJS: String) {
-        if self.monkeyClickerActive {
-            self.evaluateJavaScript(disableJS, completionHandler: nil)
-        } else {
-            self.evaluateJavaScript(enableJS, completionHandler: nil)
-        }
-        self.monkeyClickerActive = !self.monkeyClickerActive
     }
 }
