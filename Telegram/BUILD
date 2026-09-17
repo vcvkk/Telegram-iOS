@@ -92,6 +92,17 @@ bool_flag(
     visibility = ["//visibility:public"],
 )
 
+# MARK: exteraGram
+# Compiling the watch app's asset catalog makes actool ask SimServiceContext
+# for a watchsimulator runtime, so a host that only has the iOS runtime
+# installed cannot build the iOS app at all. Building for the iOS simulator
+# does not need the watch app.
+bool_flag(
+    name = "disableWatchApp",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
 config_setting(
     name = "disableExtensionsSetting",
     flag_values = {
@@ -110,6 +121,14 @@ config_setting(
     name = "projectIncludeReleaseSetting",
     flag_values = {
         ":projectIncludeRelease": "True",
+    },
+)
+
+# MARK: exteraGram
+config_setting(
+    name = "disableWatchAppSetting",
+    flag_values = {
+        ":disableWatchApp": "True",
     },
 )
 
@@ -2206,7 +2225,10 @@ ios_application(
             ":BroadcastUploadExtension",
         ],
     }),
-    watch_application = ":TelegramWatchApp", # MARK: exteraGram
+    watch_application = select({ # MARK: exteraGram
+        ":disableWatchAppSetting": None,
+        "//conditions:default": ":TelegramWatchApp",
+    }),
     deps = [
         ":Main",
         ":Lib",

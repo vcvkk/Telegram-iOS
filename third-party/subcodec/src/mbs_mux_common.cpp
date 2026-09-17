@@ -5,7 +5,9 @@
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
+#endif
 
 namespace subcodec::mux {
 
@@ -390,6 +392,7 @@ void RbspWriter::copy_blob(const uint8_t* src, int nbits) {
 
         /* NEON bulk shift+write for interior */
         if (i < full_bytes) {
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
             int8x16_t rshift = vdupq_n_s8(static_cast<int8_t>(-bits));
             int8x16_t lshift = vdupq_n_s8(static_cast<int8_t>(8 - bits));
 
@@ -402,6 +405,7 @@ void RbspWriter::copy_blob(const uint8_t* src, int nbits) {
                 out += 16;
                 i += 16;
             }
+#endif
 
             /* Sync partial with last processed byte */
             if (i > 1) partial = src[i - 1];
@@ -443,6 +447,10 @@ size_t rbsp_to_ebsp(const uint8_t* rbsp, size_t rbsp_size,
 
 size_t rbsp_to_ebsp_neon(const uint8_t* rbsp, size_t rbsp_size,
                           uint8_t* ebsp, size_t ebsp_size) {
+#if !defined(__ARM_NEON) && !defined(__ARM_NEON__)
+    /* exteraGram: the scalar path above is the same algorithm byte for byte. */
+    return rbsp_to_ebsp(rbsp, rbsp_size, ebsp, ebsp_size);
+#else
     size_t out = 0;
     int zero_count = 0;
     size_t i = 0;
@@ -513,6 +521,7 @@ size_t rbsp_to_ebsp_neon(const uint8_t* rbsp, size_t rbsp_size,
     }
 
     return out;
+#endif
 }
 
 /* ---- IDR frame writer ---- */
@@ -951,6 +960,7 @@ void EbspWriter::copy_blob(const uint8_t* src, int nbits,
              * NEON processes 16 bytes per iteration. */
             int remaining = full_bytes - i;
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
             /* Set up NEON shift vectors (constant across all iterations).
              * vshlq_u8 with negative shift = shift right. */
             int8x16_t rshift = vdupq_n_s8(static_cast<int8_t>(-bits));
@@ -967,6 +977,7 @@ void EbspWriter::copy_blob(const uint8_t* src, int nbits,
                 i += 16;
                 remaining -= 16;
             }
+#endif
 
             /* Sync partial with last source byte before scalar tail.
              * NEON wrote directly to output without updating partial.

@@ -37,6 +37,8 @@ genrule(
     srcs = [
         "build-dav1d-bazel.sh",
         "arm64-iPhoneSimulator.meson",
+        # MARK: exteraGram - Intel host simulator
+        "x86_64-iPhoneSimulator.meson",
         ":dav1d_sources",
         "@meson_tar_gz//file",
         "@ninja-mac_zip//file",
@@ -49,6 +51,9 @@ genrule(
         BUILD_ARCH="arm64"
     elif [ "$(TARGET_CPU)" == "ios_sim_arm64" ]; then
         BUILD_ARCH="sim_arm64"
+    elif [ "$(TARGET_CPU)" == "ios_x86_64" ]; then
+        # MARK: exteraGram - Intel host simulator
+        BUILD_ARCH="sim_x86_64"
     else
         echo "Unsupported architecture $(TARGET_CPU)"
     fi
@@ -69,6 +74,7 @@ genrule(
 
     cp $(location :build-dav1d-bazel.sh) "$$BUILD_DIR/"
     cp $(location :arm64-iPhoneSimulator.meson) "$$BUILD_DIR/"
+    cp $(location :x86_64-iPhoneSimulator.meson) "$$BUILD_DIR/"
 
     SOURCE_PATH="third-party/dav1d/dav1d"
 

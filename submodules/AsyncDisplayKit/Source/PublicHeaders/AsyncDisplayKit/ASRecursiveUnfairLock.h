@@ -11,11 +11,10 @@
 #import <AsyncDisplayKit/ASBaseDefines.h>
 #import <pthread/pthread.h>
 
-#if defined(__aarch64__)
-    #define AS_USE_OS_LOCK true
-#else
-    #define AS_USE_OS_LOCK false
-#endif
+// MARK: exteraGram - os_unfair_lock has been available since iOS 10 and this
+// tree deploys to iOS 13, so there is no architecture left that needs the
+// deprecated OSSpinLock fallback; on x86_64 that fallback is -Werror.
+#define AS_USE_OS_LOCK true
 
 #if AS_USE_OS_LOCK
 

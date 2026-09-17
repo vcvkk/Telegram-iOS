@@ -67,6 +67,14 @@ class BazelCommandLine:
             # Print the subcommand details in case of failure.
             '--verbose_failures',
 
+            # MARK: exteraGram
+            # Without this bazel drops an action's whole stderr once it passes
+            # 1 MB -- it prints "exceeds maximum size ...; skipping" and nothing
+            # else. TelegramUI is the one target that reaches that, which is the
+            # worst place for it: a failing bump run reports zero diagnostics
+            # and parse_ci_errors.py summarises an empty log.
+            '--experimental_ui_max_stdouterr_bytes=-1',
+
             # Asynchronously upload cache artifacts
             '--remote_cache_async',
         ]
@@ -155,6 +163,28 @@ class BazelCommandLine:
 
                 # Build single-architecture binaries. It is almost 2 times faster is 32-bit support is not required.
                 '--ios_multi_cpus=sim_arm64',
+
+                # Always build universal Watch binaries.
+                '--watchos_cpus=armv7k,arm64_32'
+            ] + self.common_debug_args
+        elif configuration == 'debug_sim_x86_64':
+            # MARK: exteraGram - Intel host: the simulator runtime runs x86_64 only.
+            self.configuration_args = [
+                # bazel debug build configuration
+                '-c', 'dbg',
+
+                # Build single-architecture binaries. It is almost 2 times faster is 32-bit support is not required.
+                '--ios_multi_cpus=x86_64',
+
+                # webrtc's x86 call sites reference the AVX2 symbols next to the
+                # SSE2 ones, so those translation units have to be compiled with
+                # AVX2/FMA enabled while the rest of the binary stays baseline.
+                '--per_file_copt=.*_avx2\\.cc$@-mavx2,-mfma',
+
+                # actool needs an installed watchsimulator runtime to compile
+                # the watch app's asset catalog; the iOS simulator build has no
+                # use for the watch app anyway.
+                '--//Telegram:disableWatchApp=True',
 
                 # Always build universal Watch binaries.
                 '--watchos_cpus=armv7k,arm64_32'
@@ -954,6 +984,7 @@ if __name__ == '__main__':
         choices=[
             'debug_arm64',
             'debug_sim_arm64',
+            'debug_sim_x86_64',
             'release_sim_arm64',
             'release_arm64',
         ],
@@ -1205,6 +1236,7 @@ if __name__ == '__main__':
         choices=[
             'debug_arm64',
             'debug_sim_arm64',
+            'debug_sim_x86_64',
             'release_sim_arm64',
             'release_arm64',
         ],

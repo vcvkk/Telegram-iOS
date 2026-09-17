@@ -271,6 +271,11 @@ genrule(
         elif [ "$(TARGET_CPU)" == "ios_sim_arm64" ]; then
             BUILD_ARCH="sim_arm64"
             VARIANT="debug"
+        elif [ "$(TARGET_CPU)" == "ios_x86_64" ]; then
+            # MARK: exteraGram - Intel host simulator. Not the plain "x86_64"
+            # arch below it: that one targets iPhoneOS, not the simulator.
+            BUILD_ARCH="sim_x86_64"
+            VARIANT="debug"
         elif [ "$(TARGET_CPU)" == "darwin_arm64" ]; then
             BUILD_ARCH="macos_arm64"
             VARIANT="debug"

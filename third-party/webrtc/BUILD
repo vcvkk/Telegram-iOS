@@ -2764,9 +2764,33 @@ arm64_specific_sources = ["webrtc/" + path for path in [
     "common_audio/third_party/ooura/fft_size_128/ooura_fft_neon.cc",
 ]]
 
+# MARK: exteraGram - Intel host simulator.
+# The two "arm64_specific" entries below are the generic C implementations (the
+# arm assembly variants are armv7-only), so x86_64 needs them as well. The rest
+# are the SSE2/AVX2 counterparts of the NEON files: WEBRTC_ARCH_X86_FAMILY is
+# defined automatically by rtc_base/system/arch.h, and the call sites in
+# fir_filter_factory.cc, sinc_resampler.cc, aec3 and rnn_vad reference both the
+# SSE2 and the AVX2 symbols unconditionally under it, so both must be linked in.
+x86_64_specific_sources = ["webrtc/" + path for path in [
+    "common_audio/signal_processing/complex_bit_reverse.c",
+    "common_audio/signal_processing/filter_ar_fast_q12.c",
+    "common_audio/third_party/ooura/fft_size_128/ooura_fft_sse2.cc",
+    "common_audio/fir_filter_sse.cc",
+    "common_audio/fir_filter_avx2.cc",
+    "common_audio/resampler/sinc_resampler_sse.cc",
+    "common_audio/resampler/sinc_resampler_avx2.cc",
+    "modules/audio_processing/aec3/adaptive_fir_filter_avx2.cc",
+    "modules/audio_processing/aec3/adaptive_fir_filter_erl_avx2.cc",
+    "modules/audio_processing/aec3/fft_data_avx2.cc",
+    "modules/audio_processing/aec3/matched_filter_avx2.cc",
+    "modules/audio_processing/aec3/vector_math_avx2.cc",
+    "modules/audio_processing/agc2/rnn_vad/vector_math_avx2.cc",
+]]
+
 arch_specific_sources = select({
     "@build_bazel_rules_apple//apple:ios_arm64": common_arm_specific_sources + arm64_specific_sources,
     "//build-system:ios_sim_arm64": common_arm_specific_sources + arm64_specific_sources,
+    "@build_bazel_rules_apple//apple:ios_x86_64": x86_64_specific_sources,
 })
 
 common_flags = [
@@ -2804,9 +2828,15 @@ arm64_specific_flags = [
     "-DLIBYUV_NEON",
 ]
 
+# MARK: exteraGram - Intel host simulator. No arch defines are needed here:
+# arch.h derives WEBRTC_ARCH_X86_FAMILY from __x86_64__, and libyuv picks its
+# own x86 paths without LIBYUV_NEON.
+x86_64_specific_flags = []
+
 arch_specific_cflags = select({
     "@build_bazel_rules_apple//apple:ios_arm64": common_flags + arm64_specific_flags,
     "//build-system:ios_sim_arm64": common_flags + arm64_specific_flags,
+    "@build_bazel_rules_apple//apple:ios_x86_64": common_flags + x86_64_specific_flags,
 })
 
 dcsctp_sources = [ "webrtc/net/dcsctp/" + path for path in [
